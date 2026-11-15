@@ -171,7 +171,7 @@ export async function dbStatus(codes) {
     const snap = await fb.getDoc(fb.doc(db, 'orgs', code));
     if (snap.exists()) {
       const d = snap.data();
-      out[code] = { at: toDate(d.uploadedAt), records: d.records || 0, by: d.uploadedByName || '' };
+      out[code] = { at: toDate(d.uploadedAt), records: d.records || 0, by: d.uploadedByName || '', sig: d.sig || '' };
     }
   }));
   return out;
