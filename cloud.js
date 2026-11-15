@@ -213,10 +213,11 @@ export async function uploadOrg(payload, onProgress) {
   // Fingerprints are saved after the records, so an interrupted upload is redone next time.
   const batch = fb.writeBatch(db);
   for (const m of Object.values(manifests)) batch.set(m.ref, { h: m.h, at: fb.serverTimestamp() });
-  batch.set(orgRef, storable(Object.assign({}, payload.org, {
-    records: total,
-    uploadedAt: fb.serverTimestamp(), uploadedBy: current.uid, uploadedByName: current.displayName || current.email || '',
-  })));
+  // The server timestamp is added after storable(): copying it would turn the
+  // sentinel into a plain map, and the rules require the real request time.
+  batch.set(orgRef, Object.assign(storable(Object.assign({}, payload.org, {
+    records: total, uploadedBy: current.uid, uploadedByName: current.displayName || current.email || '',
+  })), { uploadedAt: fb.serverTimestamp() }));
   await batch.commit();
   return { written: plan.length, total };
 }
