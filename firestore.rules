@@ -13,6 +13,8 @@ rules_version = '2';
 //     /{collection}/{id}        contracts, acts, addendums, penalties, payments,
 //                               liabilities, reports, signals
 //     /meta/{collection}        fingerprints of uploaded records (incremental upload)
+//   watchlist/{edrpou}          organisations added from the app; public read so
+//                               GitHub Actions can pick them up without credentials
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() {
@@ -60,6 +62,18 @@ service cloud.firestore {
     match /companies/{edrpou} {
       allow read: if signedIn();
       allow write: if signedIn() && edrpou.matches('^[0-9]{8,10}$');
+    }
+
+    match /watchlist/{edrpou} {
+      allow read: if true;
+      allow create, update: if signedIn() && edrpou.matches('^([0-9]{8}|[0-9]{10})$')
+        && request.resource.data.keys().hasOnly(['edrpou', 'name', 'note', 'addedBy', 'addedAt'])
+        && request.resource.data.edrpou == edrpou
+        && request.resource.data.name is string && request.resource.data.name.size() <= 300
+        && request.resource.data.note is string && request.resource.data.note.size() <= 500
+        && request.resource.data.addedBy == request.auth.uid
+        && request.resource.data.addedAt == request.time;
+      allow delete: if false;
     }
 
     match /orgs/{edrpou} {
