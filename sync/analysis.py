@@ -192,15 +192,16 @@ def analyze(items, org_edrpou):
             u["name"], u["code"] = other_name or "", other_code if str(other_code or "").isdigit() else ""
             u["ext_ids"].append(item["ext_id"])
             for number, day in refs:
-                label = "№%s від %s" % (number, day.strftime("%d.%m.%Y"))
+                label = "№%s · %s" % (number, day.strftime("%d.%m.%Y"))
                 if label not in u["refs"]:
                     u["refs"].append(label)
 
     signals = []
 
-    def signal(kind, severity, title, text, contract=None, amount=None, ext_ids=None):
+    # Signals carry numbers, not prose: the site words them in the reader's language.
+    def signal(kind, severity, params, contract=None, amount=None, ext_ids=None):
         signals.append({
-            "type": kind, "severity": severity, "title": title, "text": text,
+            "type": kind, "severity": severity, "params": params,
             "contract": contract["id"] if contract else None,
             "date": (contract or {}).get("date"),
             "party": (contract or {}).get("party_name"),
@@ -218,39 +219,33 @@ def analyze(items, org_edrpou):
 
         if value and c["paid"] > value + tol:
             flags.append("overpaid")
-            signal("overpaid", "high", "Оплачено больше суммы договора",
-                   "Платежи по договору — %s грн при цене договора %s грн." % (_fmt(c["paid"]), _fmt(value)),
+            signal("overpaid", "high", {"paid": c["paid"], "value": value},
                    c, _money(c["paid"] - value), [p["ext_id"] for p in c["payments"]])
         if value and c["acts_sum"] > value + tol:
             flags.append("acts_over")
-            signal("acts_over", "medium", "Акты на сумму больше договора",
-                   "Актов на %s грн при цене договора %s грн." % (_fmt(c["acts_sum"]), _fmt(value)),
+            signal("acts_over", "medium", {"acts": c["acts_sum"], "value": value},
                    c, _money(c["acts_sum"] - value))
         if c["price_up"] and c["value0"]:
             share = c["price_up"] / c["value0"]
             sev = "high" if share > PRICE_UP_LIMIT else "medium"
             flags.append("price_up")
-            signal("price_up", sev, "Цена договора увеличена допсоглашением",
-                   "Рост на %s грн (+%.1f%%). Закон о закупках ограничивает рост цены за единицу 10%%." % (_fmt(c["price_up"]), share * 100),
+            signal("price_up", sev, {"delta": c["price_up"], "pct": round(share * 100, 1), "value0": c["value0"]},
                    c, c["price_up"], [a["ext_id"] for a in c["addendums"] if a["type"] == 1])
         if c["role"] == "disposer" and not c["tender"] and not c["prozorro"] and value >= threshold:
             flags.append("no_tender")
-            signal("no_tender", "medium", "Крупный договор без процедуры в Prozorro",
-                   "%s грн при пороге %s грн для %s. Основание: %s" % (_fmt(value), _fmt(threshold), "работ" if works else "товаров и услуг", c["reason"] or "не указано"),
+            signal("no_tender", "medium", {"value": value, "threshold": threshold, "works": works, "reason": c["reason"]},
                    c, value)
         first_pay = c["payments"][0]["date"] if c["payments"] else None
         if first_pay and c["date"] and first_pay < c["date"]:
             flags.append("paid_before")
-            signal("paid_before", "medium", "Оплата раньше даты договора",
-                   "Первый платёж %s, договор от %s." % (_dmy(first_pay), _dmy(c["date"])),
+            signal("paid_before", "medium", {"first_pay": first_pay, "date": c["date"]},
                    c, None, [c["payments"][0]["ext_id"]])
         late = _workdays_between(_day(c["date"]), _day(c["published"]))
         if c["role"] == "disposer" and late > PUBLISH_WORKDAYS:
             flags.append("late")  # summarised below: one line per organisation, not per contract
         if c["role"] == "disposer" and c["acts_sum"] and c["paid"] > c["acts_sum"] + max(1000, c["acts_sum"] * 0.05):
             flags.append("paid_over_acts")
-            signal("paid_over_acts", "low", "Оплачено больше, чем подтверждено актами",
-                   "Оплачено %s грн, актов на %s грн — проверьте предоплату или накладные." % (_fmt(c["paid"]), _fmt(c["acts_sum"])),
+            signal("paid_over_acts", "low", {"paid": c["paid"], "acts": c["acts_sum"]},
                    c, _money(c["paid"] - c["acts_sum"]))
         c["flags"] = flags
         c["late_days"] = late
@@ -281,9 +276,8 @@ def analyze(items, org_edrpou):
                 for c in window:
                     if "split" not in c["flags"]:
                         c["flags"].append("split")
-                signal("split", "medium", "Возможное дробление закупки",
-                       "%d договора с одним поставщиком (CPV %s…) за %d дней на %s грн — каждый ниже порога %s грн." % (
-                           len(window), cpv4, SPLIT_WINDOW_DAYS, _fmt(total), _fmt(threshold)),
+                signal("split", "medium", {"n": len(window), "cpv": cpv4, "days": SPLIT_WINDOW_DAYS,
+                                           "total": _money(total), "threshold": threshold},
                        lead, _money(total), [c["ext_id"] for c in window])
                 break
 
@@ -292,9 +286,8 @@ def analyze(items, org_edrpou):
         recent = sorted(late, key=lambda c: c["published"] or "", reverse=True)
         median = sorted(c["late_days"] for c in late)[len(late) // 2]
         signals.append({
-            "type": "late", "severity": "low", "title": "Договоры публикуются с опозданием",
-            "text": "%d из %d договоров опубликованы позже 5 рабочих дней после заключения; обычная задержка — %d раб. дней." % (
-                len(late), sum(1 for c in contracts.values() if c["role"] == "disposer"), median),
+            "type": "late", "severity": "low",
+            "params": {"n": len(late), "total": sum(1 for c in contracts.values() if c["role"] == "disposer"), "median": median},
             "contract": None, "date": recent[0]["published"], "party": None,
             "amount": None, "ext_ids": [c["ext_id"] for c in recent[:200]],
         })
@@ -302,15 +295,9 @@ def analyze(items, org_edrpou):
     for key, u in unmatched.items():
         if u["sum"] < 1000:
             continue
-        if u["refs"]:
-            text = "%d плат. на %s грн по договору %s — его нет среди опубликованных на портале." % (
-                u["count"], _fmt(u["sum"]), ", ".join(u["refs"][:3]) + (" и др." if len(u["refs"]) > 3 else ""))
-        else:
-            text = "%d плат. на %s грн, в назначении платежа договор не указан." % (u["count"], _fmt(u["sum"]))
         signals.append({
             "type": "no_contract", "severity": "medium" if u["sum"] >= 50_000 else "low",
-            "title": "Оплата без опубликованного договора",
-            "text": text,
+            "params": {"count": u["count"], "sum": _money(u["sum"]), "refs": u["refs"][:5]},
             "contract": None, "date": None, "party": u["name"], "party_code": u["code"],
             "amount": _money(u["sum"]), "ext_ids": u["ext_ids"][:200],
         })
@@ -326,8 +313,8 @@ def analyze(items, org_edrpou):
             if amount / grand >= CONCENTRATION_SHARE:
                 name = next((c["party_name"] for c in contracts.values() if (c["party_code"] or c["party_name"]) == party), party)
                 signals.append({
-                    "type": "concentration", "severity": "low", "title": "Высокая доля одного контрагента",
-                    "text": "%.0f%% всей суммы договоров организации (%s из %s грн)." % (amount / grand * 100, _fmt(amount), _fmt(grand)),
+                    "type": "concentration", "severity": "low",
+                    "params": {"pct": round(amount / grand * 100), "amount": _money(amount), "grand": _money(grand)},
                     "contract": None, "date": None, "party": name, "amount": _money(amount), "ext_ids": [],
                 })
 
@@ -359,11 +346,3 @@ def _row(c):
             "party_type", "subject", "cpv", "currency", "value0", "value", "price_up", "tender", "reason",
             "prozorro", "acts_sum", "paid", "flags", "late_days", "addendums", "acts", "payments")
     return {k: c[k] for k in keep}
-
-
-def _fmt(x):
-    return "{:,.2f}".format(float(x or 0)).replace(",", " ").replace(".", ",")
-
-
-def _dmy(iso):
-    return "%s.%s.%s" % (iso[8:10], iso[5:7], iso[:4]) if iso else "—"
