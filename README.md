@@ -46,7 +46,7 @@ python3 tools/publish.py -m "що змінилось"
   як числа, текст формулює сайт мовою читача.
 - `index.html`, `app.js`, `style.css`, `i18n.js` — сам сайт; `cloud.js` — вхід,
   Firestore і Google Диск; `sw.js` і `manifest.webmanifest` — встановлення й кеш.
-- `tools/icons.html` малює PNG-іконки з `icon.svg` (логотип Up&D).
+- `tools/icons.html` малює PNG-іконки з `icon.svg` (логотип UP&D).
 
 Файли в `data/`, крім `orgs.json`, створюються автоматично.
 
