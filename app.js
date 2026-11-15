@@ -89,6 +89,11 @@ function googleMark() {
   return svg;
 }
 
+// The Up&D mark: the same picture as icon.svg and the app icons.
+function logo() {
+  return h('img', { class: 'brand-mark', src: 'icon.svg', alt: 'Up&D', width: 36, height: 36 });
+}
+
 // ---- language ---------------------------------------------------------------------
 
 const LANGS = ['uk', 'en'];
@@ -556,7 +561,7 @@ function shell(route, page) {
     h('div', { class: 'aurora', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
     h('header', { class: 'top' }, h('div', { class: 'wrap top-inner' },
       h('a', { class: 'brand', href: '#/' },
-        h('span', { class: 'brand-mark' }, icon('chart')),
+        logo(),
         h('span', null, h('b', null, t('app.name')), h('small', null, t('app.tagline')))),
       h('nav', { class: 'nav', 'aria-label': t('nav.label') }, NAV.map(link)),
       h('div', { class: 'top-meta' },
@@ -1543,9 +1548,51 @@ async function orgDbPayload(org) {
     id: reviewKey(s).slice(0, 140), doc: { type: s.type, severity: s.severity, params: s.params || {}, contract: s.contract || null, party: s.party || null, amount: s.amount == null ? null : s.amount, date: s.date || null },
   }));
   return {
-    org: { edrpou: org.edrpou, name: org.name, note: org.note || '', card: org.card || null, totals: org.totals || null, signals: org.signals || null, dataAt: state.index.generated_at || null },
+    org: { edrpou: org.edrpou, name: org.name, note: org.note || '', card: org.card || null, totals: org.totals || null, signals: org.signals || null, dataAt: state.index.generated_at || null, sig: orgSig(org) },
     collections: out,
   };
+}
+
+// Changes whenever the organisation's records change (counts, sums, signals), and
+// only then: a fresh sync with nothing new keeps the same signature.
+function orgSig(org) {
+  const s = JSON.stringify([org.stats, org.totals, org.signals]);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
+}
+
+// Organisations added to tracking get their database records without anyone
+// pressing a button: as soon as a signed-in analyst opens the app, every tracked
+// organisation that is missing from the database, or has new records since the
+// last upload, is uploaded in the background (only changed records are written).
+let autoSyncRunning = false;
+async function autoSyncDb() {
+  if (autoSyncRunning || !cloud || !state.user || !state.index) return;
+  autoSyncRunning = true;
+  try {
+    const status = await cloud.dbStatus(state.index.orgs.map((o) => o.edrpou));
+    const due = state.index.orgs.filter((o) => !status[o.edrpou] || status[o.edrpou].sig !== orgSig(o));
+    for (const org of due) {
+      const note = toast(t('db.auto', { name: org.name }), { sticky: true });
+      try {
+        const payload = await orgDbPayload(org);
+        const res = await cloud.uploadOrg(payload, (done, total) => {
+          note.querySelector('span').textContent = t('db.autoProgress', { name: org.name, done: ni.format(done), total: ni.format(total) });
+        });
+        note.remove();
+        toast(t('db.autoDone', { name: org.name, n: ni.format(res.written), total: ni.format(res.total) }));
+      } catch (e) {
+        note.remove();
+        toast(t('db.failed') + ' ' + (e.message || ''), { bad: true });
+        break;
+      }
+    }
+  } catch (e) {
+    /* database unreachable: try again next time the app opens */
+  } finally {
+    autoSyncRunning = false;
+  }
 }
 
 async function uploadOrgToDb(org, btn) {
@@ -1690,7 +1737,7 @@ function loginPage() {
   return h('div', { class: 'login' },
     h('div', { class: 'aurora', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
     h('div', { class: 'login-card' },
-      h('div', { class: 'login-top' }, h('span', { class: 'brand-mark' }, icon('chart')), langSwitch()),
+      h('div', { class: 'login-top' }, logo(), langSwitch()),
       h('div', { class: 'eyebrow' }, t('login.eyebrow')),
       h('h1', null, h('span', null, t('ov.title1') + ' '), h('span', { class: 'grad' }, t('ov.title2'))),
       h('p', { class: 'lead' }, t('login.lead')),
@@ -1735,7 +1782,7 @@ function softRender() {
 
 async function boot() {
   render();
-  loadAll().then(softRender).catch((e) => { state.dataError = e.message; softRender(); });
+  loadAll().then(() => { softRender(); autoSyncDb(); }).catch((e) => { state.dataError = e.message; softRender(); });
   try {
     cloud = await import('./cloud.js?v=' + encodeURIComponent(APP.build));
     await cloud.init({
@@ -1744,6 +1791,7 @@ async function boot() {
         state.user = user || null;
         if (user) {
           cloud.watchReviews((map) => { state.reviews = map; softRender(); });
+          autoSyncDb();
           if (!was) setTimeout(showInstallBanner, 1200);
         } else {
           state.reviews = new Map();
@@ -1771,6 +1819,7 @@ setInterval(async () => {
     if (idx.generated_at !== before) {
       await loadAll();
       softRender();
+      autoSyncDb();
     }
   } catch (e) { /* offline or mid-deploy: keep what is shown */ }
 }, 10 * 60 * 1000);
