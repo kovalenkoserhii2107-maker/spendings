@@ -38,7 +38,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
+      # Always start from the newest main: a queued run must see the data the
+      # previous run committed, not the snapshot of the commit that triggered it.
       - uses: actions/checkout@v6
+        with:
+          ref: main
 
       - name: Обновить данные с spending.gov.ua
         env:
@@ -56,7 +60,8 @@ jobs:
             echo "Изменений нет"
           else
             git commit -m "Обновление данных"
-            git pull --rebase
+            # On a clash in data/ keep what this run has just built.
+            git pull --rebase -X theirs
             git push
           fi
 
