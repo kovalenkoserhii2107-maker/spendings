@@ -255,3 +255,115 @@ def analyze(items, org_edrpou):
         c["flags"] = flags
         c["late_days"] = late
 
+    # Possible splitting: one supplier, one CPV group, 30 days, each below the threshold.
+    groups = defaultdict(list)
+    for c in contracts.values():
+        if c["role"] != "disposer" or c["tender"] or c["prozorro"] or not c["date"]:
+            continue
+        who = c["party_code"] or " ".join(_norm_name(c["party_name"])[:1])
+        if not who:
+            continue
+        groups[(who, c["cpv"][:4])].append(c)
+    for (_, cpv4), group in groups.items():
+        group.sort(key=lambda c: c["date"])
+        start = 0
+        for end in range(len(group)):
+            while _day(group[end]["date"]) - _day(group[start]["date"]) > timedelta(days=SPLIT_WINDOW_DAYS):
+                start += 1
+            window = group[start:end + 1]
+            works = cpv4.startswith("45")
+            threshold = WORKS_THRESHOLD if works else GOODS_THRESHOLD
+            total = sum(c["value"] for c in window)
+            if len(window) >= 2 and total >= threshold and all(c["value"] < threshold for c in window):
+                lead = window[-1]
+                if "split" in lead["flags"]:
+                    continue
+                for c in window:
+                    if "split" not in c["flags"]:
+                        c["flags"].append("split")
+                signal("split", "medium", "Возможное дробление закупки",
+                       "%d договора с одним поставщиком (CPV %s…) за %d дней на %s грн — каждый ниже порога %s грн." % (
+                           len(window), cpv4, SPLIT_WINDOW_DAYS, _fmt(total), _fmt(threshold)),
+                       lead, _money(total), [c["ext_id"] for c in window])
+                break
+
+    late = [c for c in contracts.values() if "late" in c["flags"]]
+    if late:
+        recent = sorted(late, key=lambda c: c["published"] or "", reverse=True)
+        median = sorted(c["late_days"] for c in late)[len(late) // 2]
+        signals.append({
+            "type": "late", "severity": "low", "title": "Договоры публикуются с опозданием",
+            "text": "%d из %d договоров опубликованы позже 5 рабочих дней после заключения; обычная задержка — %d раб. дней." % (
+                len(late), sum(1 for c in contracts.values() if c["role"] == "disposer"), median),
+            "contract": None, "date": recent[0]["published"], "party": None,
+            "amount": None, "ext_ids": [c["ext_id"] for c in recent[:200]],
+        })
+
+    for key, u in unmatched.items():
+        if u["sum"] < 1000:
+            continue
+        if u["refs"]:
+            text = "%d плат. на %s грн по договору %s — его нет среди опубликованных на портале." % (
+                u["count"], _fmt(u["sum"]), ", ".join(u["refs"][:3]) + (" и др." if len(u["refs"]) > 3 else ""))
+        else:
+            text = "%d плат. на %s грн, в назначении платежа договор не указан." % (u["count"], _fmt(u["sum"]))
+        signals.append({
+            "type": "no_contract", "severity": "medium" if u["sum"] >= 50_000 else "low",
+            "title": "Оплата без опубликованного договора",
+            "text": text,
+            "contract": None, "date": None, "party": u["name"], "party_code": u["code"],
+            "amount": _money(u["sum"]), "ext_ids": u["ext_ids"][:200],
+        })
+
+    # Concentration: one supplier holds a large share of what the organisation contracted.
+    totals_by_party = defaultdict(float)
+    for c in contracts.values():
+        if c["role"] == "disposer":
+            totals_by_party[c["party_code"] or c["party_name"]] += c["value"]
+    grand = sum(totals_by_party.values())
+    if grand and len(totals_by_party) > 2:
+        for party, amount in sorted(totals_by_party.items(), key=lambda kv: -kv[1])[:3]:
+            if amount / grand >= CONCENTRATION_SHARE:
+                name = next((c["party_name"] for c in contracts.values() if (c["party_code"] or c["party_name"]) == party), party)
+                signals.append({
+                    "type": "concentration", "severity": "low", "title": "Высокая доля одного контрагента",
+                    "text": "%.0f%% всей суммы договоров организации (%s из %s грн)." % (amount / grand * 100, _fmt(amount), _fmt(grand)),
+                    "contract": None, "date": None, "party": name, "amount": _money(amount), "ext_ids": [],
+                })
+
+    signals.sort(key=lambda s: (SEVERITY_ORDER[s["severity"]], -(s["amount"] or 0)))
+    counts = defaultdict(int)
+    for s in signals:
+        counts[s["severity"]] += 1
+
+    disposer = [c for c in contracts.values() if c["role"] == "disposer"]
+    rows = sorted(contracts.values(), key=lambda c: (c["date"] or "", c["number"]), reverse=True)
+    return {
+        "contracts": [_row(c) for c in rows],
+        "signals": signals,
+        "counts": dict(counts),
+        "totals": {
+            "contracts": len(disposer),
+            "value": _money(sum(c["value"] for c in disposer)),
+            "acts": _money(sum(c["acts_sum"] for c in disposer)),
+            "paid": _money(sum(c["paid"] for c in disposer)),
+            "payments": len(payments),
+            "matched": matched_count,
+            "unmatched_sum": _money(sum(u["sum"] for u in unmatched.values())),
+        },
+    }
+
+
+def _row(c):
+    keep = ("id", "ext_id", "role", "number", "date", "published", "from", "to", "party_code", "party_name",
+            "party_type", "subject", "cpv", "currency", "value0", "value", "price_up", "tender", "reason",
+            "prozorro", "acts_sum", "paid", "flags", "late_days", "addendums", "acts", "payments")
+    return {k: c[k] for k in keep}
+
+
+def _fmt(x):
+    return "{:,.2f}".format(float(x or 0)).replace(",", " ").replace(".", ",")
+
+
+def _dmy(iso):
+    return "%s.%s.%s" % (iso[8:10], iso[5:7], iso[:4]) if iso else "—"
