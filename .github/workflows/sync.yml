@@ -3,6 +3,7 @@ name: Синхронізація і публікація
 on:
   schedule:
     - cron: "17 */6 * * *"   # кожні 6 годин (час UTC)
+    - cron: "*/10 * * * *"   # нові організації, додані в додатку
   push:
     branches: [main]
   workflow_dispatch:
@@ -31,7 +32,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The 10-minute schedule only looks for organisations added in the app; the
+  # full refresh below runs only when there are some, and on every other trigger.
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Перевірити нові організації
+        id: check
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          if [ "$SCHEDULE" = "*/10 * * * *" ]; then
+            python3 sync/sync.py --check
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
   update:
+    needs: check
+    if: needs.check.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     environment:
