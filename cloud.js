@@ -133,6 +133,21 @@ export async function myExports() {
     .sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 30);
 }
 
+// ---- organisations added from the app -------------------------------------------
+// watchlist/{edrpou} is publicly readable: GitHub Actions reads it without
+// credentials and puts the organisation on the watch list.
+
+export function requestOrg(code, name) {
+  return fb.setDoc(fb.doc(db, 'watchlist', code), {
+    edrpou: code, name: (name || '').slice(0, 300), note: '', addedBy: current.uid, addedAt: fb.serverTimestamp(),
+  });
+}
+
+export async function watchlist() {
+  const snap = await fb.getDocs(fb.collection(db, 'watchlist'));
+  return snap.docs.map((d) => Object.assign({}, d.data(), { addedAt: toDate(d.data().addedAt) }));
+}
+
 // ---- the documents database ---------------------------------------------------------
 //
 // orgs/{edrpou}                      company card, totals, last upload
