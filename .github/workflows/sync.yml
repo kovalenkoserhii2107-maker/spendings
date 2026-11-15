@@ -1,31 +1,31 @@
-name: Обновление данных и публикация сайта
+name: Синхронізація і публікація
 
 on:
   schedule:
-    - cron: "17 */6 * * *"   # каждые 6 часов (время UTC)
+    - cron: "17 */6 * * *"   # кожні 6 годин (час UTC)
   push:
     branches: [main]
   workflow_dispatch:
     inputs:
       add:
-        description: "Добавить организацию: код ЄДРПОУ"
+        description: "Додати організацію: код ЄДРПОУ"
         required: false
         default: ""
       note:
-        description: "Заметка к добавляемой организации (необязательно)"
+        description: "Примітка до організації (необовʼязково)"
         required: false
         default: ""
       remove:
-        description: "Убрать организацию: код ЄДРПОУ"
+        description: "Прибрати організацію: код ЄДРПОУ"
         required: false
         default: ""
 
 permissions:
-  contents: write   # сохранять обновлённые данные в репозиторий
-  pages: write      # публиковать сайт
+  contents: write   # зберігати оновлені дані в репозиторій
+  pages: write      # публікувати сайт
   id-token: write
 
-# Запуски идут строго по одному: два одновременных переписали бы данные друг друга.
+# Запуски йдуть по одному: два одночасні переписали б дані один одного.
 concurrency:
   group: site
   cancel-in-progress: false
@@ -44,26 +44,30 @@ jobs:
         with:
           ref: main
 
-      - name: Обновить данные с spending.gov.ua
+      - name: Оновити дані з spending.gov.ua
         env:
           ADD: ${{ inputs.add }}
           NOTE: ${{ inputs.note }}
           REMOVE: ${{ inputs.remove }}
         run: python3 sync/sync.py --add "$ADD" --note "$NOTE" --remove "$REMOVE"
 
-      - name: Сохранить данные в репозиторий
+      - name: Зберегти дані в репозиторій
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A data
           if git diff --cached --quiet; then
-            echo "Изменений нет"
+            echo "Змін немає"
           else
-            git commit -m "Обновление данных"
+            git commit -m "Оновлення даних"
             # On a clash in data/ keep what this run has just built.
             git pull --rebase -X theirs
             git push
           fi
+
+      # Version and build id go into the published copy only (not committed).
+      - name: Проставити версію збірки
+        run: python3 tools/stamp.py
 
       - uses: actions/upload-pages-artifact@v5
         with:
