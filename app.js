@@ -89,9 +89,9 @@ function googleMark() {
   return svg;
 }
 
-// The Up&D mark: the same picture as icon.svg and the app icons.
+// The UP&D mark: the same picture as icon.svg and the app icons.
 function logo() {
-  return h('img', { class: 'brand-mark', src: 'icon.svg', alt: 'Up&D', width: 36, height: 36 });
+  return h('img', { class: 'brand-mark', src: 'icon.svg', alt: 'UP&D', width: 36, height: 36 });
 }
 
 // ---- language ---------------------------------------------------------------------
