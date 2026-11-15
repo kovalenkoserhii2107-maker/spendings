@@ -464,7 +464,7 @@ window.I18N = {
     'set.what': 'Що',
 
     'db.title': 'База документів (Firestore)',
-    'db.note': 'Картка компанії, договори зі звіркою, акти, додаткові угоди, платежі з номерами рахунків і накладних, зобовʼязання, звіти й сигнали. Повторне завантаження записує лише нове або змінене.',
+    'db.note': 'Організації, додані до відстеження, потрапляють у базу автоматично, щойно хтось із аналітиків відкриє додаток. Картка компанії, договори зі звіркою, акти, додаткові угоди, платежі з номерами рахунків і накладних, зобовʼязання, звіти й сигнали. Повторне завантаження записує лише нове або змінене.',
     'db.upload': 'Завантажити в базу',
     'db.uploadedAt': 'Завантажено',
     'db.records': 'Записів',
@@ -475,6 +475,9 @@ window.I18N = {
     'db.upToDate': 'База актуальна: {total} записів без змін.',
     'db.failed': 'Не вдалося записати в базу.',
     'db.openConsole': 'Відкрити базу',
+    'db.auto': 'Готую базу: {name}…',
+    'db.autoProgress': 'База: {name} — {done} з {total}',
+    'db.autoDone': 'База оновлена: {name} — записано {n} з {total}.',
 
     'drv.saveContract': 'На Google Диск',
     'drv.saveOrg': 'На Google Диск',
@@ -986,7 +989,7 @@ window.I18N = {
     'set.what': 'What',
 
     'db.title': 'Document database (Firestore)',
-    'db.note': 'Company card, reconciled contracts, acts, addendums, payments with invoice and waybill numbers, liabilities, reports and signals. A repeat upload writes only new or changed records.',
+    'db.note': 'Organisations added to tracking reach the database automatically as soon as an analyst opens the app. Company card, reconciled contracts, acts, addendums, payments with invoice and waybill numbers, liabilities, reports and signals. A repeat upload writes only new or changed records.',
     'db.upload': 'Upload to database',
     'db.uploadedAt': 'Uploaded',
     'db.records': 'Records',
@@ -997,6 +1000,9 @@ window.I18N = {
     'db.upToDate': 'Database is up to date: {total} records unchanged.',
     'db.failed': 'Could not write to the database.',
     'db.openConsole': 'Open database',
+    'db.auto': 'Preparing the database: {name}…',
+    'db.autoProgress': 'Database: {name} — {done} of {total}',
+    'db.autoDone': 'Database updated: {name} — wrote {n} of {total}.',
 
     'drv.saveContract': 'To Google Drive',
     'drv.saveOrg': 'To Google Drive',
