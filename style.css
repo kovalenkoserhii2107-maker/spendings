@@ -271,7 +271,7 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 .toast { max-width: 90vw; padding: 10px 18px; border-radius: 999px; background: #000; color: #fff; font-size: 14px; font-weight: 600; box-shadow: var(--shadow-up); }
 .toast.bad { background: var(--red); }
 
-@media (max-width: 1400px) {
+@media (max-width: 1560px) {
   .nav .ico { display: none; }
   .nav a { padding: 7px 12px; }
 }
