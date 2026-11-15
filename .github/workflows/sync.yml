@@ -1,0 +1,68 @@
+name: Обновление данных и публикация сайта
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"   # каждые 6 часов (время UTC)
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      add:
+        description: "Добавить организацию: код ЄДРПОУ"
+        required: false
+        default: ""
+      note:
+        description: "Заметка к добавляемой организации (необязательно)"
+        required: false
+        default: ""
+      remove:
+        description: "Убрать организацию: код ЄДРПОУ"
+        required: false
+        default: ""
+
+permissions:
+  contents: write   # сохранять обновлённые данные в репозиторий
+  pages: write      # публиковать сайт
+  id-token: write
+
+# Запуски идут строго по одному: два одновременных переписали бы данные друг друга.
+concurrency:
+  group: site
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Обновить данные с spending.gov.ua
+        env:
+          ADD: ${{ inputs.add }}
+          NOTE: ${{ inputs.note }}
+          REMOVE: ${{ inputs.remove }}
+        run: python3 sync/sync.py --add "$ADD" --note "$NOTE" --remove "$REMOVE"
+
+      - name: Сохранить данные в репозиторий
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A data
+          if git diff --cached --quiet; then
+            echo "Изменений нет"
+          else
+            git commit -m "Обновление данных"
+            git pull --rebase
+            git push
+          fi
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: .
+
+      - id: deploy
+        uses: actions/deploy-pages@v5
