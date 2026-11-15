@@ -1036,7 +1036,7 @@ function ring(share) {
 
 function overviewPage() {
   const orgs = state.index.orgs;
-  if (!orgs.length) return [pageHead(t('app.name'), titleGrad(t('ov.title1'), t('ov.title2'))), howToAdd()];
+  if (!orgs.length) return [pageHead(t('app.name'), titleGrad(t('ov.title1'), t('ov.title2'))), addOrgCard()];
   const sum = (key) => orgs.reduce((acc, o) => acc + ((o.totals || {})[key] || 0), 0);
   const value = sum('value'), paid = sum('paid'), acts = sum('acts'), unmatched = sum('unmatched_sum'), contracts = sum('contracts');
   const share = paid + unmatched ? paid / (paid + unmatched) : 0;
@@ -1183,19 +1183,65 @@ function orgGrid(orgs) {
   }));
 }
 
-function howToAdd() {
-  return h('div', { class: 'card pad section' },
+// One-click adding: the request goes to Firestore (watchlist/{edrpou}); GitHub
+// Actions checks for requests every 10 minutes and starts tracking, and the
+// database is filled as soon as the organisation appears here (autoSyncDb).
+function addOrgCard() {
+  const input = h('input', { class: 'input', type: 'text', inputmode: 'numeric', autocomplete: 'off', placeholder: t('addorg.hint'), maxlength: 14, 'aria-label': t('f.edrpou') });
+  const btn = h('button', { class: 'btn btn-dark', type: 'submit' }, t('addorg.button'));
+  const msg = h('div', { class: 'add-msg', role: 'status' });
+  const pending = h('div', { class: 'pending' });
+  const say = (text, cls) => fill(msg, text ? h('p', { class: 'small ' + (cls || 'muted') }, text) : null);
+
+  async function drawPending() {
+    if (!cloud || !state.user) return;
+    try {
+      const tracked = new Set(state.index.orgs.map((o) => o.edrpou));
+      const rows = (await cloud.watchlist()).filter((r) => !tracked.has(r.edrpou)).sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+      fill(pending, rows.length ? [
+        h('h3', { class: 'pending-title' }, t('addorg.pending')),
+        rows.map((r) => h('div', { class: 'pending-row' },
+          h('span', { class: 'chip warn' }, h('i'), t('addorg.waiting')),
+          h('div', null, h('b', null, r.name || t('f.edrpou') + ' ' + r.edrpou), h('div', { class: 'cell-sub' }, join([r.name ? t('f.edrpou') + ' ' + r.edrpou : null, ftime(r.addedAt)])))))] : null);
+    } catch (e) { /* the list is a convenience */ }
+  }
+
+  const form = h('form', {
+    class: 'add-form',
+    onsubmit: async (e) => {
+      e.preventDefault();
+      const code = input.value.replace(/\D/g, '');
+      if (!/^(\d{8}|\d{10})$/.test(code)) { say(t('addorg.bad'), 'bad-text'); input.focus(); return; }
+      if (orgByCode(code)) { fill(msg, h('p', { class: 'small' }, t('addorg.already'), ' ', h('a', { href: '#/org/' + code }, t('addorg.open')))); return; }
+      if (!cloud || !state.user) { say(t('auth.needed'), 'bad-text'); return; }
+      btn.disabled = true;
+      say(t('addorg.checking'));
+      let name = '';
+      try { name = ((await portal('/v2/disposers/' + code)) || {}).orgName || ''; } catch (err) { /* not a fund holder or portal busy: track by code */ }
+      try {
+        await cloud.requestOrg(code, name);
+        input.value = '';
+        say(t('addorg.done', { name: name || code }), 'ok-text');
+        drawPending();
+      } catch (err) {
+        say(t('addorg.failed') + ' ' + (err.message || ''), 'bad-text');
+      } finally {
+        btn.disabled = false;
+      }
+    },
+  }, input, btn);
+
+  drawPending();
+  return h('div', { class: 'card pad section add-card' },
     h('div', { class: 'eyebrow' }, t('add.eyebrow')),
-    h('h2', { class: 'card-title' }, t('add.title')),
-    h('ol', { class: 'steps' },
-      h('li', null, t('add.s1a'), ghLink('actions/workflows/sync.yml', t('add.s1link')), t('add.s1b')),
-      h('li', null, t('add.s2')),
-      h('li', null, t('add.s3'))),
-    h('p', { class: 'muted small', style: 'margin-top:12px' }, t('add.alt'), ghLink('edit/main/data/orgs.json', 'data/orgs.json'), '.'));
+    h('h2', { class: 'card-title' }, t('addorg.title')),
+    form, msg,
+    h('p', { class: 'muted small' }, t('addorg.text')),
+    pending);
 }
 
 function orgsPage() {
-  return [pageHead(t('orgs.eyebrow'), titleGrad(t('orgs.title1'), t('orgs.title2')), t('orgs.lead')), orgGrid(state.index.orgs), howToAdd()];
+  return [pageHead(t('orgs.eyebrow'), titleGrad(t('orgs.title1'), t('orgs.title2')), t('orgs.lead')), addOrgCard(), h('div', { class: 'section' }, orgGrid(state.index.orgs))];
 }
 
 const ORG_TABS = ['contracts', 'signals', 'transaction', 'act', 'addendum', 'liability', 'report', 'profile'];
@@ -1454,7 +1500,6 @@ function methodPage() {
       h('div', { class: 'section-head' }, h('h2', null, t('m.registries'))),
       h('div', { class: 'reg' }, REGISTRIES.map(([key, url, on]) => h('a', { class: 'card pad', href: url, target: '_blank', rel: 'noopener noreferrer', style: 'text-decoration:none' },
         h('b', null, t('reg.' + key + '.name')), h('span', { class: 'muted small' }, t('reg.' + key + '.what')), h('span', { class: 'tag' + (on ? ' ok' : '') }, t('reg.' + key + '.status')))))),
-    howToAdd(),
     h('div', { class: 'table-card section' },
       h('div', { class: 'table-tools' }, h('b', null, t('m.runs')), h('span', { class: 'faint small' }, ghLink('actions', t('m.runsLog')))),
       runs.length ? h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
