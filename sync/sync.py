@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import analysis  # noqa: E402
 import spending  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,6 +32,7 @@ STATE_FILE = os.path.join(DATA, "state.json")
 NAMES_FILE = os.path.join(DATA, "names.json")
 INDEX_FILE = os.path.join(DATA, "index.json")
 FEED_FILE = os.path.join(DATA, "feed.json")
+SIGNALS_FILE = os.path.join(DATA, "signals.json")
 ORG_DIR = os.path.join(DATA, "org")
 
 DOC_KINDS = ("contract", "act", "addendum", "peny")
@@ -279,6 +281,8 @@ def sync_org(entry, org_state, names):
                     break
 
     files = store.save()
+    report = analysis.analyze(list(store.items.values()), edrpou)
+    write_json(os.path.join(store.dir, "analysis.json"), report)
     error = "; ".join(errors)[:1000] if errors else None
     org_state.update(
         backfill_done=True, last_sync_at=now_iso(), status="error" if errors else "ok", error=error
@@ -293,9 +297,12 @@ def sync_org(entry, org_state, names):
         "error": error,
         "stats": store.stats(),
         "files": files,
+        "signals": report["counts"],
+        "totals": report["totals"],
     }
     events = [dict(i, org_edrpou=edrpou, org_name=index_entry["name"]) for i in store.items.values() if i["is_event"]]
-    return index_entry, new_events, error, events
+    signals = [dict(s, org_edrpou=edrpou, org_name=index_entry["name"]) for s in report["signals"]]
+    return index_entry, new_events, error, events, signals
 
 
 def main():
@@ -329,11 +336,11 @@ def main():
             if name not in tracked and re.match(r"^\d{8,10}$", name):
                 shutil.rmtree(os.path.join(ORG_DIR, name))
 
-    index_orgs, feed, new_total, failed = [], [], 0, 0
+    index_orgs, feed, all_signals, new_total, failed = [], [], [], 0, 0
     for entry in watch:
         print("%s %s" % (entry["edrpou"], org_states.get(entry["edrpou"], {}).get("name") or ""), flush=True)
         try:
-            index_entry, new, error, events = sync_org(entry, org_states.setdefault(entry["edrpou"], {}), names)
+            index_entry, new, error, events, signals = sync_org(entry, org_states.setdefault(entry["edrpou"], {}), names)
         except Exception as e:
             traceback.print_exc()
             failed += 1
@@ -347,6 +354,7 @@ def main():
             continue
         index_orgs.append(index_entry)
         feed.extend(events)
+        all_signals.extend(signals)
         new_total += new
         failed += 1 if error else 0
 
@@ -363,6 +371,8 @@ def main():
     write_json(STATE_FILE, state)
     write_json(NAMES_FILE, names)
     write_json(FEED_FILE, {"items": feed[:FEED_SIZE], "total": len(feed)})
+    all_signals.sort(key=lambda x: (analysis.SEVERITY_ORDER[x["severity"]], -(x.get("amount") or 0)))
+    write_json(SIGNALS_FILE, {"items": all_signals})
     write_json(INDEX_FILE, {
         "generated_at": now_iso(),
         "repo": os.environ.get("GITHUB_REPOSITORY") or "",
