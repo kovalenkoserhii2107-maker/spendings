@@ -9,7 +9,12 @@ The first sync of an organisation is a backfill (history, no feed events).
 Every later sync re-reads a short overlapping window; records not seen before
 become feed events.
 
-Usage:  python3 sync/sync.py [--add EDRPOU [--note TEXT]] [--remove EDRPOU]
+Organisations are also added from the app: an analyst's request lands in the
+Firestore collection `watchlist`, which is publicly readable, and every run
+merges new requests into the watch list. `--check` only reports whether such
+requests are waiting (for the 10-minute workflow schedule).
+
+Usage:  python3 sync/sync.py [--add EDRPOU [--note TEXT]] [--remove EDRPOU] [--check]
 """
 import argparse
 import json
@@ -18,6 +23,7 @@ import re
 import shutil
 import sys
 import traceback
+import urllib.request
 from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -34,6 +40,9 @@ INDEX_FILE = os.path.join(DATA, "index.json")
 FEED_FILE = os.path.join(DATA, "feed.json")
 SIGNALS_FILE = os.path.join(DATA, "signals.json")
 ORG_DIR = os.path.join(DATA, "org")
+REMOVED_FILE = os.path.join(DATA, "removed.json")
+REQUESTS_URL = ("https://firestore.googleapis.com/v1/projects/spending-monitor-2122b/"
+                "databases/(default)/documents/watchlist?pageSize=300")
 
 DOC_KINDS = ("contract", "act", "addendum", "peny")
 KINDS = ("transaction",) + DOC_KINDS + ("liability", "report")
@@ -108,6 +117,42 @@ def load_watchlist():
         seen.add(code)
         out.append({"edrpou": code, "note": str(entry.get("note") or "")[:500]})
     return out
+
+
+def app_requests():
+    """Organisations analysts added in the app, as [{"edrpou", "note", "added_at"}].
+
+    Read through the public Firestore REST API, so no credentials are needed.
+    Unreachable Firestore means no requests this time, not a failed run.
+    """
+    out, url = [], REQUESTS_URL
+    try:
+        while url:
+            req = urllib.request.Request(url, headers={"User-Agent": "spending-monitor-sync"})
+            with urllib.request.urlopen(req, context=spending._ctx, timeout=30) as res:
+                page = json.loads(res.read().decode("utf-8"))
+            for doc in page.get("documents", []):
+                f = doc.get("fields", {})
+                code = (f.get("edrpou") or {}).get("stringValue", "")
+                if re.match(r"^\d{8,10}$", code):
+                    out.append({
+                        "edrpou": code,
+                        "note": ((f.get("note") or {}).get("stringValue") or "")[:500],
+                        "added_at": (f.get("addedAt") or {}).get("timestampValue", ""),
+                    })
+            token = page.get("nextPageToken")
+            url = REQUESTS_URL + "&pageToken=" + token if token else None
+    except Exception as e:
+        print("! заявки з додатка недоступні: %s" % e)
+    return out
+
+
+def new_requests(watch, removed):
+    """App requests not on the watch list yet. A code removed by hand stays out
+    unless someone added it again in the app after the removal."""
+    tracked = {w["edrpou"] for w in watch}
+    return [r for r in app_requests()
+            if r["edrpou"] not in tracked and (r["added_at"] or "") > removed.get(r["edrpou"], "")]
 
 
 class OrgStore:
@@ -310,12 +355,26 @@ def main():
     parser.add_argument("--add", default="", help="add an organisation (EDRPOU) to the watch list")
     parser.add_argument("--note", default="", help="note for the organisation being added")
     parser.add_argument("--remove", default="", help="remove an organisation (EDRPOU) from the watch list")
+    parser.add_argument("--check", action="store_true", help="only report whether the app has new requests")
     args = parser.parse_args()
 
     watch = load_watchlist()
+    removed = read_json(REMOVED_FILE, {})
+    if args.check:
+        pending = new_requests(watch, removed)
+        print("Нові організації з додатка: %s" % (", ".join(r["edrpou"] for r in pending) or "немає"))
+        if os.environ.get("GITHUB_OUTPUT"):
+            with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                f.write("run=%s\n" % ("true" if pending else "false"))
+        return
     if args.remove.strip():
         code = clean_edrpou(args.remove)
         watch = [w for w in watch if w["edrpou"] != code]
+        removed[code] = now_iso()
+        write_json(REMOVED_FILE, removed, pretty=True)
+    for req in new_requests(watch, removed):
+        watch.append({"edrpou": req["edrpou"], "note": req["note"]})
+        print("+ %s (додано в додатку)" % req["edrpou"])
     if args.add.strip():
         code = clean_edrpou(args.add)
         if not any(w["edrpou"] == code for w in watch):
