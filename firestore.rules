@@ -1,0 +1,81 @@
+rules_version = '2';
+
+// Firestore security rules of the "Spending Monitor" project.
+// Published in the Firebase console (Firestore -> Rules); keep this file in sync.
+//
+// Any signed-in Google account may use the app. Analysts share one database:
+//   users/{uid}                 profile, written only by its owner
+//   reviews/{id}                status of a signal or contract check
+//   reviews/{id}/history/{e}    append-only audit trail of those checks
+//   exports/{id}                append-only log of uploads to Google Drive
+//   companies/{edrpou}          cached company cards
+//   orgs/{edrpou}               uploaded company documents: the card itself,
+//     /{collection}/{id}        contracts, acts, addendums, penalties, payments,
+//                               liabilities, reports, signals
+//     /meta/{collection}        fingerprints of uploaded records (incremental upload)
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create, update: if isSelf(uid)
+        && request.resource.data.keys().hasOnly(['name', 'email', 'photo', 'lang', 'lastLogin', 'createdAt']);
+      allow delete: if false;
+    }
+
+    match /reviews/{id} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly(['org', 'contract', 'signalType', 'title', 'status', 'comment', 'updatedBy', 'updatedByName', 'updatedAt'])
+        && request.resource.data.status in ['new', 'in_progress', 'resolved', 'false_positive']
+        && request.resource.data.comment is string
+        && request.resource.data.comment.size() <= 4000
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+
+      match /history/{entry} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.by == request.auth.uid
+          && request.resource.data.at == request.time;
+        allow update, delete: if false;
+      }
+    }
+
+    match /exports/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.at == request.time;
+      allow update, delete: if false;
+    }
+
+    match /companies/{edrpou} {
+      allow read: if signedIn();
+      allow write: if signedIn() && edrpou.matches('^[0-9]{8,10}$');
+    }
+
+    match /orgs/{edrpou} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && edrpou.matches('^[0-9]{8,10}$')
+        && request.resource.data.edrpou == edrpou
+        && request.resource.data.uploadedBy == request.auth.uid
+        && request.resource.data.uploadedAt == request.time;
+      allow delete: if false;
+
+      match /{collection}/{id} {
+        allow read: if signedIn();
+        allow create, update: if signedIn()
+          && collection in ['contracts', 'acts', 'addendums', 'penalties', 'payments', 'liabilities', 'reports', 'signals', 'meta'];
+        allow delete: if false;
+      }
+    }
+  }
+}

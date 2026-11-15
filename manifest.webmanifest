@@ -1,0 +1,24 @@
+{
+  "id": "./",
+  "name": "Монітор розрахунків",
+  "short_name": "Монітор",
+  "description": "Комплаєнс-контроль розрахунків за договорами бюджетних організацій (spending.gov.ua).",
+  "lang": "uk",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#EEF2F7",
+  "theme_color": "#EEF2F7",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Сигнали", "url": "./#/signals", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Договори", "url": "./#/contracts", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
