@@ -99,6 +99,7 @@ function syncAll() {
   var index = getJson_(SITE + 'data/tracked/index.json?v=' + started);
   var rows = (index.items || []).filter(function (r) { return (r.viewers || []).indexOf(me) >= 0; });
   var section = sectionFolder_();
+  retype_(props);
   var copied = 0, pending = 0;
   rows.forEach(function (row) {
     var own = !row.owners || row.owners.indexOf(me) >= 0;
@@ -214,6 +215,7 @@ function folder_(parent, name) {
 // Upload in two steps: the content as it is (a Blob goes to UrlFetchApp untouched,
 // so large PDFs do not blow up memory), then the name, folder and description.
 function upload_(blob, name, parent, description) {
+  blob.setContentType(mimeOf_(name, blob));
   var res = drive_('post', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=media&fields=id', blob, true);
   if (res.getResponseCode() !== 200) throw new Error('Drive ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
   var id = JSON.parse(res.getContentText()).id;
@@ -222,6 +224,41 @@ function upload_(blob, name, parent, description) {
   res = drive_('patch', 'https://www.googleapis.com/drive/v3/files/' + id + '?addParents=' + parent + '&removeParents=root&fields=id', meta);
   if (res.getResponseCode() !== 200) throw new Error('Drive ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
   return id;
+}
+
+// Prozorro's storage often answers "text/plain" for PDFs and Word files; Drive then
+// shows them as text. The extension of the document's title is more reliable.
+var MIME = {
+  pdf: 'application/pdf', doc: 'application/msword', rtf: 'application/rtf', txt: 'text/plain',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  odt: 'application/vnd.oasis.opendocument.text', ods: 'application/vnd.oasis.opendocument.spreadsheet',
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', tif: 'image/tiff', tiff: 'image/tiff',
+  zip: 'application/zip', rar: 'application/vnd.rar', '7z': 'application/x-7z-compressed',
+  xml: 'application/xml', html: 'text/html', htm: 'text/html'
+};
+function mimeOf_(name, blob) {
+  var ext = (String(name || '').match(/\.([A-Za-z0-9]+)$/) || [])[1];
+  if (ext && MIME[ext.toLowerCase()]) return MIME[ext.toLowerCase()];
+  var t = blob ? blob.getContentType() : '';
+  return t && t !== 'text/plain' ? t : 'application/octet-stream';
+}
+
+// Once per user: copies made before the fix were stored as "text/plain". Drive cannot
+// change a file's type in place, so they go to the bin and are copied again.
+function retype_(props) {
+  if (props.getProperty('retyped')) return;
+  var all = props.getProperties();
+  Object.keys(all).forEach(function (key) {
+    if (key.indexOf('doc:') !== 0) return;
+    var res = drive_('get', 'https://www.googleapis.com/drive/v3/files/' + all[key] + '?fields=name,mimeType,trashed');
+    if (res.getResponseCode() !== 200) return;
+    var f = JSON.parse(res.getContentText());
+    if (f.trashed || f.mimeType !== 'text/plain' || mimeOf_(f.name) === 'text/plain') return;
+    drive_('patch', 'https://www.googleapis.com/drive/v3/files/' + all[key], { trashed: true });
+    props.deleteProperty(key);
+  });
+  props.setProperty('retyped', '1');
 }
 
 // A small CSV turned into a Google Sheet: conversion happens only in a one-request upload.
