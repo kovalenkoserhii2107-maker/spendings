@@ -54,6 +54,7 @@ const ICONS = {
   logout: ['M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4', 'M16 17l5-5-5-5', 'M21 12H9'],
   money: ['M2 6h20v12H2z', 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M6 12h.01', 'M18 12h.01'],
   phone: ['M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z', 'M11 18h2'],
+  cloud: ['M17.5 19H7a5 5 0 1 1 1.1-9.9A6 6 0 0 1 19.6 11 4 4 0 0 1 17.5 19z', 'M12 12v5', 'M9.5 14.5 12 12l2.5 2.5'],
   star: ['M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z'],
   tender: ['M9 2h6v4H9z', 'M15 4h3a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3', 'M9 12h6', 'M9 16h4'],
 };
@@ -255,6 +256,8 @@ function repoName() {
   const first = location.pathname.split('/')[1];
   return m && first ? `${m[1]}/${first}` : 'kovalenkoserhii2107-maker/spendings';
 }
+// Sole traders' codes come masked ("xxxxxxxxxx") in Treasury payments: show real codes only.
+const realCode = (c) => (c && /^\d{8,10}$/.test(String(c)) ? String(c) : null);
 const ghUrl = (path) => `https://github.com/${repoName()}/${path}`;
 const ghLink = (path, label, cls) => h('a', { class: cls, href: ghUrl(path), target: '_blank', rel: 'noopener noreferrer' }, label);
 const ext = (href, label, cls) => h('a', { class: cls || 'btn btn-sm', href, target: '_blank', rel: 'noopener noreferrer' }, label, icon('ext'));
@@ -556,6 +559,7 @@ const NAV = [
   ['#/method', 'method', 'book', 'nav.method'],
 ];
 const TABBAR = ['tracked', 'contracts', 'payments', 'orgs'];
+const TOPBAR = ['tracked', 'contracts', 'payments', 'orgs', 'prozorro', 'signals']; // desktop; the rest sit under "More"
 
 function badgeFor(key) {
   if (key === 'signals') { const n = riskCount(); return n ? h('em', { class: 'count red' }, n) : null; }
@@ -582,7 +586,8 @@ function shell(route, page) {
       h('a', { class: 'brand', href: '#/' },
         logo(),
         h('span', null, h('b', null, t('app.name')), h('small', null, t('app.tagline')))),
-      h('nav', { class: 'nav', 'aria-label': t('nav.label') }, NAV.map(link)),
+      h('nav', { class: 'nav', 'aria-label': t('nav.label') }, NAV.filter((n) => TOPBAR.includes(n[1])).map(link),
+        h('button', { class: TOPBAR.includes(route) ? '' : 'on', onclick: () => openMore(TOPBAR) }, icon('more'), h('span', null, t('nav.more')), badgeFor('feed'))),
       h('div', { class: 'top-meta' },
         h('span', { class: 'chip' + (failed ? ' warn' : ''), title: last ? t('top.lastCheck', { at: ftime(last.finished_at) }) : '' }, h('i'), last ? ftime(last.finished_at).slice(0, 5) + ' ' + ftime(last.finished_at).slice(11) : '—'),
         langSwitch(),
@@ -592,12 +597,12 @@ function shell(route, page) {
     // Phone layout: the four main sections stay one tap away, the rest sit under "More".
     h('nav', { class: 'tabbar', 'aria-label': t('nav.label') },
       NAV.filter((n) => TABBAR.includes(n[1])).map(([href, key, ico, label]) => h('a', { href, class: route === key ? 'on' : '' }, icon(ico), h('span', null, t(label)), badgeFor(key))),
-      h('button', { class: moreOn ? 'on' : '', onclick: openMore }, icon('more'), h('span', null, t('nav.more')), badgeFor('signals'))),
+      h('button', { class: moreOn ? 'on' : '', onclick: () => openMore(TABBAR) }, icon('more'), h('span', null, t('nav.more')), badgeFor('signals'))),
   ];
 }
 
-function openMore() {
-  const items = NAV.filter((n) => !TABBAR.includes(n[1])).concat([['#/settings', 'settings', 'gear', 'nav.settings']]);
+function openMore(shown) {
+  const items = NAV.filter((n) => !(shown || TABBAR).includes(n[1])).concat([['#/settings', 'settings', 'gear', 'nav.settings']]);
   sheet(h('h2', null, t('nav.more')),
     h('div', { class: 'more-list' }, items.map(([href, key, ico, label]) => h('a', { href, onclick: closeSheet }, icon(ico), h('span', null, t(label)), badgeFor(key)))),
     h('section', null, langSwitch()));
@@ -639,7 +644,7 @@ function itemsTable(items, opts) {
       td(L.date, { class: 'num' }, fdate(it.date)),
       td(L.type, null, h('span', { class: 'kind ' + it.kind }, kindOne(it.kind)), ROLES_FOR[it.kind] ? h('div', { class: 'cell-sub' }, roleLabel(it.role)) : null),
       opts.showOrg && td(L.org, { class: 'w-party' }, h('a', { href: '#/org/' + it.org_edrpou, onclick: (e) => e.stopPropagation() }, it.org_name)),
-      td(L.party, { class: 'w-party' }, h('div', { class: 'cell-main' }, it.cp_name || (it.cp_edrpou ? t('f.edrpou') + ' ' + it.cp_edrpou : '—')), it.cp_name && it.cp_edrpou ? h('div', { class: 'cell-sub num' }, it.cp_edrpou) : null),
+      td(L.party, { class: 'w-party' }, h('div', { class: 'cell-main' }, it.cp_name || (realCode(it.cp_edrpou) ? t('f.edrpou') + ' ' + it.cp_edrpou : '—')), it.cp_name && realCode(it.cp_edrpou) ? h('div', { class: 'cell-sub num' }, it.cp_edrpou) : null),
       td(L.text, { class: 'w-text' }, h('div', { class: 'clamp' }, itemTitle(it) || '—')),
       td(L.sum, { class: 'r num' + (incoming ? ' in' : '') }, it.amount == null ? '' : (incoming ? '+' : '') + money(it.amount, it.currency)));
   });
@@ -1139,7 +1144,7 @@ function contractsTable(rows, opts) {
       },
         td(L.c, null, h('div', { class: 'cell-main' }, '№ ' + (c.number || '—')), h('div', { class: 'cell-sub num' }, fdate(c.date)), c.pz ? h('span', { class: 'tag pz' }, 'Prozorro') : null),
         opts.showOrg && td(L.org, { class: 'w-party' }, c._org.name),
-        td(L.party, { class: 'w-party' }, h('div', { class: 'cell-main' }, c.party_name || '—'), c.party_code ? h('div', { class: 'cell-sub num' }, c.party_code) : null),
+        td(L.party, { class: 'w-party' }, h('div', { class: 'cell-main' }, c.party_name || '—'), realCode(c.party_code) ? h('div', { class: 'cell-sub num' }, c.party_code) : null),
         td(L.subj, { class: 'w-text' }, h('div', { class: 'clamp' }, c.subject || '—')),
         td(L.val, { class: 'r num' }, money(c.value), c.value !== c.value0 ? h('div', { class: 'cell-sub' }, t('dos.was', { v: money(c.value0) })) : null),
         td(L.paid, { class: 'r num' }, c.paid ? money(c.paid) : h('span', { class: 'faint' }, '—')),
@@ -1239,7 +1244,7 @@ function paymentsTable(rows, opts) {
         td(L.date, { class: 'num' }, fdate(i.date)),
         td(L.sum, { class: 'r num' + (incoming ? ' in' : '') }, (incoming ? '+' : '') + money(i.amount, i.currency)),
         opts.showOrg && td(L.org, { class: 'w-party' }, r.org.name),
-        td(L.party, { class: 'w-party' }, h('div', { class: 'cell-main' }, i.cp_name || '—'), i.cp_edrpou ? h('div', { class: 'cell-sub num' }, i.cp_edrpou) : null),
+        td(L.party, { class: 'w-party' }, h('div', { class: 'cell-main' }, i.cp_name || '—'), realCode(i.cp_edrpou) ? h('div', { class: 'cell-sub num' }, i.cp_edrpou) : null),
         td(L.c, null, contractCell(r.contract)),
         td(L.text, { class: 'w-text' }, h('div', { class: 'clamp' }, i.title || '—'), (i.data || {}).kekv ? h('div', { class: 'cell-sub' }, t('f.kekv') + ' ' + i.data.kekv) : null));
     }))));
@@ -1491,12 +1496,57 @@ async function openTender(org, tid) {
 // GitHub Actions re-reads every picked contract each run and writes data/tracked/<id>.json:
 // the contract, its procedure, payment stages, Treasury payments and the history of changes.
 
-const isTracked = (id) => { const x = state.tracked.get(id); return !!(x && x.active !== false); };
+// A contract is "mine" when I follow it; the team sees every contract someone follows.
+const myUid = () => (state.user && state.user.uid) || '';
+const followersOf = (x) => (x && (x.followers || (x.active !== false && x.addedBy ? [x.addedBy] : []))) || [];
+const isTracked = (id) => followersOf(state.tracked.get(id)).includes(myUid());
+const isWatched = (id) => followersOf(state.tracked.get(id)).length > 0;
 const trackedRow = (id) => (state.trackedIndex.items || []).find((r) => r.key === id) || null;
 function getTrackedSeen() { try { return localStorage.getItem('trackedSeen') || ''; } catch (e) { return ''; } }
 function setTrackedSeen(v) { try { localStorage.setItem('trackedSeen', v); } catch (e) { /* not kept */ } }
 const trackedChanged = () => (state.trackedIndex.items || []).filter((r) => isTracked(r.key) && r.changed_at && r.changed_at > getTrackedSeen() && (r.last_event || {}).type !== 'tracked').length;
 const loadTracked = (id) => cached(`tracked:${id}:${ver()}`, () => getJSON(`data/tracked/${id}.json`, ver()));
+
+// ---- copies on the user's own Google Drive ----
+//
+// Prozorro's file storage sends no CORS headers, so the page cannot download documents.
+// An Apps Script web app does it instead: it runs as the user who opens it, so each
+// user connects once and their own 6-hour trigger copies the documents of the contracts
+// they follow into their own Drive (drive.file: it sees only the files it created).
+const DRIVE_APP = 'https://script.google.com/macros/s/AKfycbyGE6qLrjHqN63qsgMfml0MjGbLBKaubOb66TOh3o7HiEY3cEW8OsG0Ha4BrroRlMTx/exec';
+const DRIVE_FOLDER = 'Монітор розрахунків — договори на контролі';
+const driveState = { connected: undefined, at: null };
+async function loadDriveState() {
+  if (!cloud || !state.user) return;
+  try {
+    driveState.at = await cloud.driveScriptConnected();
+    driveState.connected = !!driveState.at;
+  } catch (e) { driveState.connected = undefined; }
+  softRender();
+}
+function connectDrive() {
+  if (!cloud || !state.user) { toast(t('auth.needed'), { bad: true }); return; }
+  window.open(DRIVE_APP + '?uid=' + encodeURIComponent(myUid()) + '&lang=' + LANG, '_blank', 'noopener');
+  cloud.markDriveScript().then(() => { driveState.connected = true; driveState.at = new Date(); softRender(); }).catch(() => {});
+}
+const driveFolderLink = (label, cls) => ext('https://drive.google.com/drive/search?q=' + encodeURIComponent('"' + DRIVE_FOLDER + '"'), label, cls);
+// A short call to action where it matters, nothing once the Drive is connected.
+function driveBanner() {
+  if (driveState.connected !== false) return null;
+  return h('div', { class: 'notice drive-notice section' }, icon('cloud'),
+    h('div', null, h('b', null, t('gs.bannerTitle')), h('div', { class: 'small' }, t('gs.bannerText'))),
+    h('button', { class: 'btn btn-dark btn-sm', onclick: connectDrive }, t('gs.connect')));
+}
+function driveCard() {
+  const on = driveState.connected;
+  return h('div', { class: 'card pad section' },
+    h('h2', { class: 'card-title' }, t('tr.drive')),
+    h('p', { class: 'muted' }, on ? t('gs.onText') : t('gs.lead')),
+    h('div', { class: 'row after' },
+      on ? driveFolderLink(t('tr.openDrive')) : null,
+      h('button', { class: 'btn btn-sm' + (on ? '' : ' btn-dark'), onclick: connectDrive }, on ? t('gs.reconnect') : t('gs.connect'))),
+    on && driveState.at ? h('p', { class: 'faint small', style: 'margin-top:8px' }, t('gs.connectedAt', { at: ftime(driveState.at) })) : null);
+}
 
 // "Take on control" for one Prozorro contract (c) of a procedure (t0) seen from an organisation.
 function trackButton(org, t0, c) {
@@ -1510,7 +1560,8 @@ function trackButton(org, t0, c) {
       const sup = (c.suppliers || [])[0] || {};
       try {
         await cloud.track(c.id, { org: org.edrpou, tid: t0.tid, sp: c.sp || '', title: c.title || t0.title || '', number: c.number || '', buyer: t0.buyer_name || (org.role !== 'supplier' ? org.name : ''), supplier: sup.name || '' });
-        toast(t('tr.added'));
+        if (driveState.connected === false) toast(t('tr.addedNoDrive'), { sticky: true, action: { label: t('gs.connect'), run: connectDrive } });
+        else toast(t('tr.added'));
         btn.replaceWith(h('a', { class: 'btn btn-sm tracked-on', href: '#/tracked/' + c.id, onclick: closeSheet }, icon('star'), t('tr.onControl')));
       } catch (e) {
         btn.disabled = false;
@@ -1518,7 +1569,8 @@ function trackButton(org, t0, c) {
       }
     },
   }, icon('star'), t('tr.take'));
-  return btn;
+  const others = followersOf(state.tracked.get(c.id)).length;
+  return others ? h('span', { class: 'row' }, btn, h('span', { class: 'faint small' }, t('tr.othersFollow', { n: others }))) : btn;
 }
 
 // What the history entry says, in the reader's language.
@@ -1547,11 +1599,12 @@ function trackedBar(tt, acts) {
 
 function trackedPage(preset) {
   const seen = getTrackedSeen();
-  const picks = [...state.tracked.entries()].filter(([, v]) => v.active !== false);
-  const rows = picks.map(([id, v]) => ({ id, pick: v, row: trackedRow(id) }))
+  const picks = [...state.tracked.entries()].filter(([id]) => isWatched(id));
+  const rows = picks.map(([id, v]) => ({ id, pick: v, row: trackedRow(id), mine: followersOf(v).includes(myUid()) }))
     .sort((a, b) => ((b.row && b.row.changed_at) || '9').localeCompare((a.row && a.row.changed_at) || '9') || (b.pick.addedAt || 0) - (a.pick.addedAt || 0));
-  const sum = (k) => rows.reduce((acc, r) => acc + ((r.row && r.row.totals && r.row.totals[k]) || 0), 0);
-  const f = { which: preset || '', q: '' };
+  const f = { which: preset || '', q: '', scope: rows.some((r) => r.mine) || !rows.length ? 'mine' : 'all' };
+  const inScope = () => rows.filter((r) => f.scope === 'all' || r.mine);
+  const sum = (k) => inScope().reduce((acc, r) => acc + ((r.row && r.row.totals && r.row.totals[k]) || 0), 0);
   const list = h('div');
   const tests = {
     left: (r) => r.row && r.row.totals.left > 1,
@@ -1561,9 +1614,10 @@ function trackedPage(preset) {
   };
   function draw() {
     const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
-    const shown = rows.filter((r) => (!f.which || tests[f.which](r))
+    const shown = inScope().filter((r) => (!f.which || tests[f.which](r))
       && (!words.length || words.every((w) => [r.pick.number, r.pick.title, r.pick.buyer, r.pick.supplier, r.pick.tid, r.row && r.row.buyer_name, r.row && r.row.supplier_name].join(' ').toLowerCase().includes(w))));
-    fill(list, shown.length ? h('div', { class: 'tr-list' }, shown.map(trackedCard)) : h('div', { class: 'card empty' }, h('b', null, rows.length ? t('pz.none') : t('tr.emptyTitle')), rows.length ? t('sigs.changeFilter') : t('tr.emptyText')));
+    fill(list, shown.length ? h('div', { class: 'tr-list' }, shown.map(trackedCard)) : h('div', { class: 'card empty' }, h('b', null, inScope().length ? t('pz.none') : t('tr.emptyTitle')), inScope().length ? t('sigs.changeFilter') : t('tr.emptyText')));
+    fillHead();
   }
   function trackedCard(r) {
     const x = r.row, p = r.pick, tt = (x && x.totals) || {};
@@ -1577,6 +1631,7 @@ function trackedPage(preset) {
       h('h3', null, (x ? x.number : p.number) && (x ? x.number : p.number) !== '—' ? t('dos.heading', { n: x ? x.number : p.number, date: fdate(x && x.signed) }) : t('pz.draftContract')),
       h('div', { class: 'cell-sub' }, join([(x && x.buyer_name) || p.buyer, (x && x.supplier_name) || p.supplier], ' → ')),
       h('div', { class: 'clamp muted small' }, (x && x.title) || p.title || ''),
+      !r.mine ? h('div', { class: 'faint small' }, t('tr.followedBy', { n: followersOf(p).length })) : null,
       x ? [h('div', { class: 'facts' },
         h('div', null, h('small', null, t('pz.contractValue')), h('b', { class: 'num' }, mshort(tt.value))),
         h('div', null, h('small', null, t('tr.paid')), h('b', { class: 'num' }, mshort(tt.paid))),
@@ -1586,22 +1641,27 @@ function trackedPage(preset) {
         : h('p', { class: 'muted small' }, t('tr.pendingText')));
   }
   const q = h('input', { class: 'input', type: 'search', placeholder: t('tr.searchHint'), 'aria-label': t('ui.search'), oninput: () => { f.q = q.value; draw(); } });
-  const n = (k) => rows.filter(tests[k]).length;
+  const n = (k) => inScope().filter(tests[k]).length;
+  const tiles = h('div', { class: 'tiles section' });
+  const filters = h('div');
+  function fillHead() {
+    fill(tiles,
+      h('div', { class: 'stat tint-violet' }, h('small', null, t('tr.tContracts')), h('b', { class: 'num' }, ni.format(inScope().length))),
+      h('div', { class: 'stat' }, h('small', null, t('tr.tValue')), h('b', { class: 'num' }, mshort(sum('value')))),
+      h('div', { class: 'stat tint-blue' }, h('small', null, t('tr.paid')), h('b', { class: 'num' }, mshort(sum('paid')))),
+      h('div', { class: 'stat tint-yellow' }, h('small', null, t('tr.left')), h('b', { class: 'num' }, mshort(sum('left'))), sum('overdue') > 1 ? h('span', { class: 'sub' }, t('tr.overdueN', { sum: mshort(sum('overdue')) })) : null));
+    fill(filters, pills([['', t('ui.all'), inScope().length], ['left', t('tr.fLeft'), n('left')], ['overdue', t('tr.fOverdue'), n('overdue')], ['changed', t('tr.fChanged'), n('changed')], ['pending', t('tr.pending'), n('pending')]].filter((p) => p[0] === '' || p[2] || p[0] === f.which),
+      f.which, (v) => { f.which = v; draw(); }));
+  }
+  const scope = pills([['mine', t('tr.mine'), rows.filter((r) => r.mine).length], ['all', t('tr.team'), rows.length]], f.scope, (v) => { f.scope = v; f.which = ''; draw(); });
   draw();
   return [
     pageHead(t('tr.eyebrow'), titleGrad(t('tr.title1'), t('tr.title2')), t('tr.lead'),
-      trackedChanged() ? h('button', { class: 'btn', onclick: () => { setTrackedSeen(new Date().toISOString().slice(0, 10) + 'T99'); render(); } }, icon('check'), t('tr.markSeen')) : null),
-    h('div', { class: 'tiles section' },
-      h('div', { class: 'stat tint-violet' }, h('small', null, t('tr.tContracts')), h('b', { class: 'num' }, ni.format(rows.length))),
-      h('div', { class: 'stat' }, h('small', null, t('tr.tValue')), h('b', { class: 'num' }, mshort(sum('value')))),
-      h('div', { class: 'stat tint-blue' }, h('small', null, t('tr.paid')), h('b', { class: 'num' }, mshort(sum('paid')))),
-      h('div', { class: 'stat tint-yellow' }, h('small', null, t('tr.left')), h('b', { class: 'num' }, mshort(sum('left'))), sum('overdue') > 1 ? h('span', { class: 'sub' }, t('tr.overdueN', { sum: mshort(sum('overdue')) })) : null)),
-    h('div', { class: 'table-card section' },
-      h('div', { class: 'table-tools' },
-        pills([['', t('ui.all'), rows.length], ['left', t('tr.fLeft'), n('left')], ['overdue', t('tr.fOverdue'), n('overdue')], ['changed', t('tr.fChanged'), n('changed')], ['pending', t('tr.pending'), n('pending')]].filter((p) => p[0] === '' || p[2]),
-          f.which, (v) => { f.which = v; draw(); }),
-        q),
-      list),
+      h('div', { class: 'row' }, scope,
+        trackedChanged() ? h('button', { class: 'btn', onclick: () => { setTrackedSeen(new Date().toISOString().slice(0, 10) + 'T99'); render(); } }, icon('check'), t('tr.markSeen')) : null)),
+    driveBanner(),
+    tiles,
+    h('div', { class: 'table-card section' }, h('div', { class: 'table-tools' }, filters, q), list),
     h('p', { class: 'muted small section' }, t('tr.howTo')),
   ];
 }
@@ -1629,13 +1689,13 @@ function trackedDossier(id) {
     note.value = (pick && pick.note) || '';
     const saveNote = h('button', {
       class: 'btn btn-sm', onclick: async () => {
-        try { await cloud.setTracked(id, { note: note.value.trim(), active: pick ? pick.active !== false : true }); toast(t('rv.saved')); } catch (e) { toast(e.message, { bad: true }); }
+        try { await cloud.setTrackedNote(id, note.value.trim()); toast(t('rv.saved')); } catch (e) { toast(e.message, { bad: true }); }
       },
     }, icon('check'), t('ui.save'));
     const off = h('button', {
       class: 'btn btn-sm', onclick: async () => {
         if (!confirm(t('tr.offConfirm'))) return;
-        try { await cloud.setTracked(id, { note: (pick && pick.note) || '', active: false }); toast(t('tr.offDone')); location.hash = '#/tracked'; } catch (e) { toast(e.message, { bad: true }); }
+        try { await cloud.untrack(id); toast(t('tr.offDone')); location.hash = '#/tracked'; } catch (e) { toast(e.message, { bad: true }); }
       },
     }, t('tr.off'));
     const payTable = (list) => h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
@@ -1692,15 +1752,12 @@ function trackedDossier(id) {
       h('div', { class: 'grid-2 section' },
         h('div', { class: 'card pad' }, h('h2', { class: 'card-title' }, t('pz.contractDocs')), docList(c.docs)),
         h('div', { class: 'card pad' }, h('h2', { class: 'card-title' }, t('pz.tenderDocs')), docList(t0.docs))),
-      h('div', { class: 'card pad section' },
-        h('h2', { class: 'card-title' }, t('tr.drive')),
-        h('p', { class: 'muted' }, t('tr.driveText')),
-        h('div', { class: 'row' }, ext('https://drive.google.com/drive/search?q=' + encodeURIComponent(t('tr.driveFolder')), t('tr.openDrive')), h('a', { class: 'btn btn-sm', href: '#/settings' }, t('tr.driveSetup')))),
+      driveCard(),
       h('div', { class: 'card pad section' },
         h('h2', { class: 'card-title' }, t('tr.note')),
         h('div', { class: 'review-form' }, h('label', { class: 'field grow' }, note), saveNote),
         h('p', { class: 'muted small' }, pick ? join([t('tr.addedBy', { who: pick.addedByName || '—', at: ftime(pick.addedAt) }), s.payments_checked ? t('tr.checked', { at: fdate(s.payments_checked) }) : null]) : ''),
-        h('div', { class: 'row' }, off)));
+        h('div', { class: 'row' }, isTracked(id) ? off : trackButton(org || { edrpou: s.org }, { tid: s.tid, title: t0.title, buyer_name: t0.buyer_name }, c))));
   })();
   return box;
 }
@@ -2120,11 +2177,7 @@ function settingsPage() {
     h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('db.title')), h('p', { class: 'muted small' }, t('db.note')), dbBox),
     h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('set.drive')), h('p', { class: 'muted small' }, t('set.driveNote')),
       h('div', { class: 'row' }, h('button', { class: 'btn', onclick: (e) => openDriveFolder(e.currentTarget) }, icon('drive'), t('drv.openFolder')))),
-    h('div', { class: 'card pad section', id: 'drive-script' }, h('h2', { class: 'card-title' }, t('gs.title')), h('p', { class: 'muted' }, t('gs.lead')),
-      h('ol', { class: 'steps' }, ['gs.step1', 'gs.step2', 'gs.step3', 'gs.step4'].map((k) => h('li', null, t(k)))),
-      h('div', { class: 'row' },
-        ghLink('blob/main/tools/drive-sync.gs', t('gs.code'), 'btn'),
-        ext('https://script.google.com/home/projects/create', t('gs.open'), 'btn btn-dark'))),
+    h('div', { id: 'drive-script' }, driveCard()),
     h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('set.exports')), exportsBox),
   ];
 }
@@ -2412,6 +2465,7 @@ async function boot() {
         if (user) {
           cloud.watchReviews((map) => { state.reviews = map; softRender(); });
           cloud.watchTracked((map) => { state.tracked = map; softRender(); });
+          loadDriveState();
           autoSyncDb();
           if (!was) setTimeout(showInstallBanner, 1200);
         } else {

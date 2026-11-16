@@ -321,7 +321,7 @@ def sync_tracked():
             traceback.print_exc()
             if not old:
                 continue
-            snap = dict(old, error=str(e)[:500])
+            snap = dict(old, error=str(e)[:500], followers=req.get("followers") or [], note=req.get("note") or "")
         else:
             snap.pop("error", None)
         write_json(path, snap)

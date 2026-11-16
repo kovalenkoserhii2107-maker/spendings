@@ -74,7 +74,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .nav::-webkit-scrollbar { display: none; }
 .nav a { display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px; border-radius: 999px; font-size: 14px; font-weight: 700; white-space: nowrap; text-decoration: none; color: #2B2B2B; transition: background .2s ease, color .2s ease; }
 .nav a:hover { background: var(--soft); }
-.nav a.on { background: #000; color: #fff; }
+.nav a.on, .nav button.on { background: #000; color: #fff; }
+.nav button { display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px; border: 0; border-radius: 999px; background: none; font: inherit; font-size: 14px; font-weight: 700; color: #2B2B2B; cursor: pointer; white-space: nowrap; }
+.nav button:hover { background: var(--soft); }
 .count { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--yellow); color: #3A2A00; font-size: 11.5px; font-weight: 800; font-style: normal; }
 .nav a.on .count { background: #fff; color: #000; }
 .count.red { background: var(--red); color: #fff; }
@@ -164,6 +166,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ---------- таблицы ---------- */
 .table-card { overflow: hidden; border-radius: var(--r); background: #fff; box-shadow: var(--shadow); }
 .table-tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; padding: 14px 16px; border-bottom: .5px solid var(--line); }
+.table-tools > input[type=search] { flex: 1 1 220px; min-width: 180px; }
 .scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 th { padding: 10px 12px; color: var(--muted); font-size: 11.5px; font-weight: 800; letter-spacing: .05em; text-align: left; text-transform: uppercase; white-space: nowrap; background: #FBFCFD; border-bottom: .5px solid var(--line); }
@@ -245,9 +248,9 @@ td.w-text { min-width: 200px; }
 .money-row .bad { background: var(--red-bg); }
 .money-row .bad b { color: var(--red); }
 .explain { display: grid; gap: 8px; }
-.explain div { display: flex; gap: 10px; padding: 12px 14px; border-radius: 14px; background: var(--soft); font-size: 14px; }
-.explain div.high { background: var(--red-bg); }
-.explain div.medium { background: #FFF7D1; }
+.explain > div { display: flex; gap: 10px; padding: 12px 14px; border-radius: 14px; background: var(--soft); font-size: 14px; }
+.explain > div.high { background: var(--red-bg); }
+.explain > div.medium { background: #FFF7D1; }
 .timeline { position: relative; display: grid; gap: 2px; padding-left: 22px; }
 .timeline::before { content: ""; position: absolute; left: 7px; top: 8px; bottom: 8px; width: 2px; border-radius: 2px; background: #E6EAF0; }
 .ev { position: relative; display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 8px 10px; border-radius: 12px; font-size: 14px; }
@@ -277,7 +280,7 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 .pz-st.ok { background: var(--green-bg); color: var(--green); }
 .pz-st.off { background: var(--soft); color: var(--faint); }
 .clamp1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; max-width: 420px; }
-.explain div.pay { background: var(--green-bg); }
+.explain > div.pay { background: var(--green-bg); }
 .sheet h4 { margin: 14px 0 8px; font-size: 13px; font-weight: 800; }
 .pz-contract { padding: 16px; border-radius: 18px; background: #fff; box-shadow: var(--shadow); }
 .pz-contract h3 { margin: 8px 0 6px; color: var(--text); font-size: 17px; letter-spacing: -.01em; text-transform: none; }
@@ -469,3 +472,7 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
 }
 .nowrap { white-space: nowrap; }
 .steps { margin: 4px 0 14px; padding-left: 20px; display: grid; gap: 6px; }
+.drive-notice { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; background: #E0F4F1; color: #0B4F46; }
+.drive-notice > div { flex: 1; min-width: 220px; }
+.drive-notice .ico { width: 24px; height: 24px; flex: none; }
+.card .row.after { margin-top: 12px; }

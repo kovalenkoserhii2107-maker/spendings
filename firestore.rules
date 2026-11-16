@@ -16,8 +16,9 @@ rules_version = '2';
 //   watchlist/{edrpou}          organisations added from the app (role: buyer or
 //                               supplier); public read so GitHub Actions can pick
 //                               them up without credentials
-//   tracked/{contractId}        contracts on control (Prozorro contract id); public
-//                               read for GitHub Actions; switched off, never deleted
+//   tracked/{contractId}        contracts on control (Prozorro contract id) with the
+//                               uids that follow them; public read for GitHub Actions;
+//                               switched off when nobody follows, never deleted
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() {
@@ -26,11 +27,22 @@ service cloud.firestore {
     function isSelf(uid) {
       return signedIn() && request.auth.uid == uid;
     }
+    // A user may add or remove only themselves among a contract's followers,
+    // and the contract stays on control while anyone follows it.
+    function followersOk() {
+      // Contracts picked before followers existed belong to whoever picked them.
+      let before = resource.data.get('followers', resource.data.get('active', true) ? [resource.data.addedBy] : []).toSet();
+      let after = request.resource.data.followers.toSet();
+      return request.resource.data.followers is list
+        && request.resource.data.followers.size() <= 200
+        && after.difference(before).union(before.difference(after)).hasOnly([request.auth.uid])
+        && request.resource.data.active == (request.resource.data.followers.size() > 0);
+    }
 
     match /users/{uid} {
       allow read: if signedIn();
       allow create, update: if isSelf(uid)
-        && request.resource.data.keys().hasOnly(['name', 'email', 'photo', 'lang', 'lastLogin', 'createdAt']);
+        && request.resource.data.keys().hasOnly(['name', 'email', 'photo', 'lang', 'lastLogin', 'createdAt', 'driveScript']);
       allow delete: if false;
     }
 
@@ -83,7 +95,8 @@ service cloud.firestore {
     match /tracked/{id} {
       allow read: if true;
       allow create: if signedIn() && id.matches('^[0-9a-f]{32}$')
-        && request.resource.data.keys().hasOnly(['org', 'tid', 'sp', 'title', 'number', 'buyer', 'supplier', 'note', 'active', 'addedBy', 'addedByName', 'addedAt', 'updatedBy', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['org', 'tid', 'sp', 'title', 'number', 'buyer', 'supplier', 'note', 'active', 'followers', 'addedBy', 'addedByName', 'addedAt', 'updatedBy', 'updatedAt'])
+        && request.resource.data.followers == [request.auth.uid]
         && request.resource.data.org is string && request.resource.data.org.matches('^[0-9]{8,10}$')
         && request.resource.data.tid is string && request.resource.data.tid.matches('^UA-[0-9A-Za-z-]{10,40}$')
         && request.resource.data.note is string && request.resource.data.note.size() <= 500
@@ -91,9 +104,10 @@ service cloud.firestore {
         && request.resource.data.active is bool
         && request.resource.data.addedBy == request.auth.uid
         && request.resource.data.addedAt == request.time;
-      // Switching off or on, editing the note; who added it and when stay as they were.
+      // Following or leaving (only oneself), editing the note; who added it and when stay.
       allow update: if signedIn()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['note', 'active', 'updatedBy', 'updatedAt'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['note', 'active', 'followers', 'updatedBy', 'updatedAt'])
+        && followersOk()
         && request.resource.data.note is string && request.resource.data.note.size() <= 500
         && request.resource.data.active is bool
         && request.resource.data.updatedBy == request.auth.uid

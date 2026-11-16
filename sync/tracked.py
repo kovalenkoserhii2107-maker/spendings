@@ -32,7 +32,7 @@ HISTORY_SIZE = 300
 
 
 def requests_from_app():
-    """Active contracts on control: [{"key", "org", "tid", "sp", "note", "addedAt"}]."""
+    """Contracts someone follows: [{"key", "org", "tid", "sp", "note", "addedAt", "followers"}]."""
     out, url = [], URL
     while url:
         req = urllib.request.Request(url, headers={"User-Agent": "spending-monitor-sync"})
@@ -43,8 +43,12 @@ def requests_from_app():
             f = doc.get("fields", {})
             val = lambda k: (f.get(k) or {}).get("stringValue") or ""
             active = (f.get("active") or {}).get("booleanValue", True)
-            if KEY_RE.match(key) and active and val("tid"):
-                out.append({"key": key, "org": val("org"), "tid": val("tid"), "sp": val("sp"),
+            followers = [v.get("stringValue") for v in ((f.get("followers") or {}).get("arrayValue") or {}).get("values", [])
+                         if v.get("stringValue")]
+            if "followers" not in f and active and val("addedBy"):
+                followers = [val("addedBy")]  # picked before contracts had followers
+            if KEY_RE.match(key) and followers and val("tid"):
+                out.append({"key": key, "org": val("org"), "tid": val("tid"), "sp": val("sp"), "followers": followers,
                             "note": val("note")[:500], "addedAt": (f.get("addedAt") or {}).get("timestampValue", "")})
         token = page.get("nextPageToken")
         url = URL + "&pageToken=" + token if token else None
@@ -222,6 +226,7 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     stages, due_now = schedule(value, signed, tender.get("milestones") or [], acts, today.isoformat())
     snap = {
         "key": key, "org": req["org"], "tid": req["tid"], "tender_id": tender_id, "sp": sp, "note": req.get("note") or "",
+        "followers": req.get("followers") or [],
         "added_at": req.get("addedAt") or "",
         "tender": tender, "contract": contract, "payments": pays, "acts": acts,
         "acts_sum": round(sum(a.get("amount") or 0 for a in acts), 2),
@@ -248,4 +253,5 @@ def index_row(s):
         "method": t.get("method"), "totals": s["totals"], "changed_at": s.get("changed_at"),
         "last_event": (s.get("history") or [{}])[0], "docs": len(c.get("docs") or []) + len(t.get("docs") or []),
         "note": s.get("note") or "", "added_at": s.get("added_at") or "",
+        "followers": s.get("followers") or [],  # Firebase uids; the Drive script copies a user's own
     }

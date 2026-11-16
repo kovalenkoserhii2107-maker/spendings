@@ -158,27 +158,60 @@ export function watchTracked(cb) {
   }, () => cb(new Map()));
 }
 
+// Contracts picked before followers existed belong to whoever picked them.
+const followersOf = (d) => d.followers || (d.active !== false && d.addedBy ? [d.addedBy] : []);
+
+// Follow a contract: create it with oneself as the only follower, or join its followers.
 export async function track(id, info) {
   const ref = fb.doc(db, 'tracked', id);
-  const old = await fb.getDoc(ref);
-  if (old.exists()) {
-    return fb.updateDoc(ref, { active: true, note: old.data().note || '', updatedBy: current.uid, updatedAt: fb.serverTimestamp() });
-  }
   const clip = (v, n) => String(v || '').slice(0, n);
-  return fb.setDoc(ref, {
-    org: info.org, tid: info.tid, sp: clip(info.sp, 40), title: clip(info.title, 500), number: clip(info.number, 100),
-    buyer: clip(info.buyer, 300), supplier: clip(info.supplier, 300), note: '', active: true,
-    addedBy: current.uid, addedByName: clip(current.displayName || current.email, 200), addedAt: fb.serverTimestamp(),
+  return fb.runTransaction(db, async (tx) => {
+    const old = await tx.get(ref);
+    if (old.exists()) {
+      const d = old.data();
+      const followers = [...new Set(followersOf(d).concat(current.uid))];
+      tx.update(ref, { followers, active: true, note: d.note || '', updatedBy: current.uid, updatedAt: fb.serverTimestamp() });
+      return;
+    }
+    tx.set(ref, {
+      org: info.org, tid: info.tid, sp: clip(info.sp, 40), title: clip(info.title, 500), number: clip(info.number, 100),
+      buyer: clip(info.buyer, 300), supplier: clip(info.supplier, 300), note: '', active: true, followers: [current.uid],
+      addedBy: current.uid, addedByName: clip(current.displayName || current.email, 200), addedAt: fb.serverTimestamp(),
+    });
   });
 }
 
-export function setTracked(id, fields) {
-  return fb.updateDoc(fb.doc(db, 'tracked', id), Object.assign({}, fields, { updatedBy: current.uid, updatedAt: fb.serverTimestamp() }));
+// Stop following; the contract leaves control when nobody follows it any more.
+export function untrack(id) {
+  const ref = fb.doc(db, 'tracked', id);
+  return fb.runTransaction(db, async (tx) => {
+    const old = await tx.get(ref);
+    if (!old.exists()) return;
+    const d = old.data();
+    const followers = followersOf(d).filter((u) => u !== current.uid);
+    tx.update(ref, { followers, active: followers.length > 0, note: d.note || '', updatedBy: current.uid, updatedAt: fb.serverTimestamp() });
+  });
 }
 
-export async function watchlist() {
-  const snap = await fb.getDocs(fb.collection(db, 'watchlist'));
-  return snap.docs.map((d) => Object.assign({}, d.data(), { addedAt: toDate(d.data().addedAt) }));
+export function setTrackedNote(id, note) {
+  const ref = fb.doc(db, 'tracked', id);
+  return fb.runTransaction(db, async (tx) => {
+    const old = await tx.get(ref);
+    if (!old.exists()) return;
+    const followers = followersOf(old.data());
+    tx.update(ref, { note: String(note || '').slice(0, 500), followers, active: followers.length > 0, updatedBy: current.uid, updatedAt: fb.serverTimestamp() });
+  });
+}
+
+export const uid = () => (current ? current.uid : null);
+
+// The Drive copy script (an Apps Script web app run as the user) is connected once per user.
+export async function driveScriptConnected() {
+  const snap = await fb.getDoc(fb.doc(db, 'users', current.uid));
+  return snap.exists() && snap.data().driveScript ? toDate(snap.data().driveScript) : null;
+}
+export function markDriveScript() {
+  return fb.setDoc(fb.doc(db, 'users', current.uid), { driveScript: fb.serverTimestamp() }, { merge: true });
 }
 
 // ---- the documents database ---------------------------------------------------------
