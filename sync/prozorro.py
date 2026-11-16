@@ -68,11 +68,26 @@ def _get(url, data=None, timeout=60, retries=4):
     raise last
 
 
-def search_page(edrpou, page):
-    """One page of the buyer's procedures: [tenderID], newest first."""
+def search_page(edrpou, page, role="buyer"):
+    """One page of an organisation's procedures: [tenderID], newest first.
+
+    A buyer is searched among procedures (`buyer[]`); a supplier among
+    contracts (`supplier[]` on /search/contracts), whose contractID is the
+    tenderID plus a suffix ("UA-2026-10-15-007639-a-a1").
+    """
+    if role == "supplier":
+        body = urllib.parse.urlencode({"supplier[]": edrpou}).encode()
+        res = _get("%s/search/contracts?page=%d" % (SITE, page), data=body)
+        out = []
+        for r in res.get("data") or []:
+            m = re.match(r"^(UA-\d{4}-\d{2}-\d{2}-\d{6}-[a-z])-", r.get("contractID") or "")
+            if m and m.group(1) not in out:
+                out.append(m.group(1))
+        return out, len(res.get("data") or [])
     body = urllib.parse.urlencode({"buyer[]": edrpou}).encode()
     res = _get("%s/search/tenders?page=%d" % (SITE, page), data=body)
-    return [r["tenderID"] for r in res.get("data") or [] if r.get("tenderID")]
+    ids = [r["tenderID"] for r in res.get("data") or [] if r.get("tenderID")]
+    return ids, len(res.get("data") or [])
 
 
 def internal_id(tender_id):
@@ -124,6 +139,7 @@ def documents(docs):
     out = []
     for d in latest.values():
         out.append({k: v for k, v in {
+            "id": d.get("id") or "",
             "title": d.get("title") or "",
             "type": d.get("documentType") or "",
             "url": d.get("url") or "",
@@ -203,6 +219,7 @@ def compact_tender(t, contracts):
         "category": t.get("mainProcurementCategory") or "",
         "cpv": "%s %s" % (cls.get("id") or "", cls.get("description") or "") if cls else "",
         "buyer": _org(t.get("procuringEntity")).get("code"),
+        "buyer_name": _org(t.get("procuringEntity")).get("name"),
         "rationale": t.get("procurementMethodRationale") or "",
         "bids": t.get("numberOfBids"),
         "lots": lots or None,
@@ -250,7 +267,14 @@ RUN_BUDGET_S = 80 * 60   # all organisations together: the workflow stops at 120
 _RUN_STARTED = time.time()
 
 
-def sync(edrpou, tenders, pz_state, log=print):
+def own_contracts(rec, edrpou, role):
+    """A supplier sees only its own contracts of a procedure (other lots go to others)."""
+    if role == "supplier":
+        rec["contracts"] = [c for c in rec.get("contracts") or [] if any(s.get("code") == edrpou for s in c.get("suppliers") or [])]
+    return rec
+
+
+def sync(edrpou, tenders, pz_state, log=print, role="buyer"):
     """Bring `tenders` ({tenderID: record}) up to date. Returns a list of errors.
 
     New procedures found by the search wait in pz_state["queue"], so a long
@@ -265,12 +289,12 @@ def sync(edrpou, tenders, pz_state, log=print):
     found = 0
     try:
         for page in range(1, SEARCH_PAGES + 1):
-            ids = search_page(edrpou, page)
+            ids, raw = search_page(edrpou, page, role)
             new = [i for i in ids if i not in tenders and i not in queued]
             queue.extend(new)
             queued.update(new)
             found += len(new)
-            if len(ids) < 20 or page == SEARCH_PAGES:
+            if raw < 20 or page == SEARCH_PAGES:
                 pz_state["backfilled"] = True
                 break
             if pz_state.get("backfilled") and not new:
@@ -285,7 +309,7 @@ def sync(edrpou, tenders, pz_state, log=print):
         if done >= NEW_PER_RUN or time.time() - started > budget:
             break
         try:
-            rec = load_tender(internal_id(tid))
+            rec = own_contracts(load_tender(internal_id(tid)), edrpou, role)
         except ProzorroError as e:
             if e.status in (403, 404, 410):  # gone or hidden for good: do not retry every run
                 queue.remove(tid)
@@ -309,7 +333,7 @@ def sync(edrpou, tenders, pz_state, log=print):
         if time.time() - started > budget:
             break
         try:
-            fresh = load_tender(rec["id"])
+            fresh = own_contracts(load_tender(rec["id"]), edrpou, role)
         except ProzorroError as e:
             errors.append("%s: %s" % (rec.get("tid"), e))
             continue
@@ -362,7 +386,7 @@ def _days_apart(a, b):
         return 9999
 
 
-def link(tenders, treasury_contracts):
+def link(tenders, treasury_contracts, role="buyer"):
     """Pair Prozorro contracts with the organisation's Treasury contracts.
 
     The supplier must always match. Then, in order of trust: the Treasury record
@@ -372,7 +396,10 @@ def link(tenders, treasury_contracts):
     Treasury the price at signing. Returns {treasury id: (tenderID, contract id)}
     and writes "sp" (the Treasury id) into each linked Prozorro contract.
     """
-    by_tender, rows = {}, [c for c in treasury_contracts if c.get("role") == "disposer"]
+    # A buyer's Treasury contracts name the supplier as the other party; a
+    # supplier's (role "contractor") name the buyer, whose code is always public.
+    side = "contractor" if role == "supplier" else "disposer"
+    by_tender, rows = {}, [c for c in treasury_contracts if c.get("role") == side]
     for c in rows:
         if c.get("prozorro"):
             by_tender.setdefault(c["prozorro"], []).append(c)
@@ -391,8 +418,11 @@ def link(tenders, treasury_contracts):
             if pc.get("sp"):
                 continue
             num = _norm_number(pc.get("number"))
-            codes = {s.get("code") for s in pc.get("suppliers") or [] if s.get("code")}
-            names = [s.get("name") for s in pc.get("suppliers") or [] if len(s.get("code") or "") == 10]
+            if role == "supplier":
+                codes, names = {t.get("buyer")}, []
+            else:
+                codes = {s.get("code") for s in pc.get("suppliers") or [] if s.get("code")}
+                names = [s.get("name") for s in pc.get("suppliers") or [] if len(s.get("code") or "") == 10]
             amount = (pc.get("value") or {}).get("amount")
             pool = by_tender.get(t["tid"], []) if rule == 1 else rows
             for c in pool:

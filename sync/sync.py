@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import analysis  # noqa: E402
 import prozorro  # noqa: E402
+import tracked  # noqa: E402
 import spending  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -42,6 +43,8 @@ FEED_FILE = os.path.join(DATA, "feed.json")
 SIGNALS_FILE = os.path.join(DATA, "signals.json")
 ORG_DIR = os.path.join(DATA, "org")
 REMOVED_FILE = os.path.join(DATA, "removed.json")
+TRACKED_DIR = os.path.join(DATA, "tracked")
+TENDERS, TREASURY = {}, {}  # per organisation, filled while syncing, read by the contracts on control
 REQUESTS_URL = ("https://firestore.googleapis.com/v1/projects/spending-monitor-2122b/"
                 "databases/(default)/documents/watchlist?pageSize=300")
 
@@ -107,7 +110,11 @@ def clean_edrpou(value):
 
 
 def load_watchlist():
-    """The watch list, de-duplicated, as [{"edrpou", "note"}]."""
+    """The watch list, de-duplicated, as [{"edrpou", "note", "role"}].
+
+    "role" is "buyer" (a fund holder: its procurement and payments out) or
+    "supplier" (its contracts with many buyers and payments in).
+    """
     seen, out = set(), []
     for entry in read_json(ORGS_FILE, []):
         if isinstance(entry, str):
@@ -118,7 +125,8 @@ def load_watchlist():
                 print("! пропускаю некорректный код в orgs.json: %r" % entry.get("edrpou"))
             continue
         seen.add(code)
-        out.append({"edrpou": code, "note": str(entry.get("note") or "")[:500]})
+        out.append({"edrpou": code, "note": str(entry.get("note") or "")[:500],
+                    "role": "supplier" if entry.get("role") == "supplier" else "buyer"})
     return out
 
 
@@ -141,6 +149,7 @@ def app_requests():
                     out.append({
                         "edrpou": code,
                         "note": ((f.get("note") or {}).get("stringValue") or "")[:500],
+                        "role": "supplier" if (f.get("role") or {}).get("stringValue") == "supplier" else "buyer",
                         "added_at": (f.get("addedAt") or {}).get("timestampValue", ""),
                     })
             token = page.get("nextPageToken")
@@ -256,7 +265,7 @@ def save_prozorro(org_dir, tenders):
     return sorted(groups, reverse=True)
 
 
-def sync_prozorro(edrpou, org_dir, org_state, report):
+def sync_prozorro(edrpou, org_dir, org_state, report, role="buyer"):
     """Procurement data for one organisation, linked to its Treasury contracts.
 
     Writes the files, marks linked contracts in `report` ("pz": tenderID) and
@@ -267,11 +276,13 @@ def sync_prozorro(edrpou, org_dir, org_state, report):
     errors = []
     if not SKIP_PROZORRO:
         try:
-            errors = prozorro.sync(edrpou, tenders, pz_state, log=lambda m: print(m, flush=True))
+            errors = prozorro.sync(edrpou, tenders, pz_state, log=lambda m: print(m, flush=True), role=role)
         except Exception as e:  # Prozorro trouble must not cost the Treasury data
             traceback.print_exc()
             errors = [str(e)]
-    links = prozorro.link(tenders, report["contracts"])
+    links = prozorro.link(tenders, report["contracts"], role)
+    TENDERS[edrpou] = tenders
+    TREASURY[edrpou] = {c["id"]: c for c in report["contracts"]}
     for c in report["contracts"]:
         if c["id"] in links:
             c["pz"] = links[c["id"]][0]
@@ -288,6 +299,40 @@ def sync_prozorro(edrpou, org_dir, org_state, report):
         "error": "; ".join(errors[:3])[:500] if errors else None,
     }
     return years, summary
+
+
+def sync_tracked():
+    """Re-read every contract on control; returns the summary rows (or None when
+    the list in Firestore could not be read, so the old files stay)."""
+    try:
+        wanted = tracked.requests_from_app()
+    except Exception as e:
+        print("! договори на контролі недоступні: %s" % e)
+        return None
+    rows, keep = [], set()
+    print("Договори на контролі: %d" % len(wanted), flush=True)
+    for req in wanted:
+        path = os.path.join(TRACKED_DIR, req["key"] + ".json")
+        old = read_json(path, None)
+        keep.add(req["key"] + ".json")
+        try:
+            snap = tracked.sync_one(req, old, TENDERS, TREASURY, log=lambda m: print(m, flush=True))
+        except Exception as e:  # keep the last good snapshot and say what failed
+            traceback.print_exc()
+            if not old:
+                continue
+            snap = dict(old, error=str(e)[:500])
+        else:
+            snap.pop("error", None)
+        write_json(path, snap)
+        rows.append(dict(tracked.index_row(snap), error=snap.get("error")))
+    if os.path.isdir(TRACKED_DIR):
+        for name in os.listdir(TRACKED_DIR):
+            if name.endswith(".json") and name != "index.json" and name not in keep:
+                os.remove(os.path.join(TRACKED_DIR, name))
+    rows.sort(key=lambda r: (r.get("changed_at") or "", r["key"]), reverse=True)
+    write_json(os.path.join(TRACKED_DIR, "index.json"), {"generated_at": now_iso(), "items": rows})
+    return rows
 
 
 def streams():
@@ -392,9 +437,15 @@ def sync_org(entry, org_state, names):
 
     files = store.save()
     report = analysis.analyze(list(store.items.values()), edrpou)
-    pz_years, pz_summary = sync_prozorro(edrpou, store.dir, org_state, report)
+    pz_years, pz_summary = sync_prozorro(edrpou, store.dir, org_state, report, entry["role"])
     if pz_years:
         files["prozorro"] = pz_years
+    if not org_state.get("name"):  # a supplier unknown to the Treasury: its name as Prozorro has it
+        for t in TENDERS.get(edrpou, {}).values():
+            for c in t.get("contracts") or []:
+                for s in c.get("suppliers") or []:
+                    if s.get("code") == edrpou and s.get("name"):
+                        org_state["name"] = s["name"]
     write_json(os.path.join(store.dir, "analysis.json"), report)
     error = "; ".join(errors)[:1000] if errors else None
     org_state.update(
@@ -404,6 +455,7 @@ def sync_org(entry, org_state, names):
         "edrpou": edrpou,
         "name": org_state.get("name") or edrpou,
         "note": entry["note"],
+        "role": entry["role"],
         "card": org_state.get("card"),
         "last_sync_at": org_state["last_sync_at"],
         "status": org_state["status"],
@@ -423,6 +475,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--add", default="", help="add an organisation (EDRPOU) to the watch list")
     parser.add_argument("--note", default="", help="note for the organisation being added")
+    parser.add_argument("--role", default="buyer", help="role of the organisation being added: buyer or supplier")
     parser.add_argument("--remove", default="", help="remove an organisation (EDRPOU) from the watch list")
     parser.add_argument("--check", action="store_true", help="only report whether the app has new requests")
     args = parser.parse_args()
@@ -432,9 +485,17 @@ def main():
     if args.check:
         pending = new_requests(watch, removed)
         print("Нові організації з додатка: %s" % (", ".join(r["edrpou"] for r in pending) or "немає"))
+        # Contracts put on control that the site has not got yet.
+        try:
+            done = {r["key"] for r in read_json(os.path.join(TRACKED_DIR, "index.json"), {}).get("items") or []}
+            new_tracked = [r["key"] for r in tracked.requests_from_app() if r["key"] not in done]
+        except Exception as e:
+            print("! договори на контролі недоступні: %s" % e)
+            new_tracked = []
+        print("Нові договори на контролі: %d" % len(new_tracked))
         if os.environ.get("GITHUB_OUTPUT"):
             with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-                f.write("run=%s\n" % ("true" if pending else "false"))
+                f.write("run=%s\n" % ("true" if pending or new_tracked else "false"))
         return
     if args.remove.strip():
         code = clean_edrpou(args.remove)
@@ -442,12 +503,12 @@ def main():
         removed[code] = now_iso()
         write_json(REMOVED_FILE, removed, pretty=True)
     for req in new_requests(watch, removed):
-        watch.append({"edrpou": req["edrpou"], "note": req["note"]})
+        watch.append({"edrpou": req["edrpou"], "note": req["note"], "role": req["role"]})
         print("+ %s (додано в додатку)" % req["edrpou"])
     if args.add.strip():
         code = clean_edrpou(args.add)
         if not any(w["edrpou"] == code for w in watch):
-            watch.append({"edrpou": code, "note": args.note.strip()[:500]})
+            watch.append({"edrpou": code, "note": args.note.strip()[:500], "role": "supplier" if args.role == "supplier" else "buyer"})
     write_json(ORGS_FILE, watch, pretty=True)
 
     state = read_json(STATE_FILE, {})
@@ -475,7 +536,7 @@ def main():
             st = org_states[entry["edrpou"]]
             st.update(status="error", error=str(e)[:1000], last_sync_at=now_iso())
             index_orgs.append({
-                "edrpou": entry["edrpou"], "name": st.get("name") or entry["edrpou"], "note": entry["note"],
+                "edrpou": entry["edrpou"], "name": st.get("name") or entry["edrpou"], "note": entry["note"], "role": entry["role"],
                 "card": st.get("card"), "last_sync_at": st["last_sync_at"], "status": "error",
                 "error": st["error"], "stats": [], "files": {},
             })
@@ -486,6 +547,7 @@ def main():
         new_total += new
         failed += 1 if error else 0
 
+    tracked_rows = sync_tracked()
     feed.sort(key=lambda i: (i["first_seen_at"], i.get("date") or "", i["ext_id"]), reverse=True)
     runs = state.setdefault("runs", [])
     runs.insert(0, {
@@ -507,6 +569,7 @@ def main():
         "orgs": index_orgs,
         "runs": runs[:10],
         "treasury_last_load": spending.last_load(),
+        "tracked": len(tracked_rows if tracked_rows is not None else read_json(os.path.join(TRACKED_DIR, "index.json"), {}).get("items") or []),
     })
     print("Готово: организаций %d, с ошибками %d, новых записей %d" % (len(watch), failed, new_total))
 

@@ -324,6 +324,7 @@ def analyze(items, org_edrpou):
         counts[s["severity"]] += 1
 
     disposer = [c for c in contracts.values() if c["role"] == "disposer"]
+    supplier = [c for c in contracts.values() if c["role"] == "contractor"]
     rows = sorted(contracts.values(), key=lambda c: (c["date"] or "", c["number"]), reverse=True)
     return {
         "contracts": [_row(c) for c in rows],
@@ -337,6 +338,13 @@ def analyze(items, org_edrpou):
             "payments": len(payments),
             "matched": matched_count,
             "unmatched_sum": _money(sum(u["sum"] for u in unmatched.values())),
+            # The same for contracts where the organisation is the supplier.
+            "as_supplier": {
+                "contracts": len(supplier),
+                "value": _money(sum(c["value"] for c in supplier)),
+                "acts": _money(sum(c["acts_sum"] for c in supplier)),
+                "paid": _money(sum(c["paid"] for c in supplier)),
+            },
         },
     }
 
