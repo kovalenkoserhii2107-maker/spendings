@@ -29,6 +29,7 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import analysis  # noqa: E402
+import prozorro  # noqa: E402
 import spending  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -53,6 +54,8 @@ OVERLAP_DAYS = {"transaction": 7, "doc": 5, "liability": 7}
 FEED_SIZE = 500
 NAME_LOOKUPS_PER_ORG = 300
 FILE_RE = re.compile(r"^(%s)-(\d{4}|nodate)\.json$" % "|".join(KINDS))
+PZ_FILE_RE = re.compile(r"^prozorro-(\d{4}|nodate)\.json$")
+SKIP_PROZORRO = os.environ.get("SKIP_PROZORRO") == "1"
 
 
 def now_iso():
@@ -225,6 +228,68 @@ class OrgStore:
         return [acc[k] for k in sorted(acc)]
 
 
+def load_prozorro(org_dir):
+    """The organisation's Prozorro procedures as {tenderID: record}."""
+    out = {}
+    if os.path.isdir(org_dir):
+        for name in os.listdir(org_dir):
+            if PZ_FILE_RE.match(name):
+                for t in read_json(os.path.join(org_dir, name), []):
+                    out[t["tid"]] = t
+    return out
+
+
+def save_prozorro(org_dir, tenders):
+    """Write prozorro-<year>.json files; returns the years, newest first."""
+    groups = {}
+    for t in tenders.values():
+        year = (t.get("date") or "")[:4]
+        groups.setdefault(year if re.match(r"^\d{4}$", year) else "nodate", []).append(t)
+    for year, items in groups.items():
+        items.sort(key=lambda t: (t.get("date") or "", t["tid"]), reverse=True)
+        write_json(os.path.join(org_dir, "prozorro-%s.json" % year), items)
+    if os.path.isdir(org_dir):
+        for name in os.listdir(org_dir):
+            m = PZ_FILE_RE.match(name)
+            if m and m.group(1) not in groups:
+                os.remove(os.path.join(org_dir, name))
+    return sorted(groups, reverse=True)
+
+
+def sync_prozorro(edrpou, org_dir, org_state, report):
+    """Procurement data for one organisation, linked to its Treasury contracts.
+
+    Writes the files, marks linked contracts in `report` ("pz": tenderID) and
+    returns (years, summary for the index).
+    """
+    tenders = load_prozorro(org_dir)
+    pz_state = org_state.setdefault("prozorro", {})
+    errors = []
+    if not SKIP_PROZORRO:
+        try:
+            errors = prozorro.sync(edrpou, tenders, pz_state, log=lambda m: print(m, flush=True))
+        except Exception as e:  # Prozorro trouble must not cost the Treasury data
+            traceback.print_exc()
+            errors = [str(e)]
+    links = prozorro.link(tenders, report["contracts"])
+    for c in report["contracts"]:
+        if c["id"] in links:
+            c["pz"] = links[c["id"]][0]
+    years = save_prozorro(org_dir, tenders) if tenders else []
+    contracts = [c for t in tenders.values() for c in t.get("contracts") or []]
+    pz_state["errors"] = errors[:10]
+    summary = {
+        "tenders": len(tenders),
+        "contracts": len(contracts),
+        "linked": len(links),
+        "value": round(sum((c.get("value") or {}).get("amount") or 0 for c in contracts
+                           if (c.get("value") or {}).get("currency", "UAH") == "UAH"), 2),
+        "queue": len(pz_state.get("queue") or []),
+        "error": "; ".join(errors[:3])[:500] if errors else None,
+    }
+    return years, summary
+
+
 def streams():
     out = [("transaction", "payer"), ("transaction", "recipient")]
     for kind in DOC_KINDS:
@@ -327,6 +392,9 @@ def sync_org(entry, org_state, names):
 
     files = store.save()
     report = analysis.analyze(list(store.items.values()), edrpou)
+    pz_years, pz_summary = sync_prozorro(edrpou, store.dir, org_state, report)
+    if pz_years:
+        files["prozorro"] = pz_years
     write_json(os.path.join(store.dir, "analysis.json"), report)
     error = "; ".join(errors)[:1000] if errors else None
     org_state.update(
@@ -344,6 +412,7 @@ def sync_org(entry, org_state, names):
         "files": files,
         "signals": report["counts"],
         "totals": report["totals"],
+        "prozorro": pz_summary,
     }
     events = [dict(i, org_edrpou=edrpou, org_name=index_entry["name"]) for i in store.items.values() if i["is_event"]]
     signals = [dict(s, org_edrpou=edrpou, org_name=index_entry["name"]) for s in report["signals"]]
