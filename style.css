@@ -477,3 +477,6 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
 .card .row.after { margin-top: 12px; }
 .share-list { display: grid; gap: 6px; margin-top: 10px; }
 .share-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 12px; background: var(--soft); }
+.multi-acc { margin-top: 12px; }
+.multi-acc summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 700; }
+.multi-acc p { margin: 8px 0; }

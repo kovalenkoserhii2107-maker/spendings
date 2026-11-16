@@ -1536,9 +1536,12 @@ async function loadDriveState() {
   } catch (e) { driveState.connected = undefined; }
   softRender();
 }
-function connectDrive() {
+// With several Google accounts signed in, Google cannot pick one for a web app and shows
+// "Unable to open the file"; the /u/N/ form opens it under the N-th account of the browser.
+const driveAppUrl = (n) => (n == null ? DRIVE_APP : DRIVE_APP.replace('/macros/s/', `/macros/u/${n}/s/`)) + '?uid=' + encodeURIComponent(myUid()) + '&lang=' + LANG;
+function connectDrive(n) {
   if (!cloud || !state.user) { toast(t('auth.needed'), { bad: true }); return; }
-  window.open(DRIVE_APP + '?uid=' + encodeURIComponent(myUid()) + '&lang=' + LANG, '_blank', 'noopener');
+  window.open(driveAppUrl(typeof n === 'number' ? n : null), '_blank', 'noopener');
   cloud.markDriveScript().then(() => { driveState.connected = true; driveState.at = new Date(); softRender(); }).catch(() => {});
 }
 const driveFolderLink = (label, cls) => ext('https://drive.google.com/drive/search?q=' + encodeURIComponent('"' + DRIVE_FOLDER + '"'), label, cls);
@@ -1557,7 +1560,10 @@ function driveCard() {
     h('div', { class: 'row after' },
       on ? driveFolderLink(t('tr.openDrive')) : null,
       h('button', { class: 'btn btn-sm' + (on ? '' : ' btn-dark'), onclick: connectDrive }, on ? t('gs.reconnect') : t('gs.connect'))),
-    on && driveState.at ? h('p', { class: 'faint small', style: 'margin-top:8px' }, t('gs.connectedAt', { at: ftime(driveState.at) })) : null);
+    on && driveState.at ? h('p', { class: 'faint small', style: 'margin-top:8px' }, t('gs.connectedAt', { at: ftime(driveState.at) })) : null,
+    h('details', { class: 'multi-acc' }, h('summary', null, t('gs.multiTitle')),
+      h('p', { class: 'muted small' }, t('gs.multiText')),
+      h('div', { class: 'row' }, [0, 1, 2, 3].map((n) => h('button', { class: 'btn btn-sm', onclick: () => connectDrive(n) }, t('gs.account', { n: n + 1 }))))));
 }
 
 // "Take on control" for one Prozorro contract (c) of a procedure (t0) seen from an organisation.

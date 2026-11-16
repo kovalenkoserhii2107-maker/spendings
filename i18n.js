@@ -4,6 +4,9 @@
 
 window.I18N = {
   uk: {
+    'gs.account': 'Обліковий запис {n}',
+    'gs.multiText': 'Так буває, коли в браузері виконано вхід у кілька облікових записів Google. Відкрийте підключення для потрібного запису за його номером у браузері (1 — перший, з яким ви увійшли) або відкрийте сайт у вікні інкогніто, увійшовши лише в один обліковий запис.',
+    'gs.multiTitle': 'Google пише «Не вдається відкрити файл»?',
     'addorg.addedNow': 'Додано до вашого списку: {name}.',
     'org.removed': 'Організацію прибрано з вашого списку.',
     'org.removeConfirm': 'Прибрати організацію з вашого списку? Інші користувачі, якщо її відстежують, і далі її бачать.',
@@ -775,6 +778,9 @@ window.I18N = {
   },
 
   en: {
+    'gs.account': 'Account {n}',
+    'gs.multiText': 'This happens when several Google accounts are signed in to the browser. Open the connection for the right account by its number in the browser (1 is the first you signed in with), or open the site in an incognito window signed in to one account only.',
+    'gs.multiTitle': 'Google says “Unable to open the file”?',
     'addorg.addedNow': 'Added to your list: {name}.',
     'org.removed': 'The organisation was removed from your list.',
     'org.removeConfirm': 'Remove the organisation from your list? Other users who follow it keep it.',
