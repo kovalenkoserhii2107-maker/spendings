@@ -1526,7 +1526,7 @@ const loadTracked = (id) => cached(`tracked:${id}:${ver()}`, () => getJSON(`data
 // user connects once and their own 6-hour trigger copies the documents of the contracts
 // they follow into their own Drive (drive.file: it sees only the files it created).
 const DRIVE_APP = 'https://script.google.com/macros/s/AKfycbyGE6qLrjHqN63qsgMfml0MjGbLBKaubOb66TOh3o7HiEY3cEW8OsG0Ha4BrroRlMTx/exec';
-const DRIVE_FOLDER = 'Монітор розрахунків — договори на контролі';
+const DRIVE_FOLDER = 'Договори на контролі'; // inside «Монітор розрахунків», shared with the site's exports
 const driveState = { connected: undefined, at: null };
 async function loadDriveState() {
   if (!cloud || !state.user) return;
