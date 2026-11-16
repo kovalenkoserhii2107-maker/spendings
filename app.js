@@ -203,7 +203,12 @@ function qs(params) {
 
 // ---- state and site data ----------------------------------------------------------------------------
 
-const state = { index: null, feed: null, signals: null, search: null, user: undefined, reviews: new Map(), tracked: new Map(), trackedIndex: { items: [] }, cloudError: null, dataError: null };
+const state = {
+  index: null, feed: null, signals: null, search: null, user: undefined, reviews: new Map(), trackedIndex: { items: [] }, cloudError: null, dataError: null,
+  // The signed-in user's own lists (Firestore, private) and everything the site has synced.
+  mine: { orgs: new Map(), tracked: new Map(), shared: new Map(), ready: false },
+  all: { orgs: [], feed: [], signals: [] },
+};
 const app = document.getElementById('app');
 let cloud = null;
 
@@ -221,10 +226,19 @@ async function loadAll() {
     getJSON('data/signals.json', ver()).catch(() => ({ items: [] })),
     getJSON('data/tracked/index.json', ver()).catch(() => ({ items: [] })),
   ]);
-  state.feed = feed;
   state.trackedIndex = trackedIndex;
   // The app follows payments under contracts: other checks stay in the data, not on screen.
-  state.signals = { items: (signals.items || []).filter((s) => PAY_SIGNALS.includes(s.type)) };
+  state.all = { orgs: state.index.orgs || [], feed: feed.items || [], signals: (signals.items || []).filter((s) => PAY_SIGNALS.includes(s.type)) };
+  applyScope();
+}
+
+// Each user sees only the organisations in their own list, and the feed and signals of those.
+function applyScope() {
+  if (!state.index) return;
+  const mineOrg = (code) => state.mine.orgs.has(code);
+  state.index.orgs = state.all.orgs.filter((o) => mineOrg(o.edrpou));
+  state.feed = { items: state.all.feed.filter((i) => mineOrg(i.org_edrpou)) };
+  state.signals = { items: state.all.signals.filter((x) => mineOrg(x.org_edrpou)) };
 }
 
 const cache = new Map();
@@ -1492,19 +1506,17 @@ async function openTender(org, tid) {
 
 // ---- contracts on control -------------------------------------------------------------------
 //
-// An analyst picks a contract; the pick lives in Firestore (tracked/{Prozorro contract id}).
-// GitHub Actions re-reads every picked contract each run and writes data/tracked/<id>.json:
-// the contract, its procedure, payment stages, Treasury payments and the history of changes.
-
-// A contract is "mine" when I follow it; the team sees every contract someone follows.
+// Each user picks their own contracts (users/{uid}/tracked/{Prozorro contract id}) and may
+// share one with another registered user (it lands in their users/{uid}/shared). GitHub
+// Actions re-reads every picked contract each run and writes data/tracked/<id>.json: the
+// contract, its procedure, payment stages, Treasury payments and the history of changes.
 const myUid = () => (state.user && state.user.uid) || '';
-const followersOf = (x) => (x && (x.followers || (x.active !== false && x.addedBy ? [x.addedBy] : []))) || [];
-const isTracked = (id) => followersOf(state.tracked.get(id)).includes(myUid());
-const isWatched = (id) => followersOf(state.tracked.get(id)).length > 0;
+const isTracked = (id) => state.mine.tracked.has(id);
+const isSharedWithMe = (id) => !isTracked(id) && state.mine.shared.has(id);
 const trackedRow = (id) => (state.trackedIndex.items || []).find((r) => r.key === id) || null;
 function getTrackedSeen() { try { return localStorage.getItem('trackedSeen') || ''; } catch (e) { return ''; } }
 function setTrackedSeen(v) { try { localStorage.setItem('trackedSeen', v); } catch (e) { /* not kept */ } }
-const trackedChanged = () => (state.trackedIndex.items || []).filter((r) => isTracked(r.key) && r.changed_at && r.changed_at > getTrackedSeen() && (r.last_event || {}).type !== 'tracked').length;
+const trackedChanged = () => (state.trackedIndex.items || []).filter((r) => (isTracked(r.key) || isSharedWithMe(r.key)) && r.changed_at && r.changed_at > getTrackedSeen() && (r.last_event || {}).type !== 'tracked').length;
 const loadTracked = (id) => cached(`tracked:${id}:${ver()}`, () => getJSON(`data/tracked/${id}.json`, ver()));
 
 // ---- copies on the user's own Google Drive ----
@@ -1569,8 +1581,7 @@ function trackButton(org, t0, c) {
       }
     },
   }, icon('star'), t('tr.take'));
-  const others = followersOf(state.tracked.get(c.id)).length;
-  return others ? h('span', { class: 'row' }, btn, h('span', { class: 'faint small' }, t('tr.othersFollow', { n: others }))) : btn;
+  return btn;
 }
 
 // What the history entry says, in the reader's language.
@@ -1599,11 +1610,11 @@ function trackedBar(tt, acts) {
 
 function trackedPage(preset) {
   const seen = getTrackedSeen();
-  const picks = [...state.tracked.entries()].filter(([id]) => isWatched(id));
-  const rows = picks.map(([id, v]) => ({ id, pick: v, row: trackedRow(id), mine: followersOf(v).includes(myUid()) }))
-    .sort((a, b) => ((b.row && b.row.changed_at) || '9').localeCompare((a.row && a.row.changed_at) || '9') || (b.pick.addedAt || 0) - (a.pick.addedAt || 0));
-  const f = { which: preset || '', q: '', scope: rows.some((r) => r.mine) || !rows.length ? 'mine' : 'all' };
-  const inScope = () => rows.filter((r) => f.scope === 'all' || r.mine);
+  const byDate = (a, b) => ((b.row && b.row.changed_at) || '9').localeCompare((a.row && a.row.changed_at) || '9') || (b.pick.addedAt || b.pick.at || 0) - (a.pick.addedAt || a.pick.at || 0);
+  const own = [...state.mine.tracked.entries()].map(([id, v]) => ({ id, pick: v, row: trackedRow(id), mine: true })).sort(byDate);
+  const shared = [...state.mine.shared.entries()].filter(([id]) => !isTracked(id)).map(([id, v]) => ({ id, pick: v, row: trackedRow(id), mine: false })).sort(byDate);
+  const f = { which: preset === 'shared' ? '' : preset || '', q: '', scope: preset === 'shared' || (!own.length && shared.length) ? 'shared' : 'mine' };
+  const inScope = () => (f.scope === 'shared' ? shared : own);
   const sum = (k) => inScope().reduce((acc, r) => acc + ((r.row && r.row.totals && r.row.totals[k]) || 0), 0);
   const list = h('div');
   const tests = {
@@ -1616,7 +1627,8 @@ function trackedPage(preset) {
     const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
     const shown = inScope().filter((r) => (!f.which || tests[f.which](r))
       && (!words.length || words.every((w) => [r.pick.number, r.pick.title, r.pick.buyer, r.pick.supplier, r.pick.tid, r.row && r.row.buyer_name, r.row && r.row.supplier_name].join(' ').toLowerCase().includes(w))));
-    fill(list, shown.length ? h('div', { class: 'tr-list' }, shown.map(trackedCard)) : h('div', { class: 'card empty' }, h('b', null, inScope().length ? t('pz.none') : t('tr.emptyTitle')), inScope().length ? t('sigs.changeFilter') : t('tr.emptyText')));
+    const none = f.scope === 'shared' ? [t('tr.sharedEmptyTitle'), t('tr.sharedEmptyText')] : [t('tr.emptyTitle'), t('tr.emptyText')];
+    fill(list, shown.length ? h('div', { class: 'tr-list' }, shown.map(trackedCard)) : h('div', { class: 'card empty' }, h('b', null, inScope().length ? t('pz.none') : none[0]), inScope().length ? t('sigs.changeFilter') : none[1]));
     fillHead();
   }
   function trackedCard(r) {
@@ -1631,7 +1643,7 @@ function trackedPage(preset) {
       h('h3', null, (x ? x.number : p.number) && (x ? x.number : p.number) !== '—' ? t('dos.heading', { n: x ? x.number : p.number, date: fdate(x && x.signed) }) : t('pz.draftContract')),
       h('div', { class: 'cell-sub' }, join([(x && x.buyer_name) || p.buyer, (x && x.supplier_name) || p.supplier], ' → ')),
       h('div', { class: 'clamp muted small' }, (x && x.title) || p.title || ''),
-      !r.mine ? h('div', { class: 'faint small' }, t('tr.followedBy', { n: followersOf(p).length })) : null,
+      !r.mine ? h('div', { class: 'faint small' }, t('tr.sharedBy', { who: p.fromName || '—' })) : null,
       x ? [h('div', { class: 'facts' },
         h('div', null, h('small', null, t('pz.contractValue')), h('b', { class: 'num' }, mshort(tt.value))),
         h('div', null, h('small', null, t('tr.paid')), h('b', { class: 'num' }, mshort(tt.paid))),
@@ -1653,7 +1665,7 @@ function trackedPage(preset) {
     fill(filters, pills([['', t('ui.all'), inScope().length], ['left', t('tr.fLeft'), n('left')], ['overdue', t('tr.fOverdue'), n('overdue')], ['changed', t('tr.fChanged'), n('changed')], ['pending', t('tr.pending'), n('pending')]].filter((p) => p[0] === '' || p[2] || p[0] === f.which),
       f.which, (v) => { f.which = v; draw(); }));
   }
-  const scope = pills([['mine', t('tr.mine'), rows.filter((r) => r.mine).length], ['all', t('tr.team'), rows.length]], f.scope, (v) => { f.scope = v; f.which = ''; draw(); });
+  const scope = pills([['mine', t('tr.mine'), own.length], ['shared', t('tr.sharedTab'), shared.length]], f.scope, (v) => { f.scope = v; f.which = ''; draw(); });
   draw();
   return [
     pageHead(t('tr.eyebrow'), titleGrad(t('tr.title1'), t('tr.title2')), t('tr.lead'),
@@ -1668,18 +1680,29 @@ function trackedPage(preset) {
 
 function trackedDossier(id) {
   const box = h('div', null, h('div', { class: 'card empty' }, t('ui.loading')));
-  const pick = state.tracked.get(id);
+  const pick = state.mine.tracked.get(id) || state.mine.shared.get(id);
+  const sharedPick = isSharedWithMe(id) ? state.mine.shared.get(id) : null;
   (async () => {
     let s = null;
-    if (trackedRow(id)) {
+    if (pick && trackedRow(id)) {  // only one's own contracts and those shared with one
       try { s = await loadTracked(id); } catch (e) { /* not written yet */ }
     }
     if (!s) {
       fill(box, h('div', { class: 'card pad' },
-        h('h2', { class: 'card-title' }, pick ? t('dos.heading', { n: pick.number || '—', date: '' }) : t('tr.unknown')),
+        h('h2', { class: 'card-title' }, pick ? (pick.number ? '№ ' + pick.number : t('pz.draftContract')) : t('tr.unknown')),
         pick ? h('p', { class: 'muted' }, join([pick.buyer, pick.supplier], ' → ')) : null,
+        sharedPick ? h('p', { class: 'small' }, t('tr.sharedBy', { who: sharedPick.fromName || '—' })) : null,
         h('p', null, pick ? t('tr.pendingText') : t('tr.unknownText')),
-        pick && pick.tid ? ext(pzUrl(pick.tid), t('pz.openOnProzorro')) : null));
+        h('div', { class: 'row after' },
+          pick && pick.tid ? ext(pzUrl(pick.tid), t('pz.openOnProzorro')) : null,
+          sharedPick ? h('button', { class: 'btn btn-sm', onclick: async () => {
+            if (!confirm(t('tr.removeSharedConfirm'))) return;
+            try { await cloud.removeShared(id); location.hash = '#/tracked/shared'; } catch (e) { toast(e.message, { bad: true }); }
+          } }, t('tr.removeShared')) : null,
+          isTracked(id) ? h('button', { class: 'btn btn-sm', onclick: async () => {
+            if (!confirm(t('tr.offConfirm'))) return;
+            try { await cloud.untrack(id); location.hash = '#/tracked'; } catch (e) { toast(e.message, { bad: true }); }
+          } }, t('tr.off')) : null)));
       return;
     }
     const c = s.contract, t0 = s.tender, tt = s.totals;
@@ -1714,7 +1737,7 @@ function trackedDossier(id) {
     fill(box,
       h('div', { class: 'org-head' },
         h('div', null,
-          h('div', { class: 'eyebrow' }, h('a', { href: '#/tracked', style: 'text-decoration:none' }, '← ' + t('nav.tracked'))),
+          h('div', { class: 'eyebrow' }, h('a', { href: sharedPick ? '#/tracked/shared' : '#/tracked', style: 'text-decoration:none' }, '← ' + (sharedPick ? t('tr.sharedTab') : t('nav.tracked')))),
           h('h1', { class: 'org-title' }, t('dos.heading', { n: c.number || '—', date: fdate(c.signed) })),
           h('div', { class: 'chips' },
             h('span', { class: 'pz-st ' + (c.status === 'active' ? 'ok' : 'run') }, label('pzc.', c.status)),
@@ -1752,14 +1775,55 @@ function trackedDossier(id) {
       h('div', { class: 'grid-2 section' },
         h('div', { class: 'card pad' }, h('h2', { class: 'card-title' }, t('pz.contractDocs')), docList(c.docs)),
         h('div', { class: 'card pad' }, h('h2', { class: 'card-title' }, t('pz.tenderDocs')), docList(t0.docs))),
+      isTracked(id) ? shareCard(id) : null,
       driveCard(),
-      h('div', { class: 'card pad section' },
+      isTracked(id) ? h('div', { class: 'card pad section' },
         h('h2', { class: 'card-title' }, t('tr.note')),
         h('div', { class: 'review-form' }, h('label', { class: 'field grow' }, note), saveNote),
-        h('p', { class: 'muted small' }, pick ? join([t('tr.addedBy', { who: pick.addedByName || '—', at: ftime(pick.addedAt) }), s.payments_checked ? t('tr.checked', { at: fdate(s.payments_checked) }) : null]) : ''),
-        h('div', { class: 'row' }, isTracked(id) ? off : trackButton(org || { edrpou: s.org }, { tid: s.tid, title: t0.title, buyer_name: t0.buyer_name }, c))));
+        h('p', { class: 'muted small' }, join([pick && pick.addedAt ? t('tr.addedAt', { at: ftime(pick.addedAt) }) : null, s.payments_checked ? t('tr.checked', { at: fdate(s.payments_checked) }) : null])),
+        h('div', { class: 'row' }, off))
+        : h('div', { class: 'card pad section' },
+          h('h2', { class: 'card-title' }, t('tr.sharedTab')),
+          h('p', { class: 'muted' }, sharedPick ? t('tr.sharedBy', { who: sharedPick.fromName || '—' }) + (sharedPick.at ? ' · ' + ftime(sharedPick.at) : '') : ''),
+          h('div', { class: 'row after' },
+            trackButton(org || { edrpou: s.org }, { tid: s.tid, title: t0.title, buyer_name: t0.buyer_name }, c),
+            sharedPick ? h('button', { class: 'btn btn-sm', onclick: async () => {
+              if (!confirm(t('tr.removeSharedConfirm'))) return;
+              try { await cloud.removeShared(id); location.hash = '#/tracked/shared'; } catch (e) { toast(e.message, { bad: true }); }
+            } }, t('tr.removeShared')) : null)));
   })();
   return box;
+}
+
+// Who else sees this contract: share it by e-mail with another registered user.
+function shareCard(id) {
+  const t1 = state.mine.tracked.get(id) || {};
+  const email = h('input', { class: 'input', type: 'email', placeholder: t('tr.shareHint'), autocomplete: 'off', 'aria-label': t('tr.shareHint') });
+  const msg = h('p', { class: 'small', role: 'status' });
+  const send = h('button', { class: 'btn btn-dark btn-sm', type: 'submit' }, t('tr.share'));
+  const form = h('form', { class: 'add-form', onsubmit: async (e) => {
+    e.preventDefault();
+    const v = email.value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { fill(msg, t('tr.shareBad')); return; }
+    send.disabled = true;
+    try {
+      const to = await cloud.share(id, v);
+      email.value = '';
+      fill(msg, t('tr.shareDone', { who: to.name || v }));
+    } catch (err) {
+      fill(msg, err.code === 'not-found' ? t('tr.shareNotFound') : err.code === 'self' ? t('tr.shareSelf') : t('tr.shareFailed') + ' ' + (err.message || ''));
+    } finally { send.disabled = false; }
+  } }, email, send);
+  const list = (t1.sharedWith || []);
+  return h('div', { class: 'card pad section' },
+    h('h2', { class: 'card-title' }, t('tr.shareTitle')),
+    h('p', { class: 'muted' }, t('tr.shareText')),
+    form, msg,
+    list.length ? h('div', { class: 'share-list' }, list.map((w) => h('div', { class: 'share-row' },
+      h('span', null, h('b', null, w.name || w.email), w.name ? h('span', { class: 'faint small' }, ' ' + w.email) : null),
+      h('button', { class: 'btn btn-sm', onclick: async () => {
+        try { await cloud.unshare(id, w.uid); toast(t('tr.unshared')); } catch (e) { toast(e.message, { bad: true }); }
+      } }, t('tr.unshare'))))) : h('p', { class: 'faint small' }, t('tr.notShared')));
 }
 
 function prozorroPage(preset) {
@@ -1806,9 +1870,9 @@ function orgGrid(orgs) {
   }));
 }
 
-// One-click adding: the request goes to Firestore (watchlist/{edrpou}); GitHub
-// Actions checks for requests every 10 minutes and starts tracking, and the
-// database is filled as soon as the organisation appears here (autoSyncDb).
+// One-click adding: the code goes to the user's own list (users/{uid}/myorgs); GitHub
+// Actions picks up new codes from the anonymous public lists within the hour, and
+// the database is filled as soon as the organisation appears here (autoSyncDb).
 function addOrgCard() {
   const input = h('input', { class: 'input', type: 'text', inputmode: 'numeric', autocomplete: 'off', placeholder: t('addorg.hint'), maxlength: 14, 'aria-label': t('f.edrpou') });
   const btn = h('button', { class: 'btn btn-dark', type: 'submit' }, t('addorg.button'));
@@ -1818,17 +1882,15 @@ function addOrgCard() {
   const rolePick = h('div', { class: 'role-pick' }, pills([['supplier', t('role.supplier')], ['buyer', t('role.buyer')]], role, (v) => { role = v; }));
   const say = (text, cls) => fill(msg, text ? h('p', { class: 'small ' + (cls || 'muted') }, text) : null);
 
-  async function drawPending() {
-    if (!cloud || !state.user) return;
-    try {
-      const tracked = new Set(state.index.orgs.map((o) => o.edrpou));
-      const rows = (await cloud.watchlist()).filter((r) => !tracked.has(r.edrpou)).sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
-      fill(pending, rows.length ? [
-        h('h3', { class: 'pending-title' }, t('addorg.pending')),
-        rows.map((r) => h('div', { class: 'pending-row' },
-          h('span', { class: 'chip warn' }, h('i'), t('addorg.waiting')),
-          h('div', null, h('b', null, r.name || t('f.edrpou') + ' ' + r.edrpou), h('div', { class: 'cell-sub' }, join([t('role.' + (r.role || 'buyer')), r.name ? t('f.edrpou') + ' ' + r.edrpou : null, ftime(r.addedAt)])))))] : null);
-    } catch (e) { /* the list is a convenience */ }
+  // Added to my list but not synced yet: GitHub Actions picks it up within the hour.
+  function drawPending() {
+    const have = new Set(state.all.orgs.map((o) => o.edrpou));
+    const rows = [...state.mine.orgs.values()].filter((r) => !have.has(r.edrpou)).sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+    fill(pending, rows.length ? [
+      h('h3', { class: 'pending-title' }, t('addorg.pending')),
+      rows.map((r) => h('div', { class: 'pending-row' },
+        h('span', { class: 'chip warn' }, h('i'), t('addorg.waiting')),
+        h('div', null, h('b', null, r.name || t('f.edrpou') + ' ' + r.edrpou), h('div', { class: 'cell-sub' }, join([t('role.' + (r.role || 'buyer')), r.name ? t('f.edrpou') + ' ' + r.edrpou : null, ftime(r.addedAt)])))))] : null);
   }
 
   const form = h('form', {
@@ -1837,16 +1899,20 @@ function addOrgCard() {
       e.preventDefault();
       const code = input.value.replace(/\D/g, '');
       if (!/^(\d{8}|\d{10})$/.test(code)) { say(t('addorg.bad'), 'bad-text'); input.focus(); return; }
-      if (orgByCode(code)) { fill(msg, h('p', { class: 'small' }, t('addorg.already'), ' ', h('a', { href: '#/org/' + code }, t('addorg.open')))); return; }
+      if (state.mine.orgs.has(code)) { fill(msg, h('p', { class: 'small' }, t('addorg.already'), ' ', h('a', { href: '#/org/' + code }, t('addorg.open')))); return; }
       if (!cloud || !state.user) { say(t('auth.needed'), 'bad-text'); return; }
       btn.disabled = true;
       say(t('addorg.checking'));
       let name = '';
-      try { name = ((await portal('/v2/disposers/' + code)) || {}).orgName || ''; } catch (err) { /* not a fund holder or portal busy: track by code */ }
+      const synced = state.all.orgs.find((o) => o.edrpou === code);
+      if (synced) name = synced.name;
+      else try { name = ((await portal('/v2/disposers/' + code)) || {}).orgName || ''; } catch (err) { /* not a fund holder or portal busy: track by code */ }
       try {
-        await cloud.requestOrg(code, name, role);
+        await cloud.addOrg(code, name, role);
         input.value = '';
-        say(t('addorg.done', { name: name || code }), 'ok-text');
+        // Already synced for someone else: it is in my list right away.
+        if (synced) fill(msg, h('p', { class: 'small ok-text' }, t('addorg.addedNow', { name }), ' ', h('a', { href: '#/org/' + code }, t('addorg.open'))));
+        else say(t('addorg.done', { name: name || code }), 'ok-text');
         drawPending();
       } catch (err) {
         say(t('addorg.failed') + ' ' + (err.message || ''), 'bad-text');
@@ -1923,7 +1989,11 @@ function orgPage(code, tab, preset) {
       h('div', null, h('div', { class: 'eyebrow' }, h('a', { href: '#/orgs', style: 'text-decoration:none' }, '← ' + t('nav.orgs'))), h('h1', { class: 'org-title' }, org.name),
         h('div', { class: 'chips' }, h('span', { class: 'tag' + (org.role === 'supplier' ? ' pz' : '') }, t('role.' + (org.role || 'buyer'))), h('span', { class: 'chip' }, t('f.edrpou') + ' ' + org.edrpou), syncChip(org),
           orgSignalCounts(org.edrpou).high ? h('span', { class: 'sev high' }, t('org.highRisk', { n: orgSignalCounts(org.edrpou).high })) : null)),
-      h('div', { class: 'org-actions' }, h('div', { class: 'row' }, dbBtn, driveBtn))),
+      h('div', { class: 'org-actions' }, h('div', { class: 'row' }, dbBtn, driveBtn),
+        h('button', { class: 'btn btn-sm', onclick: async () => {
+          if (!confirm(t('org.removeConfirm'))) return;
+          try { await cloud.removeOrg(org.edrpou); toast(t('org.removed')); location.hash = '#/orgs'; } catch (e) { toast(e.message, { bad: true }); }
+        } }, t('org.remove')))),
     org.status === 'error' && org.error ? h('div', { class: 'notice section' }, t('org.partial') + ' ' + org.error) : null,
     org.role === 'supplier' ? supplierTiles(org) : h('div', { class: 'tiles section' },
       h('div', { class: 'stat tint-violet' }, h('small', null, t('org.asBuyer')), h('b', { class: 'num' }, mshort(tt.value)), h('span', { class: 'sub' }, t('org.pcs', { n: ni.format(tt.contracts || 0) }))),
@@ -2424,7 +2494,7 @@ function render() {
   document.title = t('app.name');
   if (state.user === undefined) { fill(app, h('div', { class: 'boot' }, t('ui.loading'))); return; }
   if (!state.user) { fill(app, loginPage()); return; }
-  if (!state.index) { fill(app, h('div', { class: 'boot' }, state.dataError ? [h('b', null, t('err.dataTitle') + ' '), state.dataError] : t('ui.loading'))); return; }
+  if (!state.index || (cloud && !state.mine.ready)) { fill(app, h('div', { class: 'boot' }, state.dataError ? [h('b', null, t('err.dataTitle') + ' '), state.dataError] : t('ui.loading'))); return; }
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const route = parts[0] || '';
   let page, key = route;
@@ -2453,6 +2523,18 @@ function softRender() {
   if (!busy) render();
 }
 
+// Before v0.10 lists were shared: move the user's own contract picks into their list, once.
+let migrated = false;
+async function migrateOnce() {
+  if (migrated || !cloud || !state.user) return;
+  migrated = true;
+  try {
+    const role = (code) => ((state.all.orgs.find((o) => o.edrpou === code) || {}).role || 'buyer');
+    const n = await cloud.migrateLegacy(role);
+    if (n) toast(t('tr.migrated', { n }));
+  } catch (e) { /* nothing to move, or no access: fine */ }
+}
+
 async function boot() {
   render();
   loadAll().then(() => { softRender(); autoSyncDb(); }).catch((e) => { state.dataError = e.message; softRender(); });
@@ -2464,12 +2546,19 @@ async function boot() {
         state.user = user || null;
         if (user) {
           cloud.watchReviews((map) => { state.reviews = map; softRender(); });
-          cloud.watchTracked((map) => { state.tracked = map; softRender(); });
+          cloud.watchMine((m) => {
+            state.mine = m;
+            applyScope();
+            if (m.ready) migrateOnce();
+            softRender();
+          });
           loadDriveState();
           autoSyncDb();
           if (!was) setTimeout(showInstallBanner, 1200);
         } else {
           state.reviews = new Map();
+          state.mine = { orgs: new Map(), tracked: new Map(), shared: new Map(), ready: false };
+          applyScope();
           document.querySelectorAll('.install').forEach((n) => n.remove());
         }
         render();

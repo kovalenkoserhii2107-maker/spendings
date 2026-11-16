@@ -3,8 +3,20 @@ rules_version = '2';
 // Firestore security rules of the "Spending Monitor" project.
 // Published in the Firebase console (Firestore -> Rules); keep this file in sync.
 //
-// Any signed-in Google account may use the app. Analysts share one database:
-//   users/{uid}                 profile, written only by its owner
+// Any Google account may sign in; each user sees only their own organisations
+// and contracts on control:
+//   users/{uid}                 profile, read and written only by its owner
+//     /myorgs/{edrpou}          organisations the user follows (role: buyer|supplier)
+//     /tracked/{contractId}     contracts the user has on control (Prozorro contract
+//                               id), with the user's own note and whom it is shared with
+//     /shared/{contractId}      contracts other users shared with this user: written
+//                               by the sharer (who must have it on control), read and
+//                               removed by the recipient; the sharer may withdraw it
+//   emails/{email}              e-mail -> uid of a registered user, so a contract can
+//                               be shared by e-mail; single reads only, no listing
+//   pub/{hash}                  what GitHub Actions has to sync: organisation codes and
+//                               contract ids under sha256("monitor:" + uid), no names,
+//                               e-mails or uids; public read, written only by its owner
 //   reviews/{id}                status of a signal or contract check
 //   reviews/{id}/history/{e}    append-only audit trail of those checks
 //   exports/{id}                append-only log of uploads to Google Drive
@@ -13,37 +25,95 @@ rules_version = '2';
 //     /{collection}/{id}        contracts, acts, addendums, penalties, payments,
 //                               liabilities, reports, signals
 //     /meta/{collection}        fingerprints of uploaded records (incremental upload)
-//   watchlist/{edrpou}          organisations added from the app (role: buyer or
-//                               supplier); public read so GitHub Actions can pick
-//                               them up without credentials
-//   tracked/{contractId}        contracts on control (Prozorro contract id) with the
-//                               uids that follow them; public read for GitHub Actions;
-//                               switched off when nobody follows, never deleted
+//   watchlist/{edrpou}, tracked/{contractId}   before v0.10: closed; a legacy contract
+//                               is read once by whoever picked it, to move it over
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Only Google sign-in counts: other providers are not part of the app.
     function signedIn() {
-      return request.auth != null;
+      return request.auth != null && request.auth.token.firebase.sign_in_provider == 'google.com';
     }
     function isSelf(uid) {
       return signedIn() && request.auth.uid == uid;
     }
-    // A user may add or remove only themselves among a contract's followers,
-    // and the contract stays on control while anyone follows it.
-    function followersOk() {
-      // Contracts picked before followers existed belong to whoever picked them.
-      let before = resource.data.get('followers', resource.data.get('active', true) ? [resource.data.addedBy] : []).toSet();
-      let after = request.resource.data.followers.toSet();
-      return request.resource.data.followers is list
-        && request.resource.data.followers.size() <= 200
-        && after.difference(before).union(before.difference(after)).hasOnly([request.auth.uid])
-        && request.resource.data.active == (request.resource.data.followers.size() > 0);
+    function myHash() {
+      return hashing.sha256('monitor:' + request.auth.uid).toHexString().lower();
+    }
+    function str(v, n) {
+      return v is string && v.size() <= n;
     }
 
     match /users/{uid} {
-      allow read: if signedIn();
+      allow read: if isSelf(uid);
       allow create, update: if isSelf(uid)
         && request.resource.data.keys().hasOnly(['name', 'email', 'photo', 'lang', 'lastLogin', 'createdAt', 'driveScript']);
       allow delete: if false;
+
+      match /myorgs/{edrpou} {
+        allow read, delete: if isSelf(uid);
+        allow create, update: if isSelf(uid) && edrpou.matches('^([0-9]{8}|[0-9]{10})$')
+          && request.resource.data.keys().hasOnly(['edrpou', 'name', 'role', 'note', 'addedAt'])
+          && request.resource.data.edrpou == edrpou
+          && request.resource.data.role in ['buyer', 'supplier']
+          && str(request.resource.data.name, 300) && str(request.resource.data.note, 500);
+      }
+
+      match /tracked/{cid} {
+        allow read, delete: if isSelf(uid);
+        allow create, update: if isSelf(uid) && cid.matches('^[0-9a-f]{32}$')
+          && request.resource.data.keys().hasOnly(['org', 'tid', 'sp', 'title', 'number', 'buyer', 'supplier', 'note', 'addedAt', 'sharedWith'])
+          && request.resource.data.org.matches('^[0-9]{8,10}$')
+          && request.resource.data.tid.matches('^UA-[0-9A-Za-z-]{10,40}$')
+          && str(request.resource.data.note, 500) && str(request.resource.data.title, 500)
+          && (!('sharedWith' in request.resource.data) || (request.resource.data.sharedWith is list && request.resource.data.sharedWith.size() <= 50));
+      }
+
+      match /shared/{cid} {
+        allow read: if isSelf(uid) || (signedIn() && resource.data.from == request.auth.uid);
+        allow create, update: if signedIn() && request.auth.uid != uid && cid.matches('^[0-9a-f]{32}$')
+          && exists(/databases/$(database)/documents/users/$(request.auth.uid)/tracked/$(cid))
+          && (resource == null || resource.data.from == request.auth.uid)
+          && request.resource.data.keys().hasOnly(['from', 'fromName', 'org', 'tid', 'sp', 'title', 'number', 'buyer', 'supplier', 'at'])
+          && request.resource.data.from == request.auth.uid
+          && request.resource.data.tid.matches('^UA-[0-9A-Za-z-]{10,40}$')
+          && str(request.resource.data.title, 500) && str(request.resource.data.fromName, 200)
+          && request.resource.data.at == request.time;
+        allow delete: if isSelf(uid) || (signedIn() && resource.data.from == request.auth.uid);
+      }
+    }
+
+    match /emails/{email} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create, update, delete: if signedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() == email
+        && (request.method == 'delete' || (request.resource.data.keys().hasOnly(['uid', 'name'])
+          && request.resource.data.uid == request.auth.uid && str(request.resource.data.name, 200)));
+    }
+
+    match /pub/{h} {
+      allow read: if true;
+      allow create, update: if signedIn() && h == myHash()
+        && request.resource.data.keys().hasOnly(['orgs', 'tracked', 'shares', 'at'])
+        && request.resource.data.orgs is list && request.resource.data.orgs.size() <= 300
+        && request.resource.data.tracked is list && request.resource.data.tracked.size() <= 500
+        && request.resource.data.shares is list && request.resource.data.shares.size() <= 1000
+        && request.resource.data.at == request.time;
+      allow delete: if signedIn() && h == myHash();
+    }
+
+    // Before v0.10 lists were shared and public; now closed. Whoever picked a
+    // contract may read it once and switch it off after moving it to their own list.
+    match /watchlist/{edrpou} {
+      allow read, write: if false;
+    }
+    match /tracked/{id} {
+      allow read: if signedIn() && resource.data.addedBy == request.auth.uid;
+      allow update: if signedIn() && resource.data.addedBy == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active', 'updatedBy', 'updatedAt'])
+        && request.resource.data.active == false;
+      allow create, delete: if false;
     }
 
     match /reviews/{id} {
@@ -77,42 +147,6 @@ service cloud.firestore {
     match /companies/{edrpou} {
       allow read: if signedIn();
       allow write: if signedIn() && edrpou.matches('^[0-9]{8,10}$');
-    }
-
-    match /watchlist/{edrpou} {
-      allow read: if true;
-      allow create, update: if signedIn() && edrpou.matches('^([0-9]{8}|[0-9]{10})$')
-        && request.resource.data.keys().hasOnly(['edrpou', 'name', 'note', 'role', 'addedBy', 'addedAt'])
-        && (!('role' in request.resource.data) || request.resource.data.role in ['buyer', 'supplier'])
-        && request.resource.data.edrpou == edrpou
-        && request.resource.data.name is string && request.resource.data.name.size() <= 300
-        && request.resource.data.note is string && request.resource.data.note.size() <= 500
-        && request.resource.data.addedBy == request.auth.uid
-        && request.resource.data.addedAt == request.time;
-      allow delete: if false;
-    }
-
-    match /tracked/{id} {
-      allow read: if true;
-      allow create: if signedIn() && id.matches('^[0-9a-f]{32}$')
-        && request.resource.data.keys().hasOnly(['org', 'tid', 'sp', 'title', 'number', 'buyer', 'supplier', 'note', 'active', 'followers', 'addedBy', 'addedByName', 'addedAt', 'updatedBy', 'updatedAt'])
-        && request.resource.data.followers == [request.auth.uid]
-        && request.resource.data.org is string && request.resource.data.org.matches('^[0-9]{8,10}$')
-        && request.resource.data.tid is string && request.resource.data.tid.matches('^UA-[0-9A-Za-z-]{10,40}$')
-        && request.resource.data.note is string && request.resource.data.note.size() <= 500
-        && request.resource.data.title is string && request.resource.data.title.size() <= 500
-        && request.resource.data.active is bool
-        && request.resource.data.addedBy == request.auth.uid
-        && request.resource.data.addedAt == request.time;
-      // Following or leaving (only oneself), editing the note; who added it and when stay.
-      allow update: if signedIn()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['note', 'active', 'followers', 'updatedBy', 'updatedAt'])
-        && followersOk()
-        && request.resource.data.note is string && request.resource.data.note.size() <= 500
-        && request.resource.data.active is bool
-        && request.resource.data.updatedBy == request.auth.uid
-        && request.resource.data.updatedAt == request.time;
-      allow delete: if false;
     }
 
     match /orgs/{edrpou} {

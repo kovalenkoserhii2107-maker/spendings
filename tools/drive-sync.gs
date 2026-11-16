@@ -5,7 +5,8 @@
  * USER_ACCESSING). Each user opens it once from the site (Settings → Google Drive,
  * ?uid=<their Firebase uid>); it remembers the uid and installs that user's own
  * 6-hour trigger. Every run reads the public site data (data/tracked/*.json) and
- * copies the documents of the contracts this user follows into their Drive:
+ * copies the documents of the contracts this user follows or was given access to
+ * (the site marks them with sha256("monitor:" + uid), never the uid itself):
  *
  *   Монітор розрахунків — договори на контролі /
  *       <замовник> — № <номер> від <дата> / Договір/    signed contract, annexes …
@@ -83,8 +84,9 @@ function syncAll() {
   var props = PropertiesService.getUserProperties();
   var uid = props.getProperty('uid');
   if (!uid) { Logger.log('Не підключено: відкрийте веб-застосунок із додатка.'); return; }
+  var me = hash_(uid);
   var index = getJson_(SITE + 'data/tracked/index.json?v=' + started);
-  var rows = (index.items || []).filter(function (r) { return (r.followers || []).indexOf(uid) >= 0; });
+  var rows = (index.items || []).filter(function (r) { return (r.viewers || []).indexOf(me) >= 0; });
   var root = rootFolder_();
   var copied = 0, pending = 0;
   rows.forEach(function (row) {
@@ -125,12 +127,12 @@ function syncAll() {
 
 function writeRegister_(root, rows) {
   var head = ['Замовник', 'Постачальник', '№ договору', 'Підписано', 'Діє до', 'Статус', 'Ціна, грн', 'Сплачено, грн',
-    'Лишилось, грн', 'Прострочено, грн', 'Остання зміна', 'Prozorro', 'Папка з документами', 'Нотатка'];
+    'Лишилось, грн', 'Прострочено, грн', 'Остання зміна', 'Prozorro', 'Папка з документами'];
   var lines = [head].concat(rows.map(function (r) {
     var t = r.totals || {};
     return [r.buyer_name || '', r.supplier_name || '', r.number || '', r.signed || '', r.end || '', r.status || '',
       t.value || 0, t.paid || 0, t.left || 0, t.overdue || 0, (r.changed_at || '') + ' ' + ((r.last_event || {}).type || ''),
-      'https://prozorro.gov.ua/tender/' + r.tid, r._folder || '', r.note || ''];
+      'https://prozorro.gov.ua/tender/' + r.tid, r._folder || ''];
   }));
   var csv = lines.map(function (l) {
     return l.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(',');
@@ -196,6 +198,11 @@ function upload_(blob, name, parent, description, asType) {
 }
 
 // ---- helpers ------------------------------------------------------------------------------
+
+function hash_(uid) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, 'monitor:' + uid, Utilities.Charset.UTF_8)
+    .map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
+}
 
 function getJson_(url) {
   var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });

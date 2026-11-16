@@ -29,8 +29,8 @@ export async function init({ onUser, lang }) {
   fb.onAuthStateChanged(auth, (user) => {
     current = user;
     if (unwatch && !user) { unwatch(); unwatch = null; }
-    if (unwatchTracked && !user) { unwatchTracked(); unwatchTracked = null; }
-    if (user) saveProfile(user, lang()).catch(() => {});
+    if (!user) { unwatchMine.forEach((u) => u()); unwatchMine = []; myHashValue = null; Object.assign(mine, { orgs: new Map(), tracked: new Map(), shared: new Map(), seen: { orgs: false, tracked: false, shared: false } }); }
+    if (user) { saveProfile(user, lang()).catch(() => {}); registerEmail(user).catch(() => {}); }
     else sessionStorage.removeItem('driveToken');
     onUser(user);
   });
@@ -134,73 +134,135 @@ export async function myExports() {
     .sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 30);
 }
 
-// ---- organisations added from the app -------------------------------------------
-// watchlist/{edrpou} is publicly readable: GitHub Actions reads it without
-// credentials and puts the organisation on the watch list.
+// ---- each user's own lists ------------------------------------------------------------
+//
+// users/{uid}/myorgs/{edrpou}     organisations the user follows
+// users/{uid}/tracked/{cid}       contracts on control, with the user's note and shares
+// users/{uid}/shared/{cid}        contracts other users shared with this user
+// pub/{sha256("monitor:"+uid)}    the same codes and ids without names, notes or e-mails,
+//                                 public, so GitHub Actions knows what to sync
+// Nobody but the owner can read the first three (firestore.rules).
 
-export function requestOrg(code, name, role) {
-  return fb.setDoc(fb.doc(db, 'watchlist', code), {
-    edrpou: code, name: (name || '').slice(0, 300), note: '', role: role === 'supplier' ? 'supplier' : 'buyer', addedBy: current.uid, addedAt: fb.serverTimestamp(),
+const mine = { orgs: new Map(), tracked: new Map(), shared: new Map(), seen: { orgs: false, tracked: false, shared: false } };
+let unwatchMine = [];
+let myHashValue = null;
+
+export async function hashOf(uid) {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('monitor:' + uid));
+  return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Live copies of the three lists; cb gets {orgs, tracked, shared, ready} on every change.
+export function watchMine(cb) {
+  unwatchMine.forEach((u) => u());
+  const base = ['users', current.uid];
+  const emit = () => cb({ orgs: mine.orgs, tracked: mine.tracked, shared: mine.shared, ready: mine.seen.orgs && mine.seen.tracked && mine.seen.shared });
+  const listen = (name) => fb.onSnapshot(fb.collection(db, ...base, name), (snap) => {
+    const m = new Map();
+    snap.forEach((d) => m.set(d.id, Object.assign({}, d.data(), { addedAt: toDate(d.data().addedAt), at: toDate(d.data().at) })));
+    mine[name === 'myorgs' ? 'orgs' : name] = m;
+    mine.seen[name === 'myorgs' ? 'orgs' : name] = true;
+    emit();
+    if (name !== 'shared') schedulePublish();
+  }, () => { mine.seen[name === 'myorgs' ? 'orgs' : name] = true; emit(); });
+  unwatchMine = [listen('myorgs'), listen('tracked'), listen('shared')];
+}
+
+// The anonymous public copy, rewritten whenever the user's lists change.
+let publishTimer = null;
+function schedulePublish() {
+  clearTimeout(publishTimer);
+  publishTimer = setTimeout(() => publish().catch(() => {}), 800);
+}
+async function publish() {
+  if (!current || !mine.seen.orgs || !mine.seen.tracked) return;
+  myHashValue = myHashValue || await hashOf(current.uid);
+  const shares = [];
+  for (const [cid, t] of mine.tracked) for (const w of t.sharedWith || []) if (w.uid) shares.push({ cid, to: await hashOf(w.uid) });
+  await fb.setDoc(fb.doc(db, 'pub', myHashValue), {
+    orgs: [...mine.orgs.values()].map((o) => ({ edrpou: o.edrpou, role: o.role || 'buyer' })),
+    tracked: [...mine.tracked.entries()].map(([cid, t]) => ({ cid, org: t.org, tid: t.tid, sp: t.sp || '' })),
+    shares,
+    at: fb.serverTimestamp(),
   });
 }
 
-// ---- contracts on control -----------------------------------------------------------
-// tracked/{Prozorro contract id} is publicly readable: GitHub Actions re-reads
-// every active contract on each run. A contract is switched off, never deleted.
-
-let unwatchTracked = null;
-export function watchTracked(cb) {
-  if (unwatchTracked) unwatchTracked();
-  unwatchTracked = fb.onSnapshot(fb.collection(db, 'tracked'), (snap) => {
-    const map = new Map();
-    snap.forEach((d) => map.set(d.id, Object.assign({}, d.data(), { addedAt: toDate(d.data().addedAt), updatedAt: toDate(d.data().updatedAt) })));
-    cb(map);
-  }, () => cb(new Map()));
+export function addOrg(code, name, role) {
+  return fb.setDoc(fb.doc(db, 'users', current.uid, 'myorgs', code), {
+    edrpou: code, name: String(name || '').slice(0, 300), role: role === 'supplier' ? 'supplier' : 'buyer', note: '', addedAt: fb.serverTimestamp(),
+  });
+}
+export function removeOrg(code) {
+  return fb.deleteDoc(fb.doc(db, 'users', current.uid, 'myorgs', code));
 }
 
-// Contracts picked before followers existed belong to whoever picked them.
-const followersOf = (d) => d.followers || (d.active !== false && d.addedBy ? [d.addedBy] : []);
-
-// Follow a contract: create it with oneself as the only follower, or join its followers.
-export async function track(id, info) {
-  const ref = fb.doc(db, 'tracked', id);
+export function track(cid, info) {
   const clip = (v, n) => String(v || '').slice(0, n);
-  return fb.runTransaction(db, async (tx) => {
-    const old = await tx.get(ref);
-    if (old.exists()) {
-      const d = old.data();
-      const followers = [...new Set(followersOf(d).concat(current.uid))];
-      tx.update(ref, { followers, active: true, note: d.note || '', updatedBy: current.uid, updatedAt: fb.serverTimestamp() });
-      return;
+  return fb.setDoc(fb.doc(db, 'users', current.uid, 'tracked', cid), {
+    org: info.org, tid: info.tid, sp: clip(info.sp, 40), title: clip(info.title, 500), number: clip(info.number, 100),
+    buyer: clip(info.buyer, 300), supplier: clip(info.supplier, 300), note: '', addedAt: fb.serverTimestamp(), sharedWith: [],
+  });
+}
+// Stop following; whoever it was shared with loses it too.
+export async function untrack(cid) {
+  const t = mine.tracked.get(cid);
+  for (const w of (t && t.sharedWith) || []) await fb.deleteDoc(fb.doc(db, 'users', w.uid, 'shared', cid)).catch(() => {});
+  return fb.deleteDoc(fb.doc(db, 'users', current.uid, 'tracked', cid));
+}
+export function setTrackedNote(cid, note) {
+  return fb.updateDoc(fb.doc(db, 'users', current.uid, 'tracked', cid), { note: String(note || '').slice(0, 500) });
+}
+
+// Share a contract one has on control with another registered user, by e-mail.
+export async function share(cid, email) {
+  const key = String(email || '').trim().toLowerCase();
+  const found = await fb.getDoc(fb.doc(db, 'emails', key));
+  if (!found.exists()) { const e = new Error('not-found'); e.code = 'not-found'; throw e; }
+  const to = found.data();
+  if (to.uid === current.uid) { const e = new Error('self'); e.code = 'self'; throw e; }
+  const t = mine.tracked.get(cid);
+  if (!t) throw new Error('not-tracked');
+  await fb.setDoc(fb.doc(db, 'users', to.uid, 'shared', cid), {
+    from: current.uid, fromName: String(current.displayName || current.email || '').slice(0, 200),
+    org: t.org, tid: t.tid, sp: t.sp || '', title: t.title || '', number: t.number || '', buyer: t.buyer || '', supplier: t.supplier || '',
+    at: fb.serverTimestamp(),
+  });
+  const list = (t.sharedWith || []).filter((w) => w.uid !== to.uid).concat([{ uid: to.uid, name: String(to.name || '').slice(0, 200), email: key }]);
+  await fb.updateDoc(fb.doc(db, 'users', current.uid, 'tracked', cid), { sharedWith: list });
+  return to;
+}
+export async function unshare(cid, uid) {
+  await fb.deleteDoc(fb.doc(db, 'users', uid, 'shared', cid)).catch(() => {});
+  const t = mine.tracked.get(cid);
+  if (t) await fb.updateDoc(fb.doc(db, 'users', current.uid, 'tracked', cid), { sharedWith: (t.sharedWith || []).filter((w) => w.uid !== uid) });
+}
+export function removeShared(cid) {
+  return fb.deleteDoc(fb.doc(db, 'users', current.uid, 'shared', cid));
+}
+
+// The e-mail registry lets others share with this user; written at every sign-in.
+async function registerEmail(user) {
+  if (!user.email || !user.emailVerified) return;
+  await fb.setDoc(fb.doc(db, 'emails', user.email.toLowerCase()), { uid: user.uid, name: String(user.displayName || '').slice(0, 200) });
+}
+
+// Before v0.10 contracts on control lived in a shared collection; move the user's own over once.
+export async function migrateLegacy(roleOf) {
+  const q = fb.query(fb.collection(db, 'tracked'), fb.where('addedBy', '==', current.uid));
+  const snap = await fb.getDocs(q);
+  let moved = 0;
+  for (const d of snap.docs) {
+    const x = d.data();
+    if (x.active === false) continue;
+    if (!mine.tracked.has(d.id)) {
+      await track(d.id, x);
+      if (x.note) await setTrackedNote(d.id, x.note);
     }
-    tx.set(ref, {
-      org: info.org, tid: info.tid, sp: clip(info.sp, 40), title: clip(info.title, 500), number: clip(info.number, 100),
-      buyer: clip(info.buyer, 300), supplier: clip(info.supplier, 300), note: '', active: true, followers: [current.uid],
-      addedBy: current.uid, addedByName: clip(current.displayName || current.email, 200), addedAt: fb.serverTimestamp(),
-    });
-  });
-}
-
-// Stop following; the contract leaves control when nobody follows it any more.
-export function untrack(id) {
-  const ref = fb.doc(db, 'tracked', id);
-  return fb.runTransaction(db, async (tx) => {
-    const old = await tx.get(ref);
-    if (!old.exists()) return;
-    const d = old.data();
-    const followers = followersOf(d).filter((u) => u !== current.uid);
-    tx.update(ref, { followers, active: followers.length > 0, note: d.note || '', updatedBy: current.uid, updatedAt: fb.serverTimestamp() });
-  });
-}
-
-export function setTrackedNote(id, note) {
-  const ref = fb.doc(db, 'tracked', id);
-  return fb.runTransaction(db, async (tx) => {
-    const old = await tx.get(ref);
-    if (!old.exists()) return;
-    const followers = followersOf(old.data());
-    tx.update(ref, { note: String(note || '').slice(0, 500), followers, active: followers.length > 0, updatedBy: current.uid, updatedAt: fb.serverTimestamp() });
-  });
+    if (x.org && !mine.orgs.has(x.org)) await addOrg(x.org, x.buyer || '', roleOf(x.org));
+    await fb.updateDoc(d.ref, { active: false, updatedBy: current.uid, updatedAt: fb.serverTimestamp() });
+    moved++;
+  }
+  return moved;
 }
 
 export const uid = () => (current ? current.uid : null);

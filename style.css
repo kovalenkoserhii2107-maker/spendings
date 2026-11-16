@@ -476,3 +476,5 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
 .drive-notice > div { flex: 1; min-width: 220px; }
 .drive-notice .ico { width: 24px; height: 24px; flex: none; }
 .card .row.after { margin-top: 12px; }
+.share-list { display: grid; gap: 6px; margin-top: 10px; }
+.share-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 12px; background: var(--soft); }

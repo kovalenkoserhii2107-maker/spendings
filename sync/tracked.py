@@ -24,35 +24,71 @@ import analysis
 import prozorro
 import spending
 
-URL = ("https://firestore.googleapis.com/v1/projects/spending-monitor-2122b/"
-       "databases/(default)/documents/tracked?pageSize=300")
+PUB_URL = ("https://firestore.googleapis.com/v1/projects/spending-monitor-2122b/"
+           "databases/(default)/documents/pub?pageSize=300")
 KEY_RE = re.compile(r"^[0-9a-f]{32}$")
+HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 OVERLAP_DAYS = 7
 HISTORY_SIZE = 300
 
 
-def requests_from_app():
-    """Contracts someone follows: [{"key", "org", "tid", "sp", "note", "addedAt", "followers"}]."""
-    out, url = [], URL
+def _val(v):
+    """A Firestore REST value as plain Python."""
+    if "stringValue" in v:
+        return v["stringValue"]
+    if "arrayValue" in v:
+        return [_val(x) for x in v["arrayValue"].get("values", [])]
+    if "mapValue" in v:
+        return {k: _val(x) for k, x in v["mapValue"].get("fields", {}).items()}
+    return next(iter(v.values()), None)
+
+
+def read_pub():
+    """What users follow, from the public, anonymous lists pub/{sha256("monitor:" + uid)}.
+
+    Each user's own lists (names, notes, e-mails) are private; the app copies only
+    organisation codes and contract ids here, under a hash nobody can map back to a
+    person. Returns (orgs, contracts):
+      orgs      {edrpou: {"role", "owners": set of hashes}}
+      contracts {contract id: {"org", "tid", "sp", "owners": set, "viewers": set}}
+    where viewers are the owners plus everyone the contract was shared with.
+    """
+    orgs, contracts, shares, url = {}, {}, [], PUB_URL
     while url:
         req = urllib.request.Request(url, headers={"User-Agent": "spending-monitor-sync"})
         with urllib.request.urlopen(req, context=spending._ctx, timeout=30) as res:
             page = json.loads(res.read().decode("utf-8"))
         for doc in page.get("documents", []):
-            key = doc["name"].rsplit("/", 1)[-1]
-            f = doc.get("fields", {})
-            val = lambda k: (f.get(k) or {}).get("stringValue") or ""
-            active = (f.get("active") or {}).get("booleanValue", True)
-            followers = [v.get("stringValue") for v in ((f.get("followers") or {}).get("arrayValue") or {}).get("values", [])
-                         if v.get("stringValue")]
-            if "followers" not in f and active and val("addedBy"):
-                followers = [val("addedBy")]  # picked before contracts had followers
-            if KEY_RE.match(key) and followers and val("tid"):
-                out.append({"key": key, "org": val("org"), "tid": val("tid"), "sp": val("sp"), "followers": followers,
-                            "note": val("note")[:500], "addedAt": (f.get("addedAt") or {}).get("timestampValue", "")})
+            h = doc["name"].rsplit("/", 1)[-1]
+            if not HASH_RE.match(h):
+                continue
+            f = {k: _val(v) for k, v in doc.get("fields", {}).items()}
+            for o in f.get("orgs") or []:
+                code = str((o or {}).get("edrpou") or "")
+                if re.match(r"^(\d{8}|\d{10})$", code):
+                    e = orgs.setdefault(code, {"role": "supplier" if o.get("role") == "supplier" else "buyer", "owners": set()})
+                    e["owners"].add(h)
+            for t in f.get("tracked") or []:
+                cid = str((t or {}).get("cid") or "")
+                if KEY_RE.match(cid) and str(t.get("tid") or "").startswith("UA-"):
+                    e = contracts.setdefault(cid, {"key": cid, "org": str(t.get("org") or ""), "tid": t["tid"], "sp": str(t.get("sp") or ""),
+                                                   "owners": set(), "viewers": set()})
+                    e["owners"].add(h)
+                    e["viewers"].add(h)
+            for sh in f.get("shares") or []:
+                if KEY_RE.match(str((sh or {}).get("cid") or "")) and HASH_RE.match(str(sh.get("to") or "")):
+                    shares.append((h, sh["cid"], sh["to"]))
         token = page.get("nextPageToken")
-        url = URL + "&pageToken=" + token if token else None
-    return out
+        url = PUB_URL + "&pageToken=" + token if token else None
+    for owner, cid, to in shares:
+        if cid in contracts and owner in contracts[cid]["owners"]:  # only an owner's share counts
+            contracts[cid]["viewers"].add(to)
+    return orgs, contracts
+
+
+def requests_from_app():
+    """Contracts on control: [{"key", "org", "tid", "sp", "viewers": [hashes]}]."""
+    return [dict(c, owners=sorted(c["owners"]), viewers=sorted(c["viewers"])) for c in read_pub()[1].values()]
 
 
 # ---- payments ------------------------------------------------------------------------------
@@ -225,9 +261,8 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     maybe = round(sum(p["amount"] for p in pays if not p["sure"]), 2)
     stages, due_now = schedule(value, signed, tender.get("milestones") or [], acts, today.isoformat())
     snap = {
-        "key": key, "org": req["org"], "tid": req["tid"], "tender_id": tender_id, "sp": sp, "note": req.get("note") or "",
-        "followers": req.get("followers") or [],
-        "added_at": req.get("addedAt") or "",
+        "key": key, "org": req["org"], "tid": req["tid"], "tender_id": tender_id, "sp": sp,
+        "viewers": req.get("viewers") or [],  # sha256("monitor:" + uid) of owners and recipients
         "tender": tender, "contract": contract, "payments": pays, "acts": acts,
         "acts_sum": round(sum(a.get("amount") or 0 for a in acts), 2),
         "totals": {"value": value, "paid": paid, "maybe": maybe, "left": round(value - paid, 2),
@@ -252,6 +287,5 @@ def index_row(s):
         "supplier": sup.get("code") or "", "supplier_name": sup.get("name") or "",
         "method": t.get("method"), "totals": s["totals"], "changed_at": s.get("changed_at"),
         "last_event": (s.get("history") or [{}])[0], "docs": len(c.get("docs") or []) + len(t.get("docs") or []),
-        "note": s.get("note") or "", "added_at": s.get("added_at") or "",
-        "followers": s.get("followers") or [],  # Firebase uids; the Drive script copies a user's own
+        "viewers": s.get("viewers") or [],  # hashes; the Drive script copies the contracts it sees itself in
     }

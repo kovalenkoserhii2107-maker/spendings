@@ -9,10 +9,11 @@ The first sync of an organisation is a backfill (history, no feed events).
 Every later sync re-reads a short overlapping window; records not seen before
 become feed events.
 
-Organisations are also added from the app: an analyst's request lands in the
-Firestore collection `watchlist`, which is publicly readable, and every run
-merges new requests into the watch list. `--check` only reports whether such
-requests are waiting (for the 10-minute workflow schedule).
+Organisations are also added from the app. Each user's lists are private; the app
+copies only organisation codes and contract ids into the anonymous public list
+pub/{sha256("monitor:" + uid)}, which every run merges into the watch list.
+`--check` only reports whether something new is waiting (for the frequent
+workflow schedule).
 
 Usage:  python3 sync/sync.py [--add EDRPOU [--note TEXT]] [--remove EDRPOU] [--check]
 """
@@ -45,8 +46,6 @@ ORG_DIR = os.path.join(DATA, "org")
 REMOVED_FILE = os.path.join(DATA, "removed.json")
 TRACKED_DIR = os.path.join(DATA, "tracked")
 TENDERS, TREASURY = {}, {}  # per organisation, filled while syncing, read by the contracts on control
-REQUESTS_URL = ("https://firestore.googleapis.com/v1/projects/spending-monitor-2122b/"
-                "databases/(default)/documents/watchlist?pageSize=300")
 
 DOC_KINDS = ("contract", "act", "addendum", "peny")
 KINDS = ("transaction",) + DOC_KINDS + ("liability", "report")
@@ -125,46 +124,45 @@ def load_watchlist():
                 print("! пропускаю некорректный код в orgs.json: %r" % entry.get("edrpou"))
             continue
         seen.add(code)
-        out.append({"edrpou": code, "note": str(entry.get("note") or "")[:500],
-                    "role": "supplier" if entry.get("role") == "supplier" else "buyer"})
+        item = {"edrpou": code, "note": str(entry.get("note") or "")[:500],
+                "role": "supplier" if entry.get("role") == "supplier" else "buyer"}
+        if entry.get("claimed"):
+            item["claimed"] = True  # followed by users in the app; dropped when none is left
+        out.append(item)
     return out
 
 
-def app_requests():
-    """Organisations analysts added in the app, as [{"edrpou", "note", "added_at"}].
-
-    Read through the public Firestore REST API, so no credentials are needed.
-    Unreachable Firestore means no requests this time, not a failed run.
-    """
-    out, url = [], REQUESTS_URL
+def app_orgs():
+    """Organisations users follow in the app ({edrpou: {"role", "owners"}}), from the
+    anonymous public lists; None when Firestore cannot be read (then nothing changes)."""
     try:
-        while url:
-            req = urllib.request.Request(url, headers={"User-Agent": "spending-monitor-sync"})
-            with urllib.request.urlopen(req, context=spending._ctx, timeout=30) as res:
-                page = json.loads(res.read().decode("utf-8"))
-            for doc in page.get("documents", []):
-                f = doc.get("fields", {})
-                code = (f.get("edrpou") or {}).get("stringValue", "")
-                if re.match(r"^\d{8,10}$", code):
-                    out.append({
-                        "edrpou": code,
-                        "note": ((f.get("note") or {}).get("stringValue") or "")[:500],
-                        "role": "supplier" if (f.get("role") or {}).get("stringValue") == "supplier" else "buyer",
-                        "added_at": (f.get("addedAt") or {}).get("timestampValue", ""),
-                    })
-            token = page.get("nextPageToken")
-            url = REQUESTS_URL + "&pageToken=" + token if token else None
+        return tracked.read_pub()[0]
     except Exception as e:
-        print("! заявки з додатка недоступні: %s" % e)
-    return out
+        print("! списки з додатка недоступні: %s" % e)
+        return None
 
 
-def new_requests(watch, removed):
-    """App requests not on the watch list yet. A code removed by hand stays out
-    unless someone added it again in the app after the removal."""
-    tracked = {w["edrpou"] for w in watch}
-    return [r for r in app_requests()
-            if r["edrpou"] not in tracked and (r["added_at"] or "") > removed.get(r["edrpou"], "")]
+def merge_watch(watch, orgs):
+    """The watch list after the app: organisations someone follows are added (and
+    marked claimed); a claimed one nobody follows any more is dropped. Entries added
+    by hand (orgs.json, the workflow) stay until removed by hand."""
+    if orgs is None:
+        return watch, []
+    out, added = [], []
+    for w in watch:
+        if w["edrpou"] in orgs:
+            w["claimed"] = True
+        elif w.get("claimed"):
+            print("- %s (ніхто в додатку більше не стежить)" % w["edrpou"])
+            continue
+        out.append(w)
+    known = {w["edrpou"] for w in out}
+    for code, o in sorted(orgs.items()):
+        if code not in known:
+            out.append({"edrpou": code, "note": "", "role": o["role"], "claimed": True})
+            added.append(code)
+            print("+ %s (додано в додатку)" % code)
+    return out, added
 
 
 class OrgStore:
@@ -321,15 +319,15 @@ def sync_tracked():
             traceback.print_exc()
             if not old:
                 continue
-            snap = dict(old, error=str(e)[:500], followers=req.get("followers") or [], note=req.get("note") or "")
+            snap = dict(old, error=str(e)[:500], viewers=req.get("viewers") or [])
+            snap.pop("followers", None)
+            snap.pop("note", None)
         else:
             snap.pop("error", None)
         write_json(path, snap)
         rows.append(dict(tracked.index_row(snap), error=snap.get("error")))
-    if os.path.isdir(TRACKED_DIR):
-        for name in os.listdir(TRACKED_DIR):
-            if name.endswith(".json") and name != "index.json" and name not in keep:
-                os.remove(os.path.join(TRACKED_DIR, name))
+    # Snapshots of contracts nobody follows stay on disk (out of the index): if the
+    # contract is put on control again, its history goes on where it stopped.
     rows.sort(key=lambda r: (r.get("changed_at") or "", r["key"]), reverse=True)
     write_json(os.path.join(TRACKED_DIR, "index.json"), {"generated_at": now_iso(), "items": rows})
     return rows
@@ -483,8 +481,8 @@ def main():
     watch = load_watchlist()
     removed = read_json(REMOVED_FILE, {})
     if args.check:
-        pending = new_requests(watch, removed)
-        print("Нові організації з додатка: %s" % (", ".join(r["edrpou"] for r in pending) or "немає"))
+        _, pending = merge_watch([dict(w) for w in watch], app_orgs())
+        print("Нові організації з додатка: %s" % (", ".join(pending) or "немає"))
         # Contracts put on control that the site has not got yet.
         try:
             done = {r["key"] for r in read_json(os.path.join(TRACKED_DIR, "index.json"), {}).get("items") or []}
@@ -502,9 +500,7 @@ def main():
         watch = [w for w in watch if w["edrpou"] != code]
         removed[code] = now_iso()
         write_json(REMOVED_FILE, removed, pretty=True)
-    for req in new_requests(watch, removed):
-        watch.append({"edrpou": req["edrpou"], "note": req["note"], "role": req["role"]})
-        print("+ %s (додано в додатку)" % req["edrpou"])
+    watch, _ = merge_watch(watch, app_orgs())
     if args.add.strip():
         code = clean_edrpou(args.add)
         if not any(w["edrpou"] == code for w in watch):
@@ -517,12 +513,12 @@ def main():
     started = now_iso()
 
     # Forget organisations that left the watch list, together with their files.
-    tracked = {w["edrpou"] for w in watch}
-    for code in [c for c in org_states if c not in tracked]:
+    codes = {w["edrpou"] for w in watch}
+    for code in [c for c in org_states if c not in codes]:
         del org_states[code]
     if os.path.isdir(ORG_DIR):
         for name in os.listdir(ORG_DIR):
-            if name not in tracked and re.match(r"^\d{8,10}$", name):
+            if name not in codes and re.match(r"^\d{8,10}$", name):
                 shutil.rmtree(os.path.join(ORG_DIR, name))
 
     index_orgs, feed, all_signals, new_total, failed = [], [], [], 0, 0
