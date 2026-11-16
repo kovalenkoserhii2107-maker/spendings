@@ -2,6 +2,7 @@
   {
     "edrpou": "44004664",
     "note": "",
-    "role": "buyer"
+    "role": "buyer",
+    "claimed": true
   }
 ]
