@@ -2,26 +2,36 @@
  * Монітор розрахунків — копії документів договорів на контролі на Google Диску.
  *
  * A web app that runs as the user who opens it (manifest: executeAs
- * USER_ACCESSING). Each user opens it once from the site (Settings → Google Drive,
- * ?uid=<their Firebase uid>); it remembers the uid and installs that user's own
- * 6-hour trigger. Every run reads the public site data (data/tracked/*.json) and
- * copies the documents of the contracts this user follows or was given access to
- * (the site marks them with sha256("monitor:" + uid), never the uid itself):
+ * USER_ACCESSING), in the same Google Cloud project as the site, so the site and
+ * this script are one app for Google Drive and share one folder. Each user opens
+ * it once from the site (Settings → Google Drive, ?uid=<their Firebase uid>); it
+ * remembers the uid, creates the folders and installs that user's own 6-hour
+ * trigger. Every run reads the public site data (data/tracked/*.json), where a
+ * contract is marked for its owners and recipients by sha256("monitor:" + uid),
+ * and files the documents:
  *
- *   Монітор розрахунків — договори на контролі /
- *       <замовник> — № <номер> від <дата> / Договір/    signed contract, annexes …
- *                                          / Закупівля/  tender documents
+ *   Монітор розрахунків /                         (shared with the site's exports)
+ *     Договори на контролі /
+ *       <організація> (<ЄДРПОУ>) /
+ *         № <номер> від <дата> — <предмет> /
+ *           1. Договір            signed contract and its other documents
+ *           2. Зміни й додатки    annexes and additional agreements
+ *           3. Закупівля          tender documents
+ *       Поділилися зі мною / <організація> / <договір> / …
  *       Реєстр договорів на контролі   (Google Sheet: price, paid, left, links)
  *
  * Why a script: Prozorro's file storage sends no CORS headers, so a web page
  * cannot download the files. Drive is reached through its REST API with the
- * drive.file scope only: the script sees just the files it created itself.
+ * drive.file scope only: it sees just the files this app (site + script) created.
  * Each document is downloaded once (remembered by its id and date).
  */
 
 var SITE = 'https://kovalenkoserhii2107-maker.github.io/spendings/';
-var ROOT = 'Монітор розрахунків — договори на контролі';
+var ROOT = 'Монітор розрахунків';
+var SECTION = 'Договори на контролі';
+var SHARED = 'Поділилися зі мною';
 var SHEET = 'Реєстр договорів на контролі';
+var PARTS = { contract: '1. Договір', changes: '2. Зміни й додатки', tender: '3. Закупівля' };
 var FOLDER_MIME = 'application/vnd.google-apps.folder';
 var TIME_LIMIT_MS = 5 * 60 * 1000; // Apps Script stops a run at 6 minutes
 
@@ -36,24 +46,24 @@ function doGet(e) {
       en ? 'Use Settings → Google Drive → Connect in “Монітор розрахунків”.'
          : 'Натисніть «Підключити Google Диск» у «Налаштуваннях» додатка «Монітор розрахунків».', null);
   }
-  var props = PropertiesService.getUserProperties();
-  props.setProperty('uid', uid);
-  var root = rootFolder_();
+  PropertiesService.getUserProperties().setProperty('uid', uid);
+  var section = sectionFolder_();
   ensureTriggers_();
   return page_(en ? 'Google Drive is connected' : 'Google Диск підключено',
-    en ? 'Documents of the contracts you follow will appear in this folder within a few minutes, then every 6 hours. You can close this tab.'
-       : 'Документи договорів, які ви відстежуєте, зʼявляться в цій папці за кілька хвилин, далі — кожні 6 годин. Цю вкладку можна закрити.',
-    { url: 'https://drive.google.com/drive/folders/' + root, label: en ? 'Open the folder' : 'Відкрити папку' });
+    en ? 'The folder “Монітор розрахунків / Договори на контролі” is ready. Documents of your contracts appear there within a few minutes, sorted by organisation and contract, then every 6 hours. You can close this tab.'
+       : 'Папка «Монітор розрахунків / Договори на контролі» готова. Документи ваших договорів зʼявляться в ній за кілька хвилин — за організаціями й договорами, далі оновлюватимуться кожні 6 годин. Цю вкладку можна закрити.',
+    { url: 'https://drive.google.com/drive/folders/' + section, label: en ? 'Open the folder' : 'Відкрити папку' });
 }
 
 function page_(title, text, link) {
   var html = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<style>body{font:16px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:40px 20px;background:#EEF2F7;color:#1C1C1E}' +
     'main{max-width:520px;margin:0 auto;background:#fff;border-radius:24px;padding:28px;box-shadow:0 1px 3px rgba(15,23,42,.08)}' +
+    'small{display:block;color:#5B5F66;font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:12px;margin-bottom:6px}' +
     'h1{font-size:24px;margin:0 0 10px}a{display:inline-block;margin-top:14px;padding:10px 18px;border-radius:999px;background:#000;color:#fff;text-decoration:none;font-weight:700}</style>' +
-    '<main><h1>' + esc_(title) + '</h1><p>' + esc_(text) + '</p>' +
+    '<main><small>Монітор розрахунків</small><h1>' + esc_(title) + '</h1><p>' + esc_(text) + '</p>' +
     (link ? '<a href="' + esc_(link.url) + '" target="_blank" rel="noopener">' + esc_(link.label) + '</a>' : '') + '</main>';
-  return HtmlService.createHtmlOutput(html).setTitle(title);
+  return HtmlService.createHtmlOutput(html).setTitle('Монітор розрахунків — ' + title);
 }
 
 function esc_(s) {
@@ -87,10 +97,13 @@ function syncAll() {
   var me = hash_(uid);
   var index = getJson_(SITE + 'data/tracked/index.json?v=' + started);
   var rows = (index.items || []).filter(function (r) { return (r.viewers || []).indexOf(me) >= 0; });
-  var root = rootFolder_();
+  var section = sectionFolder_();
   var copied = 0, pending = 0;
   rows.forEach(function (row) {
-    var dir = folder_(root, folderName_(row));
+    var own = !row.owners || row.owners.indexOf(me) >= 0;
+    row._section = own ? 'Мої' : SHARED;
+    var base = own ? section : folder_(section, SHARED);
+    var dir = folder_(folder_(base, orgFolderName_(row)), contractFolderName_(row));
     row._folder = 'https://drive.google.com/drive/folders/' + dir;
     if (Date.now() - started > TIME_LIMIT_MS) { pending++; return; }
     var snap;
@@ -100,37 +113,43 @@ function syncAll() {
       Logger.log('Не прочитано ' + row.key + ': ' + e);
       return;
     }
-    [['Договір', (snap.contract || {}).docs || []], ['Закупівля', (snap.tender || {}).docs || []]].forEach(function (g) {
-      if (!g[1].length) return;
-      var sub = folder_(dir, g[0]);
-      g[1].forEach(function (d) {
-        if (Date.now() - started > TIME_LIMIT_MS) { pending++; return; }
-        var key = 'doc:' + (d.id || d.url) + ':' + (d.date || '');
-        if (props.getProperty(key)) return;
-        try {
-          var res = UrlFetchApp.fetch(d.url, { muteHttpExceptions: true, followRedirects: true });
-          if (res.getResponseCode() !== 200) { Logger.log('HTTP ' + res.getResponseCode() + ' ' + d.title); return; }
-          var id = upload_(res.getBlob(), fileName_(d), sub, 'Prozorro: ' + (d.id || '') + '\n' + d.url);
-          props.setProperty(key, id);
-          copied++;
-        } catch (e) {
-          Logger.log('Не скопійовано ' + d.title + ': ' + e);
-        }
-      });
+    var docs = ((snap.contract || {}).docs || []).map(function (d) { return [isChange_(d) ? 'changes' : 'contract', d]; })
+      .concat(((snap.tender || {}).docs || []).map(function (d) { return ['tender', d]; }));
+    var subs = {};
+    docs.forEach(function (x) {
+      var part = x[0], d = x[1];
+      if (Date.now() - started > TIME_LIMIT_MS) { pending++; return; }
+      var key = 'doc:' + uid.slice(0, 6) + ':' + (d.id || d.url) + ':' + (d.date || '');
+      if (props.getProperty(key)) return;
+      try {
+        var res = UrlFetchApp.fetch(d.url, { muteHttpExceptions: true, followRedirects: true });
+        if (res.getResponseCode() !== 200) { Logger.log('HTTP ' + res.getResponseCode() + ' ' + d.title); return; }
+        subs[part] = subs[part] || folder_(dir, PARTS[part]);
+        var id = upload_(res.getBlob(), fileName_(d), subs[part], 'Prozorro: ' + (d.id || '') + '\n' + d.url);
+        props.setProperty(key, id);
+        copied++;
+      } catch (e) {
+        Logger.log('Не скопійовано ' + d.title + ': ' + e);
+      }
     });
   });
-  writeRegister_(root, rows);
+  writeRegister_(section, rows);
   Logger.log('Договорів: ' + rows.length + '; скопійовано документів: ' + copied +
     (pending ? '; решту буде скопійовано наступного запуску' : ''));
   return copied;
 }
 
-function writeRegister_(root, rows) {
-  var head = ['Замовник', 'Постачальник', '№ договору', 'Підписано', 'Діє до', 'Статус', 'Ціна, грн', 'Сплачено, грн',
-    'Лишилось, грн', 'Прострочено, грн', 'Остання зміна', 'Prozorro', 'Папка з документами'];
+// Annexes and additional agreements go to their own folder.
+function isChange_(d) {
+  return d.type === 'contractAnnexe' || /(^|[^а-яіїєґ])(ду(?=[\s\d№_.-])|д\/у|дод\.?\s*угод|додатков|змін)/i.test(d.title || '');
+}
+
+function writeRegister_(section, rows) {
+  var head = ['Розділ', 'Замовник', 'Постачальник', '№ договору', 'Підписано', 'Діє до', 'Статус', 'Ціна, грн',
+    'Сплачено, грн', 'Лишилось, грн', 'Прострочено, грн', 'Остання зміна', 'Prozorro', 'Папка з документами'];
   var lines = [head].concat(rows.map(function (r) {
     var t = r.totals || {};
-    return [r.buyer_name || '', r.supplier_name || '', r.number || '', r.signed || '', r.end || '', r.status || '',
+    return [r._section || '', r.buyer_name || '', r.supplier_name || '', r.number || '', r.signed || '', r.end || '', r.status || '',
       t.value || 0, t.paid || 0, t.left || 0, t.overdue || 0, (r.changed_at || '') + ' ' + ((r.last_event || {}).type || ''),
       'https://prozorro.gov.ua/tender/' + r.tid, r._folder || ''];
   }));
@@ -139,13 +158,13 @@ function writeRegister_(root, rows) {
   }).join('\r\n');
   var blob = Utilities.newBlob(csv, 'text/csv', SHEET + '.csv');
   var props = PropertiesService.getUserProperties();
-  var id = props.getProperty('sheet');
-  if (id) {
+  var id = props.getProperty('register');
+  if (id && alive_(id)) {
     var res = drive_('patch', 'https://www.googleapis.com/upload/drive/v3/files/' + id + '?uploadType=media', blob, true);
     if (res.getResponseCode() === 200) return;
   }
-  id = upload_(blob, SHEET, root, '', 'application/vnd.google-apps.spreadsheet');
-  props.setProperty('sheet', id);
+  id = upload_(blob, SHEET, section, '', 'application/vnd.google-apps.spreadsheet');
+  props.setProperty('register', id);
 }
 
 // ---- Google Drive REST, drive.file scope ---------------------------------------------------
@@ -159,12 +178,14 @@ function drive_(method, url, payload, raw) {
   return UrlFetchApp.fetch(url, opt);
 }
 
-function rootFolder_() {
+// "Монітор розрахунків / Договори на контролі": the site may have made the root already.
+function sectionFolder_() {
   var props = PropertiesService.getUserProperties();
-  var id = props.getProperty('root');
+  var id = props.getProperty('section');
   if (id && alive_(id)) return id;
-  id = folder_('root', ROOT);
-  props.setProperty('root', id);
+  var root = find_(ROOT, null) || folder_('root', ROOT);
+  id = folder_(root, SECTION);
+  props.setProperty('section', id);
   return id;
 }
 
@@ -173,13 +194,19 @@ function alive_(id) {
   return res.getResponseCode() === 200 && !JSON.parse(res.getContentText()).trashed;
 }
 
-function folder_(parent, name) {
-  var q = "name = '" + name.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "' and mimeType = '" + FOLDER_MIME +
-    "' and '" + parent + "' in parents and trashed = false";
-  var res = drive_('get', 'https://www.googleapis.com/drive/v3/files?fields=files(id)&q=' + encodeURIComponent(q));
+function find_(name, parent) {
+  var q = "name = '" + name.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "' and mimeType = '" + FOLDER_MIME + "' and trashed = false" +
+    (parent ? " and '" + parent + "' in parents" : '');
+  var res = drive_('get', 'https://www.googleapis.com/drive/v3/files?fields=files(id)&spaces=drive&q=' + encodeURIComponent(q));
   var found = JSON.parse(res.getContentText()).files || [];
-  if (found.length) return found[0].id;
-  res = drive_('post', 'https://www.googleapis.com/drive/v3/files?fields=id', { name: name, mimeType: FOLDER_MIME, parents: [parent] });
+  return found.length ? found[0].id : null;
+}
+
+function folder_(parent, name) {
+  var id = find_(name, parent);
+  if (id) return id;
+  var res = drive_('post', 'https://www.googleapis.com/drive/v3/files?fields=id', { name: name, mimeType: FOLDER_MIME, parents: [parent] });
+  if (res.getResponseCode() !== 200) throw new Error('Drive ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
   return JSON.parse(res.getContentText()).id;
 }
 
@@ -210,12 +237,22 @@ function getJson_(url) {
   return JSON.parse(res.getContentText('UTF-8'));
 }
 
-function folderName_(r) {
-  var who = (r.buyer_name || r.buyer || '').replace(/\s+/g, ' ').slice(0, 80);
-  return (who + ' — № ' + (r.number || '—') + (r.signed ? ' від ' + r.signed : '')).replace(/[\\/]/g, '-');
+function clean_(s, n) {
+  return String(s || '').replace(/[\\/]/g, '-').replace(/\s+/g, ' ').trim().slice(0, n);
+}
+
+// The organisation the contract was picked from: the buyer, or the supplier.
+function orgFolderName_(r) {
+  var name = r.org && r.org === r.supplier ? r.supplier_name : r.buyer_name;
+  return clean_(name || r.org || '—', 90) + (r.org ? ' (' + r.org + ')' : '');
+}
+
+function contractFolderName_(r) {
+  return clean_('№ ' + (r.number || '—') + (r.signed ? ' від ' + r.signed.split('-').reverse().join('.') : '') +
+    (r.title ? ' — ' + r.title : ''), 120);
 }
 
 function fileName_(d) {
   var day = (d.date || '').slice(0, 10);
-  return ((day ? day + ' ' : '') + (d.title || 'document')).replace(/[\\/]/g, '-');
+  return clean_((day ? day + ' ' : '') + (d.title || 'document'), 200);
 }

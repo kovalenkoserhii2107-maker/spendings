@@ -319,7 +319,7 @@ def sync_tracked():
             traceback.print_exc()
             if not old:
                 continue
-            snap = dict(old, error=str(e)[:500], viewers=req.get("viewers") or [])
+            snap = dict(old, error=str(e)[:500], viewers=req.get("viewers") or [], owners=req.get("owners") or [])
             snap.pop("followers", None)
             snap.pop("note", None)
         else:

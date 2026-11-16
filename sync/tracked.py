@@ -263,6 +263,7 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     snap = {
         "key": key, "org": req["org"], "tid": req["tid"], "tender_id": tender_id, "sp": sp,
         "viewers": req.get("viewers") or [],  # sha256("monitor:" + uid) of owners and recipients
+        "owners": req.get("owners") or [],    # of those, who has it on control (the rest got it shared)
         "tender": tender, "contract": contract, "payments": pays, "acts": acts,
         "acts_sum": round(sum(a.get("amount") or 0 for a in acts), 2),
         "totals": {"value": value, "paid": paid, "maybe": maybe, "left": round(value - paid, 2),
@@ -288,4 +289,5 @@ def index_row(s):
         "method": t.get("method"), "totals": s["totals"], "changed_at": s.get("changed_at"),
         "last_event": (s.get("history") or [{}])[0], "docs": len(c.get("docs") or []) + len(t.get("docs") or []),
         "viewers": s.get("viewers") or [],  # hashes; the Drive script copies the contracts it sees itself in
+        "owners": s.get("owners") or [],
     }
