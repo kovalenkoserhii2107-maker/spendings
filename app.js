@@ -54,6 +54,7 @@ const ICONS = {
   logout: ['M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4', 'M16 17l5-5-5-5', 'M21 12H9'],
   money: ['M2 6h20v12H2z', 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M6 12h.01', 'M18 12h.01'],
   phone: ['M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z', 'M11 18h2'],
+  tender: ['M9 2h6v4H9z', 'M15 4h3a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3', 'M9 12h6', 'M9 16h4'],
 };
 function icon(name) {
   const NS = 'http://www.w3.org/2000/svg';
@@ -544,6 +545,7 @@ const NAV = [
   ['#/contracts', 'contracts', 'file', 'nav.contracts'],
   ['#/payments', 'payments', 'money', 'nav.payments'],
   ['#/orgs', 'orgs', 'building', 'nav.orgs'],
+  ['#/prozorro', 'prozorro', 'tender', 'nav.prozorro'],
   ['#/signals', 'signals', 'alert', 'nav.signals'],
   ['#/feed', 'feed', 'bell', 'nav.feed'],
   ['#/search', 'search', 'search', 'nav.search'],
@@ -944,15 +946,42 @@ async function openContract(org, contractId) {
       [t('f.validity'), c.from || c.to ? `${fdate(c.from)} — ${c.to ? fdate(c.to) : t('f.noTerm')}` : null],
       [t('dos.procedure'), c.tender ? t('dos.tender') : t('dos.noTender')],
       [t('f.reason'), c.tender ? null : c.reason],
-      ['Prozorro', prozorro(c.prozorro)],
+      ['Prozorro', prozorro(c.prozorro || c.pz)],
       ['CPV', c.cpv],
     ])),
+    c.pz ? pzDossierBlock(org, c) : null,
     h('section', { class: 'row' }, driveBtn, h('button', {
       class: 'btn btn-sm', onclick: async () => {
         const [rec] = await findRecords(org, 'contract', [c.ext_id]);
         if (rec) openRecord(rec);
       },
     }, t('dos.portalCard'))));
+}
+
+// The Prozorro side of a Treasury contract: payment terms and the signed documents.
+function pzDossierBlock(org, c) {
+  const box = h('section', null, h('h3', null, t('pz.inProzorro')), h('div', { class: 'muted small' }, t('pz.loading')));
+  (async () => {
+    try {
+      const t0 = (await loadKind(org, 'prozorro')).find((x) => x.tid === c.pz);
+      const pc = t0 && (t0.contracts || []).find((x) => x.sp === c.id);
+      if (!t0 || !pc) { box.remove(); return; }
+      const terms = lotMilestones(t0, pc).filter((m) => m.type === 'financing');
+      fill(box, h('h3', null, t('pz.inProzorro')),
+        kv([
+          [t('pz.colMethod'), label('pzt.', t0.method)],
+          [t('pz.contractValue'), pc.value ? money(pc.value.amount, pc.value.currency) : null],
+          [t('pz.status'), label('pzc.', pc.status)],
+          [t('pz.paidByBuyer'), pc.paid ? money(pc.paid.amount, pc.paid.currency) : null],
+        ]),
+        terms.length ? h('div', { class: 'explain', style: 'margin-top:10px' }, terms.map((m) => h('div', { class: 'pay' }, h('span', null, milestoneText(m))))) : null,
+        (pc.docs || []).length ? h('div', { style: 'margin-top:10px' }, docList(pc.docs.filter((d) => /^contract/.test(d.type || '')).length ? pc.docs.filter((d) => /^contract/.test(d.type || '')) : pc.docs)) : null,
+        h('div', { class: 'row', style: 'margin-top:10px' }, h('button', { class: 'btn btn-sm', onclick: () => openTender(org, t0.tid) }, t('pz.openProcedure')), ext(pzUrl(t0.tid), 'Prozorro')));
+    } catch (e) {
+      box.remove();
+    }
+  })();
+  return box;
 }
 
 function openSignal(s) {
@@ -1103,7 +1132,7 @@ function contractsTable(rows, opts) {
       return h('tr', {
         class: 'click', tabindex: 0, onclick: () => openContract(c._org, c.id), onkeydown: (e) => { if (e.key === 'Enter') openContract(c._org, c.id); },
       },
-        td(L.c, null, h('div', { class: 'cell-main' }, '№ ' + (c.number || '—')), h('div', { class: 'cell-sub num' }, fdate(c.date))),
+        td(L.c, null, h('div', { class: 'cell-main' }, '№ ' + (c.number || '—')), h('div', { class: 'cell-sub num' }, fdate(c.date)), c.pz ? h('span', { class: 'tag pz' }, 'Prozorro') : null),
         opts.showOrg && td(L.org, { class: 'w-party' }, c._org.name),
         td(L.party, { class: 'w-party' }, h('div', { class: 'cell-main' }, c.party_name || '—'), c.party_code ? h('div', { class: 'cell-sub num' }, c.party_code) : null),
         td(L.subj, { class: 'w-text' }, h('div', { class: 'clamp' }, c.subject || '—')),
@@ -1257,6 +1286,215 @@ function paymentsPage(preset) {
   return [pageHead(t('pay.eyebrow'), titleGrad(t('pay.title1'), t('pay.title2')), t('pay.lead')), paymentsBrowser(state.index.orgs, preset)];
 }
 
+// ---- Prozorro: procedures, payment terms, contracts and documents ---------------------------------
+
+// A dictionary label, or the raw code when the dictionary does not know it.
+const label = (prefix, code) => { if (!code) return ''; const v = t(prefix + code); return v === prefix + code ? code : v; };
+const pzUrl = (tid) => 'https://prozorro.gov.ua/tender/' + encodeURIComponent(tid);
+const pzOpen = (t0) => !['complete', 'cancelled', 'unsuccessful'].includes(t0.status);
+const pzStatus = (s) => h('span', { class: 'pz-st ' + (['complete', 'active'].includes(s) ? 'ok' : ['cancelled', 'unsuccessful'].includes(s) ? 'off' : 'run') }, label('pzs.', s));
+
+// Procedures of the given organisations with each contract's Treasury reconciliation (if linked).
+async function tenderRows(orgs) {
+  const parts = await Promise.all(orgs.map(async (org) => {
+    if (!((org.files || {}).prozorro || []).length) return [];
+    const [tenders, a] = await Promise.all([loadKind(org, 'prozorro'), loadAnalysis(org).catch(() => ({ contracts: [] }))]);
+    const sp = new Map(a.contracts.map((c) => [c.id, c]));
+    return tenders.map((t0) => ({ org, t: t0, links: (t0.contracts || []).map((c) => (c.sp ? sp.get(c.sp) || null : null)) }));
+  }));
+  return parts.flat().sort((x, y) => (y.t.date || '').localeCompare(x.t.date || '') || y.t.tid.localeCompare(x.t.tid));
+}
+
+// What the buyer has to pay and when, in one line: "Післяплата 100% — 30 календарних днів після надання послуг".
+function milestoneText(m) {
+  const days = m.days != null ? t('pzm.days', { n: m.days, type: m.days_type }) : '';
+  const when = days ? `${days} ${t('pzm.after')} ${label('pzm.ev.', m.event).toLowerCase()}` : label('pzm.ev.', m.event);
+  const what = m.type === 'financing' ? join([label('pzm.code.', m.code), m.pct != null ? nf1.format(m.pct) + '%' : null], ' ') : null;
+  return join([what, when, m.text], ' — ');
+}
+const lotMilestones = (t0, c) => (t0.milestones || []).filter((m) => !m.lot || !c || !c.lot || m.lot === c.lot);
+
+function paidCell(c, link) {
+  if (link) return [h('div', { class: 'cell-main num' }, money(link.paid)), h('div', { class: 'cell-sub' }, link.value ? t('bar.paidPct', { pct: Math.round((link.paid / link.value) * 100) }) : '')];
+  if (c && c.paid) return [h('div', { class: 'cell-main num' }, money(c.paid.amount, c.paid.currency)), h('div', { class: 'cell-sub' }, t('pz.paidByBuyer'))];
+  if (c && c.status !== 'active' && c.status !== 'terminated') return h('span', { class: 'tag' }, label('pzc.', c.status));
+  return h('span', { class: 'tag nocontract' }, t('pz.notLinked'));
+}
+
+function tendersTable(rows, opts) {
+  if (!rows.length) return h('div', { class: 'empty' }, h('b', null, t('pz.none')), t('sigs.changeFilter'));
+  const L = { p: t('pz.colProc'), org: t('col.org'), subj: t('col.subject'), m: t('pz.colMethod'), v: t('pz.colValue'), c: t('pz.colContract'), paid: t('pz.colPaid') };
+  return h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
+    h('thead', null, h('tr', null, h('th', null, L.p), opts.showOrg && h('th', null, L.org), h('th', null, L.subj), h('th', null, L.m), h('th', { class: 'r' }, L.v), h('th', null, L.c), h('th', { class: 'r' }, L.paid))),
+    h('tbody', null, rows.map((r) => {
+      const t0 = r.t;
+      const c = (t0.contracts || [])[0];
+      const sup = c && (c.suppliers || [])[0];
+      const open = () => openTender(r.org, t0.tid);
+      return h('tr', { class: 'click', tabindex: 0, onclick: open, onkeydown: (e) => { if (e.key === 'Enter') open(); } },
+        td(L.p, null, h('div', { class: 'cell-main num' }, t0.tid), h('div', { class: 'cell-sub num' }, fdate(t0.date))),
+        opts.showOrg && td(L.org, { class: 'w-party' }, r.org.name),
+        td(L.subj, { class: 'w-text' }, h('div', { class: 'clamp' }, t0.title || '—'), t0.cpv ? h('div', { class: 'cell-sub clamp1' }, t0.cpv) : null),
+        td(L.m, null, h('div', { class: 'cell-main' }, label('pzt.', t0.method)), pzStatus(t0.status)),
+        td(L.v, { class: 'r num' }, t0.value ? money(t0.value.amount, t0.value.currency) : '—'),
+        td(L.c, { class: 'w-party' }, c ? [h('div', { class: 'cell-main' }, '№ ' + (c.number || '—') + ((t0.contracts || []).length > 1 ? ` +${t0.contracts.length - 1}` : '')),
+          h('div', { class: 'cell-sub' }, join([sup && sup.name, c.value ? money(c.value.amount, c.value.currency) : null]))] : h('span', { class: 'faint small' }, t('pz.noContractYet'))),
+        td(L.paid, { class: 'r' }, c ? paidCell(c, r.links[0]) : h('span', { class: 'faint' }, '—')));
+    }))));
+}
+
+function tenderCsv(rows) {
+  const lines = [[t('col.org'), 'Prozorro ID', t('col.date'), t('col.subject'), 'CPV', t('pz.colMethod'), t('pz.status'), t('pz.colValue'),
+    t('pz.contractNo'), t('pz.signed'), t('col.party'), t('f.edrpou'), t('pz.contractValue'), t('pz.treasuryPaid'), t('pz.payTerms')]];
+  for (const r of rows) {
+    const cs = r.t.contracts && r.t.contracts.length ? r.t.contracts : [null];
+    cs.forEach((c, i) => {
+      const s = c && (c.suppliers || [])[0];
+      const link = r.links[i];
+      lines.push([r.org.name, r.t.tid, r.t.date, r.t.title, r.t.cpv, label('pzt.', r.t.method), label('pzs.', r.t.status), dec(r.t.value && r.t.value.amount),
+        c ? c.number : '', c ? c.signed : '', s ? s.name : '', s ? s.code : '', dec(c && c.value && c.value.amount), link ? dec(link.paid) : '',
+        lotMilestones(r.t, c).filter((m) => m.type === 'financing').map(milestoneText).join('; ')]);
+    });
+  }
+  return lines;
+}
+
+function tendersBrowser(orgs, preset) {
+  const box = h('div', null, h('div', { class: 'empty' }, t('pz.loading')));
+  const f = { which: preset || '', method: '', q: '', page: 0 };
+  const list = h('div');
+  let all = [];
+  const tests = {
+    contract: (r) => (r.t.contracts || []).length > 0,
+    linked: (r) => r.links.some(Boolean),
+    unlinked: (r) => (r.t.contracts || []).some((c, i) => ['active', 'terminated'].includes(c.status) && !r.links[i]),
+    open: (r) => pzOpen(r.t),
+    terms: (r) => (r.t.milestones || []).some((m) => m.type === 'financing'),
+  };
+  function draw() {
+    const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
+    const rows = all.filter((r) => (!f.which || tests[f.which](r)) && (!f.method || r.t.method === f.method)
+      && (!words.length || words.every((w) => [r.t.tid, r.t.title, r.t.cpv, ...(r.t.contracts || []).flatMap((c) => [c.number, ...(c.suppliers || []).flatMap((s) => [s.name, s.code])])].join(' ').toLowerCase().includes(w))));
+    const sum = rows.reduce((acc, r) => acc + (r.t.contracts || []).reduce((s, c) => s + (c.value && c.value.currency === 'UAH' ? c.value.amount : 0), 0), 0);
+    pagedList(list, rows, f.page, { showOrg: orgs.length > 1, sum, csv: 'prozorro-procedures', csvRows: (items, name) => csvDownload(tenderCsv(items), name) },
+      (p) => { f.page = p; draw(); }, tendersTable);
+  }
+  (async () => {
+    try {
+      all = await tenderRows(orgs);
+      if (!all.length) {
+        const queued = orgs.reduce((s, o) => s + ((o.prozorro || {}).queue || 0), 0);
+        fill(box, h('div', { class: 'card empty' }, h('b', null, t('pz.noData')), queued ? t('pz.queued', { n: ni.format(queued) }) : t('pz.noDataText')));
+        return;
+      }
+      const methods = [...new Set(all.map((r) => r.t.method))].sort((a, b) => label('pzt.', a).localeCompare(label('pzt.', b)));
+      const q = h('input', { class: 'input', type: 'search', placeholder: t('pz.searchHint'), 'aria-label': t('ui.search'), oninput: () => { f.q = q.value; f.page = 0; draw(); } });
+      const n = (k) => all.filter(tests[k]).length;
+      fill(box, h('div', { class: 'table-card' },
+        h('div', { class: 'table-tools' },
+          pills([['', t('ui.all'), all.length], ['contract', t('pz.fContract'), n('contract')], ['linked', t('pz.fLinked'), n('linked')],
+            ['unlinked', t('pz.fUnlinked'), n('unlinked')], ['open', t('pz.fOpen'), n('open')], ['terms', t('pz.fTerms'), n('terms')]].filter((p) => p[0] === '' || p[2]),
+          f.which, (v) => { f.which = v; f.page = 0; draw(); }),
+          select([['', t('pz.anyMethod')]].concat(methods.map((m) => [m, label('pzt.', m)])), '', (e) => { f.method = e.target.value; f.page = 0; draw(); }, t('pz.colMethod')),
+          q),
+        list));
+      draw();
+    } catch (e) {
+      fill(box, h('div', { class: 'card empty' }, e.message));
+    }
+  })();
+  return box;
+}
+
+function docList(docs) {
+  if (!docs || !docs.length) return h('div', { class: 'muted small' }, t('pz.noDocs'));
+  return h('div', { class: 'doc-list' }, docs.slice().reverse().map((d) => h('a', { class: 'doc', href: d.url, target: '_blank', rel: 'noopener noreferrer' },
+    icon('file'), h('span', null, h('b', null, d.title || '—'), h('small', null, join([d.type ? label('pzd.', d.type) : null, fdate(d.date)]))), icon('ext'))));
+}
+
+async function openTender(org, tid) {
+  const body = sheet(h('div', { class: 'empty' }, t('pz.loading')));
+  let rows;
+  try {
+    rows = await tenderRows([org]);
+  } catch (e) {
+    fill(body, h('div', { class: 'empty' }, e.message));
+    return;
+  }
+  const r = rows.find((x) => x.t.tid === tid);
+  if (!r) { fill(body, h('button', { class: 'btn btn-icon close', onclick: closeSheet, 'aria-label': t('ui.close') }, icon('x')), h('div', { class: 'empty' }, t('pz.notFound'))); return; }
+  const t0 = r.t;
+  const lots = t0.lots || {};
+  const lotName = (id) => (Object.keys(lots).length > 1 && lots[id] ? lots[id] : null);
+  const terms = (list) => h('div', { class: 'explain' }, list.map((m) => h('div', { class: m.type === 'financing' ? 'pay' : '' },
+    h('b', null, label('pzm.type.', m.type) + '. '), h('span', null, milestoneText(m), lotName(m.lot) ? h('span', { class: 'faint' }, ' · ' + lotName(m.lot)) : null))));
+  const contractBlock = (c, i) => {
+    const link = r.links[i];
+    const cterms = lotMilestones(t0, c).filter((m) => m.type === 'financing');
+    return h('section', { class: 'pz-contract' },
+      h('div', { class: 'chips', style: 'margin-top:0' }, h('span', { class: 'kind contract' }, kindOne('contract')), h('span', { class: 'pz-st ' + (c.status === 'active' || c.status === 'terminated' ? 'ok' : c.status === 'cancelled' ? 'off' : 'run') }, label('pzc.', c.status))),
+      h('h3', null, c.number || c.signed ? t('dos.heading', { n: c.number || '—', date: fdate(c.signed) }) : t('pz.draftContract')),
+      kv([
+        [t('col.party'), (c.suppliers || []).map((s) => h('div', null, party(s.name, s.code)))],
+        [t('pz.contractValue'), c.value ? money(c.value.amount, c.value.currency) + (c.value.vat === false ? ' ' + t('pz.noVat') : '') : null],
+        [t('f.validity'), c.start || c.end ? `${fdate(c.start)} — ${fdate(c.end)}` : null],
+        [t('pz.lot'), lotName(c.lot)],
+        [t('pz.paidByBuyer'), c.paid ? money(c.paid.amount, c.paid.currency) : null],
+        [t('pz.termination'), c.termination],
+        ['ID', c.cid],
+      ]),
+      cterms.length ? h('div', { style: 'margin-top:10px' }, h('h4', null, t('pz.payTerms')), terms(cterms)) : null,
+      link ? h('div', { class: 'pz-link' },
+        h('div', null, h('h4', null, t('pz.treasury')), payBar(link)),
+        h('button', { class: 'btn btn-sm btn-dark', onclick: () => openContract(org, link.id) }, t('pz.openDossier')))
+        : h('p', { class: 'muted small' }, c.status === 'pending' ? t('pz.pendingHint') : t('pz.notLinkedHint')),
+      (c.changes || []).length ? h('div', null, h('h4', null, t('pz.changes')), h('div', { class: 'timeline' }, c.changes.map((ch) => h('div', { class: 'ev add' },
+        h('span', { class: 'd num' }, fdate(ch.date)), h('span', null, join([(ch.types || []).map((x) => label('pzr.', x)).join(', '), ch.text])), h('span'))))) : null,
+      h('h4', null, t('pz.contractDocs')), docList(c.docs));
+  };
+  fill(body,
+    h('button', { class: 'btn btn-icon close', onclick: closeSheet, 'aria-label': t('ui.close') }, icon('x')),
+    h('div', { class: 'chips', style: 'margin-top:0' }, h('span', { class: 'kind pz' }, 'Prozorro'), pzStatus(t0.status), h('span', { class: 'tag' }, label('pzt.', t0.method))),
+    h('h2', null, t0.title || t0.tid),
+    h('div', { class: 'sub' }, join([org.name, fdate(t0.date), t0.tid])),
+    h('div', { class: 'money-row' },
+      h('div', null, h('small', null, t('pz.colValue')), h('b', { class: 'num' }, t0.value ? mshort(t0.value.amount) : '—')),
+      h('div', null, h('small', null, t('pz.contracted')), h('b', { class: 'num' }, mshort((t0.contracts || []).reduce((s, c) => s + (c.value ? c.value.amount : 0), 0)))),
+      h('div', null, h('small', null, t('pz.treasuryPaid')), h('b', { class: 'num' }, r.links.some(Boolean) ? mshort(r.links.reduce((s, l) => s + (l ? l.paid : 0), 0)) : '—')),
+      h('div', null, h('small', null, t('pz.bids')), h('b', { class: 'num' }, t0.bids != null ? ni.format(t0.bids) : '—'))),
+    h('section', null, h('h3', null, t('pz.payTerms')), (t0.milestones || []).length ? terms(t0.milestones) : h('p', { class: 'muted small' }, t('pz.noTerms'))),
+    (t0.contracts || []).length ? (t0.contracts || []).map(contractBlock) : h('section', null, h('p', { class: 'muted' }, t('pz.noContractYet'))),
+    h('section', null, h('h3', null, t('pz.procedure')), kv([
+      [t('pz.colMethod'), label('pzt.', t0.method)],
+      [t('pz.status'), label('pzs.', t0.status)],
+      [t('pz.published'), fdate(t0.date)],
+      [t('pz.deadline'), t0.deadline ? fdate(t0.deadline) : null],
+      [t('pz.category'), t0.category ? label('pzcat.', t0.category) : null],
+      ['CPV', t0.cpv],
+      [t('pz.rationale'), t0.rationale],
+      [t('pz.cancelReason'), t0.cancel],
+    ])),
+    h('section', null, h('h3', null, t('pz.tenderDocs')), docList(t0.docs)),
+    h('section', { class: 'row' }, ext(pzUrl(t0.tid), t('pz.openOnProzorro'))));
+}
+
+function prozorroPage(preset) {
+  const pz = state.index.orgs.reduce((acc, o) => {
+    const p = o.prozorro || {};
+    acc.tenders += p.tenders || 0; acc.contracts += p.contracts || 0; acc.linked += p.linked || 0; acc.value += p.value || 0; acc.queue += p.queue || 0;
+    return acc;
+  }, { tenders: 0, contracts: 0, linked: 0, value: 0, queue: 0 });
+  return [
+    pageHead(t('pz.eyebrow'), titleGrad(t('pz.title1'), t('pz.title2')), t('pz.lead')),
+    h('div', { class: 'tiles section' },
+      h('div', { class: 'stat tint-violet' }, h('small', null, t('pz.tProcedures')), h('b', { class: 'num' }, ni.format(pz.tenders)), pz.queue ? h('span', { class: 'sub' }, t('pz.queued', { n: ni.format(pz.queue) })) : null),
+      h('div', { class: 'stat' }, h('small', null, t('pz.tContracts')), h('b', { class: 'num' }, ni.format(pz.contracts))),
+      h('div', { class: 'stat tint-blue' }, h('small', null, t('pz.tValue')), h('b', { class: 'num' }, mshort(pz.value))),
+      h('div', { class: 'stat tint-yellow' }, h('small', null, t('pz.tLinked')), h('b', { class: 'num' }, ni.format(pz.linked)), h('span', { class: 'sub' }, t('pz.tLinkedSub')))),
+    tendersBrowser(state.index.orgs, preset),
+  ];
+}
+
 // ---- organisations ---------------------------------------------------------------------------------
 
 function syncChip(o) {
@@ -1343,7 +1581,7 @@ function orgsPage() {
   return [pageHead(t('orgs.eyebrow'), titleGrad(t('orgs.title1'), t('orgs.title2')), t('orgs.lead')), addOrgCard(), h('div', { class: 'section' }, orgGrid(state.index.orgs))];
 }
 
-const ORG_TABS = ['contracts', 'signals', 'transaction', 'act', 'addendum', 'liability', 'report', 'profile'];
+const ORG_TABS = ['contracts', 'signals', 'transaction', 'prozorro', 'act', 'addendum', 'liability', 'report', 'profile'];
 
 function orgPage(code, tab, preset) {
   const org = orgByCode(code);
@@ -1365,11 +1603,12 @@ function orgPage(code, tab, preset) {
     else if (name === 'signals') fill(body, sigs.length ? h('div', { class: 'sig-list' }, sigs.map((s) => signalCard(s, false))) : h('div', { class: 'card empty' }, h('b', null, t('sigs.none'))));
     else if (name === 'profile') fill(body, profile());
     else if (name === 'transaction') fill(body, paymentsBrowser([org], preset));
+    else if (name === 'prozorro') fill(body, tendersBrowser([org], preset));
     else fill(body, recordsBrowser(org, name));
     preset = null;
   }
-  const tabLabel = (k) => (k === 'contracts' ? t('org.tabRecon') : k === 'signals' ? t('nav.signals') : k === 'profile' ? t('org.tabProfile') : kindMany(k));
-  const tabCount = (k) => (k === 'signals' ? sigs.length : k === 'contracts' ? counts.contract || 0 : KINDS.includes(k) ? counts[k] || 0 : null);
+  const tabLabel = (k) => (k === 'contracts' ? t('org.tabRecon') : k === 'signals' ? t('nav.signals') : k === 'profile' ? t('org.tabProfile') : k === 'prozorro' ? t('nav.prozorro') : kindMany(k));
+  const tabCount = (k) => (k === 'signals' ? sigs.length : k === 'contracts' ? counts.contract || 0 : k === 'prozorro' ? (org.prozorro || {}).tenders || 0 : KINDS.includes(k) ? counts[k] || 0 : null);
   const tabs = () => h('div', { class: 'tabs', role: 'tablist' }, ORG_TABS.map((k) => h('button', {
     class: tab === k ? 'on' : '', role: 'tab', 'aria-selected': tab === k, onclick: () => show(k),
   }, tabLabel(k), tabCount(k) != null ? h('span', { class: 'n' }, ni.format(tabCount(k))) : null)));
@@ -1581,6 +1820,7 @@ function methodPage() {
   return [
     pageHead(t('nav.method'), titleGrad(t('m.title1'), t('m.title2')), t('m.lead')),
     h('div', { class: 'card pad' }, h('h2', { class: 'card-title' }, t('m.matchTitle')), h('p', { class: 'muted' }, t('m.matchText'))),
+    h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('m.pzTitle')), h('p', { class: 'muted' }, t('m.pzText'))),
     h('div', { class: 'table-card section' }, h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
       h('thead', null, h('tr', null, h('th', null, t('m.signal')), h('th', null, t('m.level')), h('th', null, t('m.rule')))),
       h('tbody', null, rows.map(([type, sev]) => h('tr', null, td(t('m.signal'), { class: 'cell-main' }, t('sigtype.' + type)), td(t('m.level'), { class: 'nowrap' }, t('lvl.' + sev)), td(t('m.rule'), null, t('rule.' + type)))))))),
@@ -1891,6 +2131,7 @@ function render() {
   if (route === 'signals') page = signalsPage(parts[1]);
   else if (route === 'contracts') page = contractsPage(parts[1]);
   else if (route === 'payments') page = paymentsPage(parts[1]);
+  else if (route === 'prozorro') page = prozorroPage(parts[1]);
   else if (route === 'orgs') page = orgsPage();
   else if (route === 'org' && /^\d+$/.test(parts[1] || '')) { page = orgPage(parts[1], parts[2], parts[3]); key = 'orgs'; }
   else if (route === 'feed') page = feedPage();

@@ -270,6 +270,27 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 .tag.ok { background: var(--green-bg); color: var(--green); }
 .tag.nocontract { background: var(--yellow); color: var(--amber); white-space: nowrap; }
 
+/* Prozorro */
+.kind.pz { background: #E0F4F1; color: #0B6E62; }
+.tag.pz { display: inline-block; margin-top: 4px; background: #E0F4F1; color: #0B6E62; }
+.pz-st { display: inline-block; margin-top: 3px; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 800; white-space: nowrap; background: #E3ECFB; color: #1F4FB0; }
+.pz-st.ok { background: var(--green-bg); color: var(--green); }
+.pz-st.off { background: var(--soft); color: var(--faint); }
+.clamp1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; max-width: 420px; }
+.explain div.pay { background: var(--green-bg); }
+.sheet h4 { margin: 14px 0 8px; font-size: 13px; font-weight: 800; }
+.pz-contract { padding: 16px; border-radius: 18px; background: #fff; box-shadow: var(--shadow); }
+.pz-contract h3 { margin: 8px 0 6px; color: var(--text); font-size: 17px; letter-spacing: -.01em; text-transform: none; }
+.pz-link { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: var(--soft); }
+.pz-link > div { flex: 1; min-width: 200px; }
+.pz-link h4 { margin-top: 0; }
+.doc-list { display: grid; gap: 6px; }
+.doc { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 12px; border-radius: 12px; background: var(--soft); color: inherit; text-decoration: none; }
+.doc:hover { background: #E9EDF3; }
+.doc b { display: block; overflow: hidden; font-size: 14px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.doc small { color: var(--muted); font-size: 12px; }
+.doc .ico { width: 18px; height: 18px; color: var(--muted); }
+
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-height: 1.45; }
 
