@@ -29,6 +29,7 @@ export async function init({ onUser, lang }) {
   fb.onAuthStateChanged(auth, (user) => {
     current = user;
     if (unwatch && !user) { unwatch(); unwatch = null; }
+    if (unwatchTracked && !user) { unwatchTracked(); unwatchTracked = null; }
     if (user) saveProfile(user, lang()).catch(() => {});
     else sessionStorage.removeItem('driveToken');
     onUser(user);
@@ -137,10 +138,42 @@ export async function myExports() {
 // watchlist/{edrpou} is publicly readable: GitHub Actions reads it without
 // credentials and puts the organisation on the watch list.
 
-export function requestOrg(code, name) {
+export function requestOrg(code, name, role) {
   return fb.setDoc(fb.doc(db, 'watchlist', code), {
-    edrpou: code, name: (name || '').slice(0, 300), note: '', addedBy: current.uid, addedAt: fb.serverTimestamp(),
+    edrpou: code, name: (name || '').slice(0, 300), note: '', role: role === 'supplier' ? 'supplier' : 'buyer', addedBy: current.uid, addedAt: fb.serverTimestamp(),
   });
+}
+
+// ---- contracts on control -----------------------------------------------------------
+// tracked/{Prozorro contract id} is publicly readable: GitHub Actions re-reads
+// every active contract on each run. A contract is switched off, never deleted.
+
+let unwatchTracked = null;
+export function watchTracked(cb) {
+  if (unwatchTracked) unwatchTracked();
+  unwatchTracked = fb.onSnapshot(fb.collection(db, 'tracked'), (snap) => {
+    const map = new Map();
+    snap.forEach((d) => map.set(d.id, Object.assign({}, d.data(), { addedAt: toDate(d.data().addedAt), updatedAt: toDate(d.data().updatedAt) })));
+    cb(map);
+  }, () => cb(new Map()));
+}
+
+export async function track(id, info) {
+  const ref = fb.doc(db, 'tracked', id);
+  const old = await fb.getDoc(ref);
+  if (old.exists()) {
+    return fb.updateDoc(ref, { active: true, note: old.data().note || '', updatedBy: current.uid, updatedAt: fb.serverTimestamp() });
+  }
+  const clip = (v, n) => String(v || '').slice(0, n);
+  return fb.setDoc(ref, {
+    org: info.org, tid: info.tid, sp: clip(info.sp, 40), title: clip(info.title, 500), number: clip(info.number, 100),
+    buyer: clip(info.buyer, 300), supplier: clip(info.supplier, 300), note: '', active: true,
+    addedBy: current.uid, addedByName: clip(current.displayName || current.email, 200), addedAt: fb.serverTimestamp(),
+  });
+}
+
+export function setTracked(id, fields) {
+  return fb.updateDoc(fb.doc(db, 'tracked', id), Object.assign({}, fields, { updatedBy: current.uid, updatedAt: fb.serverTimestamp() }));
 }
 
 export async function watchlist() {
