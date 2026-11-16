@@ -392,10 +392,9 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
 .more-list a { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 16px; background: var(--soft); font-weight: 700; text-decoration: none; }
 .more-list .count { margin-left: auto; }
 
-@media (max-width: 1560px) {
-  .nav .ico { display: none; }
-  .nav a { padding: 7px 12px; }
-}
+/* The page is at most 1240px wide whatever the screen, so the top menu goes without icons. */
+.nav .ico { display: none; }
+.nav a, .nav button { padding: 7px 12px; }
 @media (max-width: 1180px) {
   .top-meta .chip, .brand small { display: none; }
 }

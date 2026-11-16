@@ -46,6 +46,9 @@ function doGet(e) {
       en ? 'Use Settings → Google Drive → Connect in “Монітор розрахунків”.'
          : 'Натисніть «Підключити Google Диск» у «Налаштуваннях» додатка «Монітор розрахунків».', null);
   }
+  // Google lets people tick permissions one by one; without "run when you are not present"
+  // (script.scriptapp) the 6-hour copies cannot run, so ask for all of them at once.
+  ScriptApp.requireAllScopes(ScriptApp.AuthMode.FULL);
   PropertiesService.getUserProperties().setProperty('uid', uid);
   var section = sectionFolder_();
   ensureTriggers_();
@@ -80,10 +83,8 @@ function ensureTriggers_() {
   ScriptApp.newTrigger('syncSoon').timeBased().after(10 * 1000).create();
 }
 
+// The one-off run after connecting; ensureTriggers_ removes it on the next connect.
 function syncSoon() {
-  ScriptApp.getProjectTriggers().forEach(function (tr) {
-    if (tr.getHandlerFunction() === 'syncSoon') ScriptApp.deleteTrigger(tr);
-  });
   syncAll();
 }
 
