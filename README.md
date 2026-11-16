@@ -22,12 +22,25 @@
 завжди бере свіжі файли, а service worker (`sw.js`) пропонує «Оновити», щойно
 вийшла нова збірка. Оновлення лише даних збірку не змінює.
 
-Публікація коду однією командою (токен GitHub лежить у
-`~/.config/spendings/github-token`, скрипт його не показує):
+Папка `pages/` — git-копія репозиторію; вхід у GitHub — через GitHub CLI
+(`gh auth login`, ключ лежить у звʼязці ключів macOS). Публікація коду:
 
 ```bash
-python3 tools/publish.py -m "що змінилось"
+git pull --rebase && git commit -am "що змінилось" && git push
 ```
+
+GitHub Actions часто комітить оновлення `data/`, тому перед `push` завжди
+`git pull --rebase`. Кожен push запускає синхронізацію й публікацію сайту.
+
+Правила бази (`firestore.rules`) публікує Firebase CLI (`firebase.json`,
+`.firebaserc` — проєкт `spending-monitor-2122b`):
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+Без git можна й так: `python3 tools/publish.py -m "..."` з токеном у
+`~/.config/spendings/github-token`.
 
 ## Як додати або прибрати організацію
 
