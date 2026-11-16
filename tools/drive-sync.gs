@@ -164,7 +164,7 @@ function writeRegister_(section, rows) {
     var res = drive_('patch', 'https://www.googleapis.com/upload/drive/v3/files/' + id + '?uploadType=media', blob, true);
     if (res.getResponseCode() === 200) return;
   }
-  id = upload_(blob, SHEET, section, '', 'application/vnd.google-apps.spreadsheet');
+  id = createSheet_(csv, SHEET, section);
   props.setProperty('register', id);
 }
 
@@ -173,7 +173,7 @@ function writeRegister_(section, rows) {
 function drive_(method, url, payload, raw) {
   var opt = { method: method, muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() } };
   if (payload != null) {
-    if (raw) { opt.payload = payload.getBytes(); opt.contentType = payload.getContentType(); }
+    if (raw) { opt.payload = payload; opt.contentType = payload.getContentType() || 'application/octet-stream'; }
     else { opt.payload = JSON.stringify(payload); opt.contentType = 'application/json'; }
   }
   return UrlFetchApp.fetch(url, opt);
@@ -211,16 +211,27 @@ function folder_(parent, name) {
   return JSON.parse(res.getContentText()).id;
 }
 
-function upload_(blob, name, parent, description, asType) {
-  var b = 'monitor' + Date.now();
-  var meta = { name: name, parents: [parent] };
+// Upload in two steps: the content as it is (a Blob goes to UrlFetchApp untouched,
+// so large PDFs do not blow up memory), then the name, folder and description.
+function upload_(blob, name, parent, description) {
+  var res = drive_('post', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=media&fields=id', blob, true);
+  if (res.getResponseCode() !== 200) throw new Error('Drive ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
+  var id = JSON.parse(res.getContentText()).id;
+  var meta = { name: name };
   if (description) meta.description = description;
-  if (asType) meta.mimeType = asType;
-  var head = Utilities.newBlob('--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) +
-    '\r\n--' + b + '\r\nContent-Type: ' + (blob.getContentType() || 'application/octet-stream') + '\r\n\r\n').getBytes();
-  var tail = Utilities.newBlob('\r\n--' + b + '--').getBytes();
-  var body = Utilities.newBlob(head.concat(blob.getBytes()).concat(tail), 'multipart/related; boundary=' + b);
-  var res = drive_('post', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', body, true);
+  res = drive_('patch', 'https://www.googleapis.com/drive/v3/files/' + id + '?addParents=' + parent + '&removeParents=root&fields=id', meta);
+  if (res.getResponseCode() !== 200) throw new Error('Drive ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
+  return id;
+}
+
+// A small CSV turned into a Google Sheet: conversion happens only in a one-request upload.
+function createSheet_(csv, name, parent) {
+  var b = 'monitor' + Date.now();
+  var body = '--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' +
+    JSON.stringify({ name: name, parents: [parent], mimeType: 'application/vnd.google-apps.spreadsheet' }) +
+    '\r\n--' + b + '\r\nContent-Type: text/csv; charset=UTF-8\r\n\r\n' + csv + '\r\n--' + b + '--';
+  var res = drive_('post', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
+    Utilities.newBlob(body, 'multipart/related; boundary=' + b), true);
   if (res.getResponseCode() !== 200) throw new Error('Drive ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
   return JSON.parse(res.getContentText()).id;
 }
