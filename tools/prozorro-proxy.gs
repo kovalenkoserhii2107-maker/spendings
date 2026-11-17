@@ -8,6 +8,8 @@
  *   ?action=tender&tid=UA-2026-10-15-007639-a     a procedure with its contracts, compacted
  *   ?action=nudge                                   "something was just put on control": start
  *                                                   the site's sync now instead of waiting
+ *   ?action=status                                  is the token there and accepted by GitHub;
+ *                                                   installs the 10-minute check if it is missing
  *
  * GitHub runs scheduled workflows unreliably, so this script also checks every 10 minutes
  * (checkNew, a time trigger set up once with setupTrigger) whether users picked contracts or
@@ -34,6 +36,7 @@ function doGet(e) {
     if (p.action === 'search') out = search_(p);
     else if (p.action === 'tender') out = tender_(String(p.tid || ''));
     else if (p.action === 'nudge') out = checkNew_();
+    else if (p.action === 'status') out = status_();
     else out = { error: 'unknown action' };
   } catch (err) {
     out = { error: String(err).slice(0, 300) };
@@ -181,4 +184,24 @@ function pubLists_() {
     url = page.nextPageToken ? PUB + '&pageToken=' + page.nextPageToken : null;
   }
   return { keys: Object.keys(keys), orgs: Object.keys(orgs) };
+}
+
+// Whether starting the sync can work: the token is set and GitHub accepts it for the
+// workflow; the 10-minute check is installed (once) if it is not yet.
+function status_() {
+  var props = PropertiesService.getScriptProperties();
+  var token = props.getProperty('GITHUB_TOKEN');
+  var hasTrigger = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'checkNew'; });
+  if (!hasTrigger) {
+    setupTrigger();
+    hasTrigger = true;
+  }
+  var github = null;
+  if (token) {
+    github = UrlFetchApp.fetch('https://api.github.com/repos/' + REPO + '/actions/workflows/sync.yml', {
+      muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json' },
+    }).getResponseCode();
+  }
+  var last = Number(props.getProperty('lastStart') || 0);
+  return { token: !!token, github: github, trigger: hasTrigger, lastStart: last ? new Date(last).toISOString() : null };
 }
