@@ -582,17 +582,13 @@ function showInstallBanner() {
 // ---- shell -------------------------------------------------------------------------------------
 
 // Five sections; the bell (notifications) and the avatar (settings) sit in the header.
+// Two sections: find (one search over every source) and follow (what was added, with the
+// bell for its changes). Settings sit behind the avatar.
 const NAV = [
-  ['#/', 'tracked', 'star', 'nav.tracked'],
-  ['#/orgs', 'orgs', 'building', 'nav.orgs'],
-  ['#/eib', 'eib', 'bank', 'nav.eib'],
+  ['#/', 'tracked', 'star', 'nav.tracking'],
   ['#/search', 'search', 'search', 'nav.search'],
 ];
-// Everything about organisations on monitoring lives under «Організації».
-const SECTION_TABS = {
-  orgs: [['#/orgs', 'orgs', 'orgs.tabList'], ['#/payments', 'payments', 'nav.payments'], ['#/contracts', 'contracts', 'nav.contracts'],
-    ['#/prozorro', 'prozorro', 'nav.prozorro'], ['#/signals', 'signals', 'nav.signals']],
-};
+const SECTION_TABS = {};
 function sectionTabs(section, active, page) {
   const tabs = SECTION_TABS[section];
   if (!tabs || !Array.isArray(page)) return page;
@@ -609,7 +605,7 @@ function scopeLine() {
 }
 
 function badgeFor(key) {
-  if (key === 'orgs') { const n = riskCount(); return n ? h('em', { class: 'count red' }, n) : null; }
+  if (key === 'tracked') { const n = riskCount(); return n ? h('em', { class: 'count red' }, n) : null; }
   return null;
 }
 
@@ -1696,7 +1692,26 @@ function trackedBar(tt, acts) {
     h('i', { style: `width:${Math.min(100, ((tt.paid || 0) / base) * 100)}%` }));
 }
 
+// The tabs of «Відстеження».
+function trackingTabs(active) {
+  const own = [...state.mine.tracked.keys()].length;
+  const shared = [...state.mine.shared.keys()].filter((id) => !isTracked(id)).length;
+  const tabs = [['#/', 'mine', t('tr.scope.items'), own], ['#/tracked/orgs', 'orgs', t('tr.scope.orgs'), (state.index.orgs || []).length],
+    ['#/tracked/signals', 'signals', t('tr.scope.signals'), riskCount()]].concat(shared ? [['#/tracked/shared', 'shared', t('tr.sharedTab'), shared]] : []);
+  return h('nav', { class: 'section-tabs pills', 'aria-label': t('nav.tracking') }, tabs.map(([href, key, text, n]) =>
+    h('a', { href, class: key === active ? 'on' : '' }, text, n ? h('em', { class: 'count' + (key === 'signals' ? ' red' : '') }, n) : null)));
+}
+const trackingHead = () => pageHead(t('tr.eyebrow'), titleGrad(t('tr.title1'), t('tr.title2')), null);
+
 function trackedPage(preset) {
+  if (preset === 'orgs') {
+    const orgs = state.index.orgs || [];
+    return [trackingHead(), trackingTabs('orgs'),
+      orgs.length ? h('div', { class: 'section' }, orgGrid(orgs))
+        : h('div', { class: 'card empty section' }, h('b', null, t('scope.noneTitle')), t('scope.noneText'),
+          h('div', { class: 'row', style: 'justify-content:center;margin-top:10px' }, h('a', { class: 'btn btn-dark btn-sm', href: '#/search' }, icon('search'), t('nav.search'))))];
+  }
+  if (preset === 'signals') return [trackingHead(), trackingTabs('signals')].concat(signalsPage().slice(1));
   const seen = getTrackedSeen();
   const byDate = (a, b) => ((b.row && b.row.changed_at) || '9').localeCompare((a.row && a.row.changed_at) || '9') || (b.pick.addedAt || b.pick.at || 0) - (a.pick.addedAt || a.pick.at || 0);
   const own = [...state.mine.tracked.entries()].map(([id, v]) => ({ id, pick: v, row: trackedRow(id), mine: true })).sort(byDate);
@@ -1760,10 +1775,10 @@ function trackedPage(preset) {
       h('div', { class: 'stat tint-blue' }, h('small', null, t('tr.paid')), h('b', { class: 'num' }, mshort(sum('paid')))),
       h('div', { class: 'stat tint-yellow' }, h('small', null, t('tr.left')), h('b', { class: 'num' }, mshort(sum('left'))), sum('overdue') > 1 ? h('span', { class: 'sub' }, t('tr.overdueN', { sum: mshort(sum('overdue')) })) : null));
   }
-  const scope = shared.length ? pills([['mine', t('tr.mine'), own.length], ['shared', t('tr.sharedTab'), shared.length]], f.scope, (v) => { f.scope = v; f.which = ''; draw(); }) : null;
+  const scope = trackingTabs(f.scope === 'shared' ? 'shared' : 'mine');
   draw();
   return [
-    pageHead(t('tr.eyebrow'), titleGrad(t('tr.title1'), t('tr.title2')), null, scope),
+    trackingHead(), scope,
     driveBanner(),
     tiles,
     h('div', { class: 'table-card section' }, h('div', { class: 'table-tools' }, filters, q), list),
@@ -2191,8 +2206,11 @@ function eibCsv(rows) {
 }
 
 function eibPage() {
+  return [pageHead('Prozorro', titleGrad(t('eib.title1'), t('eib.title2'))), eibBrowser('')];
+}
+function eibBrowser(q0) {
   const box = h('div', null, h('div', { class: 'card empty' }, t('ui.loading')));
-  const f = { which: 'contracts', kind: '', region: '', q: '', page: 0 };
+  const f = { which: q0 ? '' : 'contracts', kind: '', region: '', q: q0 || '', page: 0 };
   (async () => {
     let data;
     try { data = await loadEib(); } catch (e) { data = null; }
@@ -2223,7 +2241,7 @@ function eibPage() {
     }
     const n = (k) => all.filter(tests[k]).length;
     const regions = [...new Set(all.map((r) => r.t.region).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-    const q = h('input', { class: 'input', type: 'search', placeholder: t('eib.searchHint'), 'aria-label': t('ui.search'), oninput: () => { f.q = q.value; f.page = 0; draw(); } });
+    const q = h('input', { class: 'input', type: 'search', value: f.q, placeholder: t('eib.searchHint'), 'aria-label': t('ui.search'), oninput: () => { f.q = q.value; f.page = 0; draw(); } });
     fill(box, tiles, h('div', { class: 'table-card section' },
       h('div', { class: 'table-tools' },
         pills([['contracts', t('eib.fContracts'), n('contracts')], ['active', t('eib.fActive'), n('active')], ['open', t('eib.fOpen'), n('open')], ['tracked', t('tr.onControl'), n('tracked')], ['', t('ui.all'), all.length]]
@@ -2234,7 +2252,7 @@ function eibPage() {
       list));
     draw();
   })();
-  return [pageHead('Prozorro', titleGrad(t('eib.title1'), t('eib.title2'))), box];
+  return box;
 }
 
 function prozorroPage(preset) {
@@ -2346,7 +2364,7 @@ function orgsPage() {
   return [pageHead(t('orgs.eyebrow'), titleGrad(t('orgs.title1'), t('orgs.title2')), null), addOrgCard(), h('div', { class: 'section' }, orgGrid(state.index.orgs))];
 }
 
-const ORG_TABS = ['contracts', 'signals', 'transaction', 'prozorro', 'act', 'addendum', 'profile'];
+const ORG_TABS = ['contracts', 'prozorro', 'transaction', 'signals', 'profile'];
 
 function orgPage(code, tab, preset) {
   const org = orgByCode(code);
@@ -2397,13 +2415,13 @@ function orgPage(code, tab, preset) {
   const driveBtn = h('button', { class: 'btn', onclick: () => exportOrg(org, driveBtn) }, icon('drive'), h('span', null, t('drv.saveOrg')));
   const view = [
     h('div', { class: 'org-head' },
-      h('div', null, h('div', { class: 'eyebrow' }, h('a', { href: '#/orgs', style: 'text-decoration:none' }, '← ' + t('nav.orgs'))), h('h1', { class: 'org-title' }, org.name),
+      h('div', null, h('div', { class: 'eyebrow' }, h('a', { href: '#/tracked/orgs', style: 'text-decoration:none' }, '← ' + t('tr.scope.orgs'))), h('h1', { class: 'org-title' }, org.name),
         h('div', { class: 'chips' }, h('span', { class: 'tag ok' }, t('org.monitoring')), h('span', { class: 'tag' + (org.role === 'supplier' ? ' pz' : '') }, t('role.' + (org.role || 'buyer'))), h('span', { class: 'chip' }, t('f.edrpou') + ' ' + org.edrpou), syncChip(org),
           orgSignalCounts(org.edrpou).high ? h('span', { class: 'sev high' }, t('org.highRisk', { n: orgSignalCounts(org.edrpou).high })) : null)),
       h('div', { class: 'org-actions' }, h('div', { class: 'row' }, dbBtn, driveBtn),
         h('button', { class: 'btn btn-sm', onclick: async () => {
           if (!confirm(t('org.removeConfirm'))) return;
-          try { await cloud.removeOrg(org.edrpou); toast(t('org.removed')); location.hash = '#/orgs'; } catch (e) { toast(e.message, { bad: true }); }
+          try { await cloud.removeOrg(org.edrpou); toast(t('org.removed')); location.hash = '#/tracked/orgs'; } catch (e) { toast(e.message, { bad: true }); }
         } }, t('org.remove')))),
     org.status === 'error' && org.error ? h('div', { class: 'notice section' }, t('org.partial') + ' ' + org.error) : null,
     orgTrackedCard(org),
@@ -2557,104 +2575,6 @@ function feedPage(preset) {
 
 // ---- live search ---------------------------------------------------------------------------------
 
-function searchPage() {
-  const s = state.search || (state.search = { edrpou: '', kind: 'transaction', role: 'both', from: addDays(today(), -30), to: today(), res: null, page: 0 });
-  const out = h('div');
-  const code = h('input', { class: 'input', type: 'text', inputmode: 'numeric', placeholder: t('srch.codeHint'), maxlength: 12, required: true, pattern: '\\s*\\d{8,10}\\s*', value: s.edrpou });
-  const from = h('input', { class: 'input', type: 'date', required: true, value: s.from });
-  const to = h('input', { class: 'input', type: 'date', required: true, value: s.to });
-  const roleBox = h('span');
-  let roleSel = null;
-  const drawRole = () => {
-    const opts = roleOptions(kindSel.value);
-    roleSel = opts.length ? select([['both', t('ui.anyRole')]].concat(opts), opts.some((o) => o[0] === s.role) ? s.role : 'both', () => {}, t('srch.role')) : null;
-    fill(roleBox, roleSel ? h('label', { class: 'field' }, h('span', null, t('srch.role')), roleSel) : '');
-  };
-  const kindSel = select(KINDS.map((k) => [k, kindMany(k)]), s.kind, drawRole, t('srch.what'));
-  drawRole();
-  const go = h('button', { class: 'btn btn-dark', type: 'submit' }, icon('search'), t('srch.go'));
-
-  async function run() {
-    const { edrpou, kind, from: a, to: b } = s;
-    if (a > b) throw new Error(t('srch.badRange'));
-    const limit = kind === 'transaction' ? 366 : 731;
-    if (kind !== 'report' && daysBetween(a, b) > limit) throw new Error(kind === 'transaction' ? t('srch.maxYear') : t('srch.max2Years'));
-    const roles = !ROLES_FOR[kind] ? [''] : s.role === 'both' ? ROLES_FOR[kind] : [s.role];
-    let raws = [];
-    let truncated = false;
-    for (const role of roles) {
-      if (kind === 'transaction') raws = raws.concat(await portalTransactions(edrpou, role, a, b));
-      else if (DOC_PATHS[kind]) {
-        const r = await portalDocuments(kind, edrpou, role, a, b);
-        raws = raws.concat(r.docs);
-        truncated = truncated || r.truncated;
-      } else if (kind === 'liability') raws = await portalLiabilities(edrpou, a, b);
-      else {
-        // The portal rejects this request for a code that is not a registered
-        // disposer; from the browser that is indistinguishable from "no reports".
-        raws = await portalReports(edrpou).catch(() => []);
-      }
-    }
-    const names = kind in DOC_PATHS ? await getJSON('data/names.json', ver()).catch(() => ({})) : {};
-    const dicts = kind === 'report' ? await loadReportDicts() : null;
-    const seen = new Set();
-    let items = [];
-    for (const raw of raws) {
-      const n = normalize(kind, raw, edrpou, names, dicts);
-      if (seen.has(n.ext_id)) continue;
-      seen.add(n.ext_id);
-      items.push(Object.assign(n, { kind, data: raw }));
-    }
-    if (kind === 'report') items = items.filter((i) => (i.date || '') >= a && (i.date || '9') <= b);
-    items.sort((x, y) => (y.date || '').localeCompare(x.date || '') || y.ext_id.localeCompare(x.ext_id));
-    return { items, truncated };
-  }
-
-  function draw() {
-    const res = s.res;
-    if (!res) {
-      fill(out, h('div', { class: 'empty' }, h('b', null, t('srch.emptyTitle')), t('srch.emptyText')));
-      return;
-    }
-    const tracked = orgByCode(s.edrpou);
-    const box = h('div');
-    pagedList(box, res.items, s.page, {
-      csv: `spending-${s.edrpou}-${s.kind}`, noSum: s.kind === 'report', emptyText: t('srch.nothing'),
-      extra: tracked ? h('a', { class: 'btn btn-sm', href: '#/org/' + s.edrpou }, t('srch.openRecon')) : h('a', { class: 'btn btn-sm', href: '#/orgs' }, t('srch.howTrack')),
-    }, (p) => { s.page = p; draw(); });
-    fill(out, res.truncated ? h('div', { class: 'notice', style: 'margin:14px 16px 0' }, t('srch.truncated')) : null, box);
-  }
-
-  const form = h('form', {
-    class: 'table-tools',
-    onsubmit: async (e) => {
-      e.preventDefault();
-      Object.assign(s, { edrpou: code.value.trim(), kind: kindSel.value, role: roleSel ? roleSel.value : 'both', from: from.value, to: to.value, page: 0 });
-      fill(out, h('div', { class: 'empty' }, t('srch.wait')));
-      go.disabled = true;
-      try {
-        s.res = await run();
-        draw();
-      } catch (err) {
-        s.res = null;
-        fill(out, h('div', { class: 'empty' }, err.message));
-      } finally {
-        go.disabled = false;
-      }
-    },
-  },
-    h('label', { class: 'field' }, h('span', null, t('f.edrpou')), code),
-    h('label', { class: 'field' }, h('span', null, t('srch.what')), kindSel),
-    roleBox,
-    h('label', { class: 'field' }, h('span', null, t('ui.from')), from), h('label', { class: 'field' }, h('span', null, t('ui.to')), to), go);
-  draw();
-  return [pageHead(t('srch.eyebrow'), titleGrad(t('srch.title1'), t('srch.title2')), null),
-    quickSearch(),
-    h('details', { class: 'section adv-search', open: s.res ? true : null }, h('summary', null, t('qs.treasuryForm')),
-      h('p', { class: 'muted small' }, t('qs.treasuryFormHint')),
-      h('div', { class: 'table-card' }, form, out))];
-}
-
 // ---- the main entry: one search over the Treasury and Prozorro ----------------------------------
 //
 // A code (EDRPOU) finds the organisation: its card with "start monitoring", its procedures and
@@ -2674,30 +2594,128 @@ async function pzProxy(params) {
   if (d.error) throw new Error('Prozorro: ' + d.error);
   return d;
 }
-const qsState = { q: '', res: null };
-function quickSearch() {
-  const input = h('input', { class: 'input', type: 'search', value: qsState.q, placeholder: t('qs.hint'), 'aria-label': t('qs.hint') });
+// One search over every source. The query decides what is looked up: a code (EDRPOU) the
+// organisation and everything about it, a procurement id (UA-…) that procurement, any other
+// text procurement and organisations by name. Filters narrow the kind, the sources, the
+// period and the role; "EIB only" searches the catalogue of EIB-financed procurement.
+const SEARCH_TYPES = ['all', 'orgs', 'contracts', 'tenders', 'payments'];
+const qs2 = { q: '', type: 'all', treasury: true, prozorro: true, eib: false, from: addDays(today(), -365), to: today(), role: 'any' };
+function searchPage(preset) {
+  if (preset === 'eib') qs2.eib = true;
   const out = h('div');
-  const go = h('button', { class: 'btn btn-dark', type: 'submit' }, icon('search'), t('srch.go'));
-  async function run(q) {
-    qsState.q = q;
+  const input = h('input', { class: 'input', type: 'search', value: qs2.q, placeholder: t('qs.hint'), 'aria-label': t('qs.hint') });
+  const typeBox = h('div');
+  const drawTypes = () => fill(typeBox, pills(SEARCH_TYPES.map((k) => [k, t('qs.type.' + k)]), qs2.type, (v) => { qs2.type = v; run(); }));
+  const chk = (key, labelKey) => h('label', { class: 'chk-opt' }, h('input', { type: 'checkbox', checked: qs2[key] || null, onchange: (e) => { qs2[key] = e.target.checked; drawFilters(); run(); } }), t(labelKey));
+  const filters = h('div', { class: 'qs-filters' });
+  const drawFilters = () => fill(filters,
+    h('div', { class: 'row' }, h('span', { class: 'faint small' }, t('qs.sources')), chk('treasury', 'qs.src.treasury'), chk('prozorro', 'qs.src.prozorro'), chk('eib', 'qs.src.eib')),
+    !qs2.eib ? h('div', { class: 'row' },
+      h('label', { class: 'field' }, h('span', null, t('ui.from')), h('input', { class: 'input', type: 'date', value: qs2.from, onchange: (e) => { qs2.from = e.target.value; run(); } })),
+      h('label', { class: 'field' }, h('span', null, t('ui.to')), h('input', { class: 'input', type: 'date', value: qs2.to, onchange: (e) => { qs2.to = e.target.value; run(); } })),
+      h('label', { class: 'field' }, h('span', null, t('qs.role')), select([['any', t('qs.role.any')], ['buyer', t('qs.role.buyer')], ['supplier', t('qs.role.supplier')]], qs2.role, (e) => { qs2.role = e.target.value; run(); }, t('qs.role')))) : null);
+  const want = (type) => qs2.type === 'all' || qs2.type === type;
+  function run() {
+    qs2.q = input.value.trim();
+    const q = qs2.q;
+    if (qs2.eib) { fill(out, eibBrowser(q)); return; }
+    if (!q) { fill(out, h('div', { class: 'empty' }, h('b', null, t('qs.emptyTitle')), t('qs.emptyText'))); return; }
     const code = /^\d{8,10}$/.test(q) ? q : null;
-    fill(out, h('div', { class: 'empty' }, t('srch.wait')));
+    const tid = /^UA-\d{4}-\d{2}-\d{2}-\d{6}-[a-z]$/i.test(q) ? q.toUpperCase().replace(/-([A-Z])$/, (m, x) => '-' + x.toLowerCase()) : null;
     const blocks = [];
+    const buyerSide = qs2.role !== 'supplier', supplierSide = qs2.role !== 'buyer';
     if (code) {
       const org = orgFound(code);
-      blocks.push(org);
-      blocks.push(pzList(t('qs.asBuyer'), { action: 'search', kind: 'tenders', buyer: code }));
-      blocks.push(pzList(t('qs.asSupplier'), { action: 'search', kind: 'contracts', supplier: code }));
-      blocks.push(treasuryList(code, org.setName));
+      if (want('orgs')) blocks.push(org);
+      if (want('tenders') && qs2.prozorro && buyerSide) blocks.push(pzList(t('qs.asBuyer'), { action: 'search', kind: 'tenders', buyer: code }));
+      if (want('contracts') && qs2.prozorro && supplierSide) blocks.push(pzList(t('qs.asSupplier'), { action: 'search', kind: 'contracts', supplier: code }));
+      if (want('contracts') && qs2.treasury) blocks.push(treasuryList(code, org.setName, qs2));
+      if (want('payments') && qs2.treasury) blocks.push(paymentsList(code, qs2, qs2.type === 'payments' ? null : 4000));
+    } else if (tid) {
+      if (qs2.prozorro) blocks.push(tenderFound(tid));
     } else {
-      blocks.push(pzList(t('qs.byText'), { action: 'search', kind: 'tenders', text: q }));
+      if (want('orgs')) blocks.push(orgsByName(q));
+      if ((want('tenders') || want('contracts')) && qs2.prozorro) blocks.push(pzList(t('qs.byText'), { action: 'search', kind: 'tenders', text: q }));
+      if (want('payments') || (want('contracts') && qs2.treasury)) blocks.push(h('p', { class: 'muted small qs-block' }, t('qs.needCode')));
     }
-    fill(out, blocks);
+    fill(out, blocks.length ? blocks : h('div', { class: 'empty' }, t('qs.nothingToSearch')));
   }
-  const form = h('form', { class: 'qs-form', onsubmit: (e) => { e.preventDefault(); const q = input.value.trim(); if (q) run(q); } }, input, go);
-  if (qsState.q) setTimeout(() => run(qsState.q));
-  return h('div', { class: 'card pad section qs' }, form, out);
+  const form = h('form', { class: 'qs-form', onsubmit: (e) => { e.preventDefault(); run(); } }, input, h('button', { class: 'btn btn-dark', type: 'submit' }, icon('search'), t('srch.go')));
+  drawTypes();
+  drawFilters();
+  setTimeout(run);
+  return [pageHead(t('srch.eyebrow'), titleGrad(t('srch.title1'), t('srch.title2')), null),
+    h('div', { class: 'card pad section qs' }, form, typeBox,
+      // On a phone the filters fold away under one line.
+      h('details', { class: 'qs-more', open: window.innerWidth > 760 || null }, h('summary', null, t('qs.filters')), filters)),
+    h('div', { class: 'section' }, out)];
+}
+
+// Organisations whose name contains the text: the ones the app has met (on monitoring,
+// in the EIB catalogue, in the Treasury names it looked up).
+function orgsByName(q) {
+  const box = h('div', { class: 'qs-block' }, h('div', { class: 'card-head' }, h('h3', { class: 'card-sub' }, t('qs.orgsByName'))), h('div', { class: 'muted small' }, t('ui.loading')));
+  (async () => {
+    const found = new Map();
+    const add = (code, name) => { if (realCode(code) && name && !found.has(code)) found.set(code, name); };
+    const words = q.toLowerCase().split(/\s+/).filter((w) => w.length > 1);
+    const hit = (name) => words.length && words.every((w) => String(name || '').toLowerCase().includes(w));
+    (state.all.orgs || []).forEach((o) => hit(o.name) && add(o.edrpou, o.name));
+    try { const names = await getJSON('data/names.json', ver()); Object.entries(names).forEach(([c, n]) => hit(n) && add(c, n)); } catch (e) { /* none */ }
+    try {
+      const eib = await loadEib();
+      (eib.items || []).forEach((t0) => { if (hit(t0.buyer_name)) add(t0.buyer, t0.buyer_name); (t0.contracts || []).forEach((c) => (c.suppliers || []).forEach((x) => hit(x.name) && add(x.code, x.name))); });
+    } catch (e) { /* none */ }
+    const rows = [...found.entries()].slice(0, 30);
+    fill(box, h('div', { class: 'card-head' }, h('h3', { class: 'card-sub' }, t('qs.orgsByName'))),
+      rows.length ? h('div', { class: 'qs-list' }, rows.map(([code, name]) => h('div', { class: 'qs-row click', tabindex: 0, onclick: () => { location.hash = '#/search'; qs2.q = code; render(); } },
+        h('div', null, h('b', null, name), h('div', { class: 'cell-sub num' }, t('f.edrpou') + ' ' + code)),
+        h('div', { class: 'qs-side' }, state.mine.orgs.has(code) ? h('span', { class: 'tag ok' }, t('org.monitoring')) : h('span', { class: 'btn btn-sm' }, t('qs.open'), icon('arrow'))))))
+        : h('div', { class: 'muted small' }, t('qs.none')));
+  })();
+  return box;
+}
+
+// One procurement by its id: its contracts and "follow".
+function tenderFound(tid) {
+  const box = h('div', { class: 'qs-block' }, h('div', { class: 'muted small' }, t('ui.loading')));
+  (async () => {
+    try {
+      const t0 = (await pzProxy({ action: 'tender', tid })).tender;
+      fill(box, h('div', { class: 'qs-row' },
+        h('div', null, h('b', null, t0.title || tid), h('div', { class: 'cell-sub' }, join([tid, t0.buyer_name, label('pzs.', t0.status)])), pzContracts(t0)),
+        h('div', { class: 'qs-side' }, t0.value ? h('b', { class: 'num' }, money(t0.value.amount, t0.value.currency)) : null, ext(pzUrl(tid), 'Prozorro'))));
+    } catch (e) {
+      fill(box, h('div', { class: 'muted small' }, e.message));
+    }
+  })();
+  return box;
+}
+
+// Treasury payments of the organisation in the period (payer, recipient or both).
+function paymentsList(code, f, delay) {
+  const list = h('div', null, h('div', { class: 'muted small' }, t('ui.loading')));
+  (async () => {
+    try {
+      if (delay) await new Promise((r) => setTimeout(r, delay));  // after the contracts, not alongside
+      const roles = f.role === 'buyer' ? ['payer'] : f.role === 'supplier' ? ['recipient'] : ['payer', 'recipient'];
+      const from = f.from > addDays(f.to, -366) ? f.from : addDays(f.to, -366);
+      // One request at a time: the portal turns away parallel ones.
+      const raws = [];
+      for (const r of roles) raws.push(...await portalTransactions(code, r, from, f.to));
+      const seen = new Set();
+      const items = raws.map((raw) => Object.assign(normalize('transaction', raw, code), { kind: 'transaction', data: raw }))
+        .filter((i) => !seen.has(i.ext_id) && seen.add(i.ext_id)).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      const box = h('div');
+      let page = 0;
+      const draw = () => pagedList(box, items, page, { emptyText: t('qs.none') }, (p) => { page = p; draw(); });
+      draw();
+      fill(list, box);
+    } catch (e) {
+      fill(list, h('div', { class: 'muted small' }, e.message));
+    }
+  })();
+  return h('div', { class: 'qs-block' }, h('div', { class: 'card-head' }, h('h3', { class: 'card-sub' }, t('qs.payments'))), h('div', { class: 'table-card' }, list));
 }
 
 // The organisation behind a code: its Treasury card and whether it is on monitoring.
@@ -2769,13 +2787,14 @@ function pzContracts(t0) {
 }
 
 // The organisation's Treasury contracts of the last year, either side.
-function treasuryList(code, onName) {
+function treasuryList(code, onName, f) {
   const list = h('div', { class: 'qs-list' }, h('div', { class: 'muted small' }, t('ui.loading')));
   (async () => {
     try {
-      const from = addDays(today(), -365), to = today();
+      const from = (f && f.from) || addDays(today(), -365), to = (f && f.to) || today();
+      const roles = f && f.role === 'buyer' ? ['disposer'] : f && f.role === 'supplier' ? ['contractor'] : ['disposer', 'contractor'];
       const [parts, names] = await Promise.all([
-        Promise.all(['disposer', 'contractor'].map((role) => portalDocuments('contract', code, role, from, to).catch(() => ({ docs: [] })))),
+        Promise.all(roles.map((role) => portalDocuments('contract', code, role, from, to).catch(() => ({ docs: [] })))),
         getJSON('data/names.json', ver()).catch(() => ({})),
       ]);
       const docs = parts.flatMap((p) => p.docs).sort((a, b) => (b.documentDate || '').localeCompare(a.documentDate || ''));
@@ -3184,17 +3203,18 @@ function render() {
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const route = parts[0] || '';
   let page, key = route;
-  if (['signals', 'contracts', 'payments', 'prozorro'].includes(route)) {
-    const pages = { signals: signalsPage, contracts: contractsPage, payments: paymentsPage, prozorro: prozorroPage };
-    page = sectionTabs('orgs', route, pages[route](parts[1])); key = 'orgs';
+  if (['contracts', 'payments', 'prozorro'].includes(route)) {
+    const pages = { contracts: contractsPage, payments: paymentsPage, prozorro: prozorroPage };
+    page = [scopeLine()].concat(pages[route](parts[1])); key = 'tracked';
   }
-  else if (route === 'eib') page = eibPage();
-  else if (route === 'overview') { page = overviewPage(); key = 'orgs'; }
+  else if (route === 'signals') { page = trackedPage('signals'); key = 'tracked'; }
+  else if (route === 'eib') { page = searchPage('eib'); key = 'search'; }
+  else if (route === 'overview') { page = overviewPage(); key = 'tracked'; }
   else if (route === 'tracked' && /^([0-9a-f]{32}|sp\d{3,20}|tn[0-9a-f]{32})$/.test(parts[1] || '')) { page = trackedDossier(parts[1]); key = 'tracked'; }
-  else if (route === 'orgs') page = sectionTabs('orgs', 'orgs', orgsPage());
-  else if (route === 'org' && /^\d+$/.test(parts[1] || '')) { page = orgPage(parts[1], parts[2], parts[3]); key = 'orgs'; }
+  else if (route === 'orgs') { page = trackedPage('orgs'); key = 'tracked'; }
+  else if (route === 'org' && /^\d+$/.test(parts[1] || '')) { page = orgPage(parts[1], parts[2], parts[3]); key = 'tracked'; }
   else if (route === 'feed') page = feedPage(parts[1]);
-  else if (route === 'search') page = searchPage();
+  else if (route === 'search') page = searchPage(parts[1]);
   else if (route === 'method') { page = methodPage(); key = 'settings'; }
   else if (route === 'settings') page = settingsPage();
   else { page = trackedPage(parts[1]); key = 'tracked'; }

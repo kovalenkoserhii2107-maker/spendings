@@ -346,6 +346,15 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 .adv-search > summary { cursor: pointer; font-size: 18px; font-weight: 800; margin-bottom: 8px; }
 .tag.bad { background: var(--red-bg); color: var(--red); }
 /* The main search */
+.qs > .pills { margin-top: 14px; }
+.qs-filters { display: grid; gap: 10px; margin-top: 12px; }
+.qs-more { margin-top: 10px; }
+.qs-more > summary { cursor: pointer; font-size: 13.5px; font-weight: 700; color: var(--muted); }
+@media (min-width: 761px) { .qs-more > summary { display: none; } }
+@media (max-width: 760px) { .qs-filters .row .field { flex: 1 1 40%; min-width: 0; } }
+.qs-filters .field { min-width: 150px; }
+.chk-opt { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: var(--soft); font-size: 13.5px; font-weight: 700; cursor: pointer; }
+.chk-opt input { accent-color: #000; }
 .qs-form { display: flex; gap: 8px; }
 .qs-form .input { flex: 1; min-width: 0; font-size: 16px; }
 .qs-org { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 18px; padding: 16px; border-radius: 16px; background: var(--soft); }
@@ -500,7 +509,7 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
   .section-tabs { width: auto; max-width: 100%; }
   .foot-meta { padding-bottom: calc(var(--tabbar) + 24px + var(--safe-b)); }
   .toasts, .install { bottom: calc(var(--tabbar) + 14px + var(--safe-b)); }
-  .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; display: grid; grid-template-columns: repeat(5, 1fr); height: calc(var(--tabbar) + var(--safe-b)); padding-bottom: var(--safe-b);
+  .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; display: grid; grid-template-columns: repeat(2, 1fr); height: calc(var(--tabbar) + var(--safe-b)); padding-bottom: var(--safe-b);
     background: rgba(255, 255, 255, .86); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); box-shadow: 0 -.5px 0 var(--line); }
   .tabbar a, .tabbar button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; background: none; color: var(--faint);
     font-size: 10.5px; font-weight: 700; text-decoration: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
