@@ -32,7 +32,7 @@ const RG = {
     h_funding: 'статус фінансування: {s}', h_disq: 'відхилено учасників: {n}', h_single: 'одна пропозиція', h_noContract: 'договору ще немає',
     h_paidGap: 'оплачено {paid}% при виконанні {pct}%',
     importFailed: 'не збережено: {list}',
-    trackAll: 'Відстежувати все з таблиці', trackConfirm: 'Поставити на відстеження договори й закупівлі {n} показаних субпроєктів? Діючі договори — на контроль, закупівлі без договору — до підписання.',
+    trackAll: 'Відстежувати мої з таблиці ({n})', trackConfirm: 'Поставити на відстеження договори й закупівлі ваших {n} субпроєктів? Діючі договори — на контроль, закупівлі без договору — до підписання.',
     tracking: 'Відстеження: {n} з {total}, додано {added}…', trackDone: 'На відстеження додано {added}, уже було {already}, не вдалося {failed}',
     denied: 'Немає дозволу на запис у реєстр — перевірте, що ви увійшли акаунтом зі списку доступу.', refreshFailed: 'Не оновилось субпроєктів: {n}',
     xSheet: 'Монітор', xTenders: 'Закупівлі', paidShort: 'опл. {pct}%', subvention: 'Субвенція', subvPaid: 'сплачено {sum}', paidSheet: 'Оплачено (аркуш Payments)',
@@ -64,7 +64,7 @@ const RG = {
     h_funding: 'funding status: {s}', h_disq: 'bidders rejected: {n}', h_single: 'single bid', h_noContract: 'no contract yet',
     h_paidGap: '{paid}% paid at {pct}% done',
     importFailed: 'not saved: {list}',
-    trackAll: 'Track everything in the table', trackConfirm: 'Put the contracts and procurements of the {n} shown sub-projects on control? Contracts in force go on control, procurements without a contract until it is signed.',
+    trackAll: 'Track mine from the table ({n})', trackConfirm: 'Put the contracts and procurements of your {n} sub-projects on control? Contracts in force go on control, procurements without a contract until it is signed.',
     tracking: 'Tracking: {n} of {total}, {added} added…', trackDone: '{added} added to tracking, {already} already there, {failed} failed',
     denied: 'No permission to write to the registry — check you are signed in with an account on the access list.', refreshFailed: 'Not refreshed: {n} sub-projects',
     xSheet: 'Monitor', xTenders: 'Procurements', paidShort: 'paid {pct}%', subvention: 'Subvention', subvPaid: 'paid {sum}', paidSheet: 'Paid (Payments sheet)',
@@ -411,12 +411,14 @@ function registryPage() {
   const status = h('span', { class: 'muted small', id: 'reg-status' }, REG.status ? h('span', { class: REG.status.bad ? 'bad' : '' }, REG.status.text) : null);
   const file = h('input', { type: 'file', accept: '.xlsx', hidden: true, onchange: () => file.files[0] && importFile(file.files[0]) });
   const meta = REG.meta;
+  const own = REG.access.expert ? rows.filter((r) => (r.t || {}).expert === REG.access.expert) : [];
   const head = pageHead(rt('eyebrow'), titleGrad(rt('title1'), rt('title2')),
     meta ? rt('imported', { at: ftime(meta.at && meta.at.toDate ? meta.at.toDate().toISOString() : meta.at), by: meta.byName || '—', n: meta.rows }) : rt('noTable'),
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => file.click() }, icon('cloud'), rt('upload')), file,
       rows.length ? h('button', { class: 'btn', onclick: () => exportXlsx(filtered()) }, icon('download'), rt('export')) : null,
       rows.length ? h('button', { class: 'btn', onclick: () => refreshMany(filtered()) }, icon('refresh'), rt('refresh')) : null,
-      rows.length ? h('button', { class: 'btn btn-dark', onclick: () => { const list = filtered(); if (confirm(rt('trackConfirm', { n: list.length }))) trackAll(list); } }, icon('star'), rt('trackAll')) : null, status));
+      // Only an expert's own sub-projects, into their own tracking, whatever the filters show.
+      own.length ? h('button', { class: 'btn btn-dark', onclick: () => { if (confirm(rt('trackConfirm', { n: own.length }))) trackAll(own); } }, icon('star'), rt('trackAll', { n: own.length })) : null, status));
   if (!rows.length) return [head];
   const experts = [...new Set(rows.map((r) => (r.t || {}).expert).filter(Boolean))].sort();
   const progs = [...new Set(rows.map((r) => (r.t || {}).programme).filter(Boolean))].sort();
