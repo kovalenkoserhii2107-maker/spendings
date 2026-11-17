@@ -7,8 +7,9 @@ rules_version = '2';
 // and contracts on control:
 //   users/{uid}                 profile, read and written only by its owner
 //     /myorgs/{edrpou}          organisations the user follows (role: buyer|supplier)
-//     /tracked/{contractId}     contracts the user has on control (Prozorro contract
-//                               id), with the user's own note and whom it is shared with
+//     /tracked/{contractId}     contracts the user has on control (Prozorro contract id,
+//                               or "sp" + Treasury id when Prozorro has no such contract),
+//                               with the user's own note and whom it is shared with
 //     /shared/{contractId}      contracts other users shared with this user: written
 //                               by the sharer (who must have it on control), read and
 //                               removed by the recipient; the sharer may withdraw it
@@ -52,6 +53,14 @@ service cloud.firestore {
     function str(v, n) {
       return v is string && v.size() <= n;
     }
+    // A Prozorro contract id; "sp" + the Treasury id for a contract Prozorro does not have;
+    // "tn" + a Prozorro procedure id for a procurement on control before it has a contract.
+    function contractKey(cid) {
+      return cid.matches('^([0-9a-f]{32}|sp[0-9]{3,20}|tn[0-9a-f]{32})$');
+    }
+    function tenderOf(cid, tid) {
+      return (cid.matches('^sp.*') && tid == '') || (tid is string && tid.matches('^UA-[0-9A-Za-z-]{10,40}$'));
+    }
 
     match /users/{uid} {
       allow read: if isSelf(uid);
@@ -70,22 +79,22 @@ service cloud.firestore {
 
       match /tracked/{cid} {
         allow read, delete: if isSelf(uid);
-        allow create, update: if isSelf(uid) && cid.matches('^[0-9a-f]{32}$')
-          && request.resource.data.keys().hasOnly(['org', 'tid', 'sp', 'title', 'number', 'buyer', 'supplier', 'note', 'addedAt', 'sharedWith'])
+        allow create, update: if isSelf(uid) && contractKey(cid)
+          && request.resource.data.keys().hasOnly(['org', 'tid', 'sp', 'signed', 'title', 'number', 'buyer', 'supplier', 'note', 'addedAt', 'sharedWith'])
           && request.resource.data.org.matches('^[0-9]{8,10}$')
-          && request.resource.data.tid.matches('^UA-[0-9A-Za-z-]{10,40}$')
+          && tenderOf(cid, request.resource.data.tid)
           && str(request.resource.data.note, 500) && str(request.resource.data.title, 500)
           && (!('sharedWith' in request.resource.data) || (request.resource.data.sharedWith is list && request.resource.data.sharedWith.size() <= 50));
       }
 
       match /shared/{cid} {
         allow read: if isSelf(uid) || (signedIn() && resource.data.from == request.auth.uid);
-        allow create, update: if signedIn() && request.auth.uid != uid && cid.matches('^[0-9a-f]{32}$')
+        allow create, update: if signedIn() && request.auth.uid != uid && contractKey(cid)
           && exists(/databases/$(database)/documents/users/$(request.auth.uid)/tracked/$(cid))
           && (resource == null || resource.data.from == request.auth.uid)
           && request.resource.data.keys().hasOnly(['from', 'fromName', 'org', 'tid', 'sp', 'title', 'number', 'buyer', 'supplier', 'at'])
           && request.resource.data.from == request.auth.uid
-          && request.resource.data.tid.matches('^UA-[0-9A-Za-z-]{10,40}$')
+          && tenderOf(cid, request.resource.data.tid)
           && str(request.resource.data.title, 500) && str(request.resource.data.fromName, 200)
           && request.resource.data.at == request.time;
         allow delete: if isSelf(uid) || (signedIn() && resource.data.from == request.auth.uid);

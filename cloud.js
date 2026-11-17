@@ -185,7 +185,7 @@ async function publish() {
   for (const [cid, t] of mine.tracked) for (const w of t.sharedWith || []) if (w.uid) shares.push({ cid, to: await hashOf(w.uid) });
   await fb.setDoc(fb.doc(db, 'pub', myHashValue), {
     orgs: [...mine.orgs.values()].map((o) => ({ edrpou: o.edrpou, role: o.role || 'buyer' })),
-    tracked: [...mine.tracked.entries()].map(([cid, t]) => ({ cid, org: t.org, tid: t.tid, sp: t.sp || '' })),
+    tracked: [...mine.tracked.entries()].map(([cid, t]) => ({ cid, org: t.org, tid: t.tid || '', sp: t.sp || '', date: t.signed || '' })),
     shares,
     at: fb.serverTimestamp(),
   });
@@ -200,10 +200,11 @@ export function removeOrg(code) {
   return fb.deleteDoc(fb.doc(db, 'users', current.uid, 'myorgs', code));
 }
 
+// cid: a Prozorro contract id, or "sp" + the Treasury id for a contract Prozorro does not have.
 export function track(cid, info) {
   const clip = (v, n) => String(v || '').slice(0, n);
   return fb.setDoc(fb.doc(db, 'users', current.uid, 'tracked', cid), {
-    org: info.org, tid: info.tid, sp: clip(info.sp, 40), title: clip(info.title, 500), number: clip(info.number, 100),
+    org: info.org, tid: info.tid || '', sp: clip(info.sp, 40), signed: clip(info.signed, 10), title: clip(info.title, 500), number: clip(info.number, 100),
     buyer: clip(info.buyer, 300), supplier: clip(info.supplier, 300), note: '', addedAt: fb.serverTimestamp(), sharedWith: [],
   });
 }

@@ -29,7 +29,9 @@ import spending
 
 PUB_URL = ("https://firestore.googleapis.com/v1/projects/spending-monitor-2122b/"
            "databases/(default)/documents/pub?pageSize=300")
-KEY_RE = re.compile(r"^[0-9a-f]{32}$")
+# A Prozorro contract id; "sp" + a Treasury id (no such contract in Prozorro);
+# "tn" + a Prozorro procedure id (a procurement on control before it has a contract).
+KEY_RE = re.compile(r"^([0-9a-f]{32}|sp[0-9]{3,20}|tn[0-9a-f]{32})$")
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 OVERLAP_DAYS = 7
 HISTORY_SIZE = 300
@@ -77,9 +79,11 @@ def read_pub():
                     e["owners"].add(h)
             for t in f.get("tracked") or []:
                 cid = str((t or {}).get("cid") or "")
-                if KEY_RE.match(cid) and str(t.get("tid") or "").startswith("UA-"):
-                    e = contracts.setdefault(cid, {"key": cid, "org": str(t.get("org") or ""), "tid": t["tid"], "sp": str(t.get("sp") or ""),
-                                                   "owners": set(), "viewers": set()})
+                treasury_only = cid.startswith("sp")
+                if KEY_RE.match(cid) and (treasury_only or str(t.get("tid") or "").startswith("UA-")):
+                    e = contracts.setdefault(cid, {"key": cid, "org": str(t.get("org") or ""), "tid": "" if treasury_only else t["tid"],
+                                                   "sp": cid[2:] if treasury_only else str(t.get("sp") or ""),
+                                                   "date": str(t.get("date") or "")[:10], "owners": set(), "viewers": set()})
                     e["owners"].add(h)
                     e["viewers"].add(h)
             for sh in f.get("shares") or []:
@@ -281,21 +285,57 @@ def treasury_contract(buyer, contract, tid, sp, log=print):
     return row
 
 
+def _treasury_only(req, old, treasury_by_org, log):
+    """A contract Prozorro does not have: the Treasury record stands in for both the
+    procurement and the contract. Returns (tender, contract, Treasury row)."""
+    buyer, sp = req["org"], req["sp"]
+    tc = (treasury_by_org.get(buyer) or {}).get(sp)
+    if tc is None:
+        signed = (old or {}).get("contract", {}).get("signed") or req.get("date")
+        if not signed:
+            raise spending.ApiError("невідома дата договору %s" % sp)
+        tc = treasury_contract(buyer, {"signed": signed, "suppliers": []}, "", sp, log)
+        if tc is None:
+            raise spending.ApiError("договору %s немає в Казначействі" % sp)
+    buyer_name = (old or {}).get("tender", {}).get("buyer_name") or ""
+    if not buyer_name:
+        try:
+            buyer_name = (spending.fetch_card(buyer) or {}).get("orgName") or ""
+        except spending.ApiError:
+            pass
+    supplier = {"name": tc.get("party_name") or "", "code": tc.get("party_code") or ""}
+    contract = {"id": req["key"], "number": tc.get("number") or "", "title": tc.get("subject") or "", "status": "active",
+                "signed": tc.get("date"), "start": tc.get("from"), "end": tc.get("to"),
+                "value": {"amount": tc.get("value"), "currency": tc.get("currency") or "UAH"},
+                "suppliers": [supplier], "docs": [], "changes": [], "sp": sp}
+    tender = {"title": tc.get("subject") or "", "buyer": buyer, "buyer_name": buyer_name, "method": "", "status": "",
+              "cpv": tc.get("cpv") or "", "docs": [], "milestones": [], "treasury_only": True}
+    return tender, contract, tc
+
+
 def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     """Fresh snapshot of one contract on control (old = the previous one or None)."""
     key = req["key"]
-    tender_id = (old or {}).get("tender_id") or (tenders_by_org.get(req["org"], {}).get(req["tid"]) or {}).get("id")
-    if not tender_id:
-        tender_id = prozorro.internal_id(req["tid"])
-    tender = prozorro.load_tender(tender_id)
-    contract = next((c for c in tender.get("contracts") or [] if c.get("id") == key), None)
-    if not contract:
-        raise prozorro.ProzorroError("договору %s немає в закупівлі %s" % (key, req["tid"]))
-    tender.pop("contracts", None)
+    if key.startswith("tn"):
+        return sync_tender(req, old, log)
+    treasury_only = key.startswith("sp")
+    tc_known = None
+    if treasury_only:
+        tender_id, (tender, contract, tc_known) = None, _treasury_only(req, old, treasury_by_org, log)
+    else:
+        tender_id = (old or {}).get("tender_id") or (tenders_by_org.get(req["org"], {}).get(req["tid"]) or {}).get("id")
+        if not tender_id:
+            tender_id = prozorro.internal_id(req["tid"])
+        tender = prozorro.load_tender(tender_id)
+        contract = next((c for c in tender.get("contracts") or [] if c.get("id") == key), None)
+        if not contract:
+            raise prozorro.ProzorroError("договору %s немає в закупівлі %s" % (key, req["tid"]))
+        tender.pop("contracts", None)
 
     buyer = tender.get("buyer") or ""
     codes = {s.get("code") for s in contract.get("suppliers") or [] if s.get("code")}
-    surnames = {_surname(s.get("name")) for s in contract.get("suppliers") or [] if len(s.get("code") or "") == 10}
+    # Sole traders: a 10-digit code, or none at all where the Treasury masks it.
+    surnames = {_surname(s.get("name")) for s in contract.get("suppliers") or [] if len(s.get("code") or "") != 8}
     signed = contract.get("signed")
     today = spending.today()
     # Payments without a contract reference count as "possibly ours" up to 90 days after the term.
@@ -330,8 +370,8 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     # The Treasury side of the contract (acts, addendums): from the organisation's own data when
     # the buyer is monitored, otherwise asked from the Treasury for this one contract.
     sp = req.get("sp") or contract.get("sp") or (old or {}).get("sp") or ""
-    tc = (treasury_by_org.get(req["org"]) or {}).get(sp) if sp else None
-    if tc is None:
+    tc = tc_known or ((treasury_by_org.get(req["org"]) or {}).get(sp) if sp else None)
+    if tc is None and not treasury_only:
         try:
             tc = treasury_contract(buyer, contract, req["tid"], sp, log)
         except spending.ApiError as e:
@@ -364,13 +404,18 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
             flags.append("pz_treasury_mismatch")
             signals.append(mm)
     try:
-        audit = sasu.monitorings(tender_id, req["tid"])
+        audit = sasu.monitorings(tender_id, req["tid"]) if tender_id else []
     except prozorro.ProzorroError as e:
         log("  ! Держаудитслужба: %s" % e)
         audit = (old or {}).get("sasu") or []
     eib_kind = eib.classify(dict(tender, contracts=[contract]))
     review = compliance.evaluate(tender, contract, eib=bool(eib_kind), paid=paid, acts_sum=acts_sum,
                                  treasury=dict(chk, flags=flags) if tc else None, overdue=overdue, sasu=audit)
+    if treasury_only:  # no procurement in Prozorro: nothing to say about it
+        review["signals"] = [x for x in review["signals"] if x["type"] not in ("single_bidder", "unanswered_questions")]
+        for item in review["checklist"]:
+            if item["key"] in ("competition", "documents", "oversight"):
+                item.update(status="na", notes=[["no_prozorro", {}]])
     signals += review["signals"]
     flags += [x["type"] for x in review["signals"] if x["type"] not in flags]
     signals.sort(key=lambda x: (analysis.SEVERITY_ORDER[x["severity"]], -(x.get("amount") or 0)))
@@ -397,11 +442,58 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     return snap
 
 
+def sync_tender(req, old, log=print):
+    """A procurement on control before (or while) it gets contracts: its course, bidders,
+    complaints, documents and the State Audit Service; each contract it signs can then be
+    taken on control by itself."""
+    key, tender_id = req["key"], req["key"][2:]
+    tender = prozorro.load_tender(tender_id)
+    try:
+        audit = sasu.monitorings(tender_id, req["tid"])
+    except prozorro.ProzorroError as e:
+        log("  ! Держаудитслужба: %s" % e)
+        audit = (old or {}).get("sasu") or []
+    eib_kind = eib.classify(tender)
+    signals, checklist = [], []
+    for c in tender.get("contracts") or [{}]:
+        review = compliance.evaluate(tender, c, eib=bool(eib_kind), sasu=audit)
+        signals += [x for x in review["signals"] if x not in signals]
+        checklist = checklist or review["checklist"]
+    for item in checklist:
+        if item["key"] in ("price", "reconciliation") or (item["key"] == "documents" and not tender.get("contracts")):
+            item.update(status="na", notes=[])
+    value = (tender.get("value") or {}).get("amount") or 0
+    snap = {
+        "key": key, "kind": "tender", "org": req["org"] or tender.get("buyer") or "", "tid": tender.get("tid") or req["tid"],
+        "tender_id": tender_id, "sp": "",
+        "viewers": req.get("viewers") or [], "owners": req.get("owners") or [],
+        "tender": tender, "contract": {}, "payments": [], "acts": [], "addendums": [], "acts_sum": 0,
+        "treasury": None,
+        "totals": {"value": value, "paid": 0, "maybe": 0, "left": value, "due_now": 0, "overdue": 0},
+        "stages": [], "flags": [x["type"] for x in signals], "signals": signals, "checklist": checklist,
+        "eib": eib_kind, "eib_tx": False, "sasu": audit,
+        "payments_checked": spending.today().isoformat(),
+    }
+    events = _diff(old, snap)
+    if old:
+        known = {c.get("id") for c in (old.get("tender") or {}).get("contracts") or []}
+        for c in tender.get("contracts") or []:
+            if c.get("id") not in known:
+                events.append(_event("contract_new", id=c.get("id"), number=c.get("number") or "", amount=(c.get("value") or {}).get("amount"),
+                                     supplier=((c.get("suppliers") or [{}])[0]).get("name") or ""))
+    snap["history"] = (events + ((old or {}).get("history") or []))[:HISTORY_SIZE]
+    snap["changed_at"] = events[0]["at"] if events else (old or {}).get("changed_at")
+    log("  %s (закупівля): %s, договорів %d, подій %d" % (snap["tid"], tender.get("status"), len(tender.get("contracts") or []), len(events)))
+    return snap
+
+
 def index_row(s):
-    c, t = s["contract"], s["tender"]
+    c, t = s["contract"] or {}, s["tender"]
     sup = (c.get("suppliers") or [{}])[0]
     return {
-        "key": s["key"], "org": s["org"], "tid": s["tid"], "sp": s.get("sp") or "",
+        "key": s["key"], "kind": s.get("kind") or ("treasury" if s["key"].startswith("sp") else "contract"),
+        "org": s["org"], "tid": s["tid"], "sp": s.get("sp") or "", "tender_status": t.get("status") or "",
+        "contracts_n": len(t.get("contracts") or []) if s.get("kind") == "tender" else None,
         "number": c.get("number") or "", "signed": c.get("signed"), "end": c.get("end"), "status": c.get("status"),
         "title": c.get("title") or t.get("title") or "", "buyer": t.get("buyer"), "buyer_name": t.get("buyer_name") or "",
         "supplier": sup.get("code") or "", "supplier_name": sup.get("name") or "",

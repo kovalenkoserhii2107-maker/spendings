@@ -30,7 +30,6 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import analysis  # noqa: E402
-import compliance  # noqa: E402
 import eib  # noqa: E402
 import prozorro  # noqa: E402
 import tracked  # noqa: E402
@@ -50,8 +49,11 @@ TRACKED_DIR = os.path.join(DATA, "tracked")
 EIB_FILE = os.path.join(DATA, "eib.json")
 TENDERS, TREASURY = {}, {}  # per organisation, filled while syncing, read by the contracts on control
 
-DOC_KINDS = ("contract", "act", "addendum", "peny")
-KINDS = ("transaction",) + DOC_KINDS + ("liability", "report")
+# An organisation on monitoring: its contracts, payments and, for reconciliation, acts and
+# addendums. Everything else about a contract is read once it is taken on control.
+DOC_KINDS = ("contract", "act", "addendum")
+KINDS = ("transaction",) + DOC_KINDS
+DROPPED_RE = re.compile(r"^(peny|liability|report)-(\d{4}|nodate)\.json$")  # kinds kept before v0.15
 TX_BACKFILL_DAYS = 92
 DOC_BACKFILL_DAYS = 365
 LIABILITY_BACKFILL_DAYS = 365
@@ -181,7 +183,9 @@ class OrgStore:
         self.items = {}
         if os.path.isdir(self.dir):
             for name in os.listdir(self.dir):
-                if FILE_RE.match(name):
+                if DROPPED_RE.match(name):
+                    os.remove(os.path.join(self.dir, name))
+                elif FILE_RE.match(name):
                     for item in read_json(os.path.join(self.dir, name), []):
                         self.items[(item["kind"], item["ext_id"])] = item
 
@@ -296,18 +300,6 @@ def sync_prozorro(edrpou, org_dir, org_state, report, role="buyer"):
                 c["flags"].append("pz_treasury_mismatch")
                 report["signals"].append(sig)
                 report["counts"][sig["severity"]] = report["counts"].get(sig["severity"], 0) + 1
-    # Procurement checks of every contract (competition, documents, EIB covenants, complaints).
-    by_pz = {pcid: c for c in report["contracts"] if c["id"] in links for _, pcid in [links[c["id"]]]}
-    for t in tenders.values():
-        kind = eib.classify(t)
-        for pc in t.get("contracts") or []:
-            tc = by_pz.get(pc.get("id"))
-            res = compliance.evaluate(t, pc, eib=bool(kind), paid=(tc or {}).get("paid"), acts_sum=(tc or {}).get("acts_sum"), treasury=tc)
-            pc["checks"] = {"checklist": res["checklist"], "signals": [x["type"] for x in res["signals"]]}
-            for sig in res["signals"]:
-                sig.update(contract=(tc or {}).get("id"), tid=t["tid"])
-                report["signals"].append(sig)
-                report["counts"][sig["severity"]] = report["counts"].get(sig["severity"], 0) + 1
     years = save_prozorro(org_dir, tenders) if tenders else []
     contracts = [c for t in tenders.values() for c in t.get("contracts") or []]
     pz_state["errors"] = errors[:10]
@@ -362,8 +354,6 @@ def streams():
     for kind in DOC_KINDS:
         out.append((kind, "disposer"))
         out.append((kind, "contractor"))
-    out.append(("liability", "payer"))
-    out.append(("report", "owner"))
     return out
 
 
@@ -374,14 +364,9 @@ def fetch_stream(edrpou, kind, role, last):
     if kind == "transaction":
         start = last - timedelta(days=OVERLAP_DAYS["transaction"]) if last else today - timedelta(days=TX_BACKFILL_DAYS)
         return spending.fetch_transactions(edrpou, role, start, end)
-    if kind in DOC_KINDS:
-        if last:
-            return spending.fetch_documents(kind, edrpou, role, last - timedelta(days=OVERLAP_DAYS["doc"]), end)[0]
-        return spending.fetch_documents_history(kind, edrpou, role, DOC_BACKFILL_DAYS)[0]
-    if kind == "liability":
-        start = last - timedelta(days=OVERLAP_DAYS["liability"]) if last else today - timedelta(days=LIABILITY_BACKFILL_DAYS)
-        return spending.fetch_liabilities(edrpou, start, end)
-    return spending.fetch_reports(edrpou)
+    if last:
+        return spending.fetch_documents(kind, edrpou, role, last - timedelta(days=OVERLAP_DAYS["doc"]), end)[0]
+    return spending.fetch_documents_history(kind, edrpou, role, DOC_BACKFILL_DAYS)[0]
 
 
 def resolve_names(store, names):
@@ -414,6 +399,8 @@ def sync_org(entry, org_state, names):
     edrpou = entry["edrpou"]
     store = OrgStore(edrpou)
     stream_state = org_state.setdefault("streams", {})
+    for stream in [k for k in stream_state if tuple(k.split(":")) not in streams()]:
+        del stream_state[stream]  # a kind no longer kept for organisations
     new_events, errors = 0, []
 
     try:

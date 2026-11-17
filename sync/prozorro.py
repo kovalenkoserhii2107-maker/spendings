@@ -308,6 +308,22 @@ def compact_tender(t, contracts):
     }.items() if v not in (None, "", [])}
 
 
+# An organisation on monitoring keeps a short list of its procedures: enough to show them
+# and to pair its contracts with the Treasury. Documents, payment terms, awards and the
+# rest are read only for a contract taken on control (tracked.py loads the full record).
+SHORT_TENDER = ("id", "tid", "title", "method", "status", "date", "deadline", "value", "category", "cpv",
+                "buyer", "buyer_name", "region", "funders", "bids", "lots", "cancel", "contracts", "modified", "_at")
+SHORT_CONTRACT = ("id", "cid", "number", "title", "status", "signed", "start", "end", "value", "paid",
+                  "suppliers", "lot", "sp", "termination", "modified")
+
+
+def short_tender(t):
+    out = {k: t[k] for k in SHORT_TENDER if k in t}
+    out["contracts"] = [{k: c[k] for k in SHORT_CONTRACT if k in c} for c in t.get("contracts") or []]
+    out["_v"] = SHORT
+    return out
+
+
 def load_tender(pid):
     """A tender with its contracts, both compacted."""
     t = fetch_tender(pid)
@@ -336,7 +352,8 @@ def is_final(tender):
 
 # ---- one organisation -------------------------------------------------------------------------
 
-SCHEMA = 2  # 2: awards, complaints, questions, guarantee, DREAM id, contract items
+SCHEMA = 2  # full records (contracts on control, EIB catalogue): awards, complaints, questions, DREAM id, items
+SHORT = "short-1"  # an organisation's short list
 NEW_PER_RUN = 1000      # new procedures per organisation per run (~25 min at the site's rate)
 REFRESH_PER_RUN = 150   # open procedures re-read per organisation per run
 REFRESH_AFTER_H = 20
@@ -360,6 +377,10 @@ def sync(edrpou, tenders, pz_state, log=print, role="buyer"):
     """
     started, errors = time.time(), []
     budget = max(0, min(TIME_BUDGET_S, _RUN_STARTED + RUN_BUDGET_S - started))
+    # Records stored in full before the short list: cut down in place, nothing re-read.
+    for tid, rec in list(tenders.items()):
+        if rec.get("_v") != SHORT:
+            tenders[tid] = short_tender(rec)
     queue = pz_state.setdefault("queue", [])
     queued = set(queue) | set(pz_state.get("missing") or [])
 
@@ -387,7 +408,7 @@ def sync(edrpou, tenders, pz_state, log=print, role="buyer"):
         if done >= NEW_PER_RUN or time.time() - started > budget:
             break
         try:
-            rec = own_contracts(load_tender(internal_id(tid)), edrpou, role)
+            rec = short_tender(own_contracts(load_tender(internal_id(tid)), edrpou, role))
         except ProzorroError as e:
             if e.status in (403, 404, 410):  # gone or hidden for good: do not retry every run
                 queue.remove(tid)
@@ -398,7 +419,6 @@ def sync(edrpou, tenders, pz_state, log=print, role="buyer"):
                 break
             continue
         rec["_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        rec["_v"] = SCHEMA
         tenders[tid] = rec
         queue.remove(tid)
         done += 1
@@ -406,20 +426,17 @@ def sync(edrpou, tenders, pz_state, log=print, role="buyer"):
 
     # 3. Re-read procedures that can still change, the longest unread first.
     cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - REFRESH_AFTER_H * 3600))
-    # Records stored before the current schema (awards, complaints, ...) are re-read too, finished or not.
-    stale = sorted((r for r in tenders.values() if r.get("_v") != SCHEMA or (not is_final(r) and r.get("_at", "") < cutoff)),
-                   key=lambda r: (r.get("_v") == SCHEMA, r.get("_at", "")))
+    stale = sorted((r for r in tenders.values() if not is_final(r) and r.get("_at", "") < cutoff), key=lambda r: r.get("_at", ""))
     refreshed = 0
     for rec in stale[:REFRESH_PER_RUN]:
         if time.time() - started > budget:
             break
         try:
-            fresh = own_contracts(load_tender(rec["id"]), edrpou, role)
+            fresh = short_tender(own_contracts(load_tender(rec["id"]), edrpou, role))
         except ProzorroError as e:
             errors.append("%s: %s" % (rec.get("tid"), e))
             continue
         fresh["_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        fresh["_v"] = SCHEMA
         tenders[rec["tid"]] = fresh
         refreshed += 1
     log("  prozorro: оновлено %d з %d відкритих" % (refreshed, len(stale)))

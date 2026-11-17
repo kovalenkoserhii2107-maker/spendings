@@ -337,6 +337,18 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 .sasu-row { padding: 10px 12px; border-radius: 12px; background: var(--soft); }
 .sasu-row.bad { background: var(--red-bg); }
 .tag.bad { background: var(--red-bg); color: var(--red); }
+/* The main search */
+.qs-form { display: flex; gap: 8px; }
+.qs-form .input { flex: 1; min-width: 0; font-size: 16px; }
+.qs-org { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 18px; padding: 16px; border-radius: 16px; background: var(--soft); }
+.qs-org h3 { font-size: 18px; margin-top: 2px; }
+.qs-org .ext-links { width: 100%; }
+.qs-block { margin-top: 18px; }
+.qs-list { display: grid; gap: 6px; }
+.qs-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 14px; border-radius: 14px; background: var(--soft); }
+.qs-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.qs-contracts { display: grid; gap: 6px; margin-top: 10px; }
+.qs-contract { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 12px; background: #fff; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
 .parties { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; }
 .party { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
@@ -462,6 +474,9 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
   .focus { grid-column: 1 / -1; grid-row: auto; }
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid-3, .parties, .checklist { grid-template-columns: minmax(0, 1fr); }
+  .qs-row { grid-template-columns: minmax(0, 1fr); }
+  .qs-side { flex-direction: row; justify-content: space-between; align-items: center; }
+  .qs-contract { flex-direction: column; align-items: flex-start; }
   .org-head { grid-template-columns: minmax(0, 1fr); }
   .org-actions { align-items: flex-start; }
   .settings { grid-template-columns: minmax(0, 1fr); }

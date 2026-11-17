@@ -889,7 +889,8 @@ function openRecord(item) {
     h('span', { class: 'kind ' + item.kind }, kindOne(item.kind)),
     h('h2', null, item.cp_name || item.org_name || kindOne(item.kind)),
     h('div', { class: 'sub' }, join([item.org_name, fdate(item.date), item.amount != null ? money(item.amount, item.currency) : null])),
-    detailBody(item.kind, item.data || {}));
+    detailBody(item.kind, item.data || {}),
+    item.kind === 'contract' ? h('div', { class: 'row after' }, trackTreasuryButton(item.data)) : null);
 }
 
 async function openRecords(org, kind, extIds, title, text, extra) {
@@ -1521,13 +1522,14 @@ async function openTender(org, tid) {
         ['ID', c.cid],
       ]),
       cterms.length ? h('div', { style: 'margin-top:10px' }, h('h4', null, t('pz.payTerms')), terms(cterms)) : null,
+      isTracked(c.id) ? h('a', { class: 'btn btn-sm', href: '#/tracked/' + c.id, onclick: closeSheet }, t('pz.openTracked'), icon('arrow')) : null,
       link ? h('div', { class: 'pz-link' },
         h('div', null, h('h4', null, t('pz.treasury')), payBar(link)),
         h('button', { class: 'btn btn-sm btn-dark', onclick: () => openContract(org, link.id) }, t('pz.openDossier')))
         : h('p', { class: 'muted small' }, c.status === 'pending' ? t('pz.pendingHint') : t('pz.notLinkedHint')),
       (c.changes || []).length ? h('div', null, h('h4', null, t('pz.changes')), h('div', { class: 'timeline' }, c.changes.map((ch) => h('div', { class: 'ev add' },
         h('span', { class: 'd num' }, fdate(ch.date)), h('span', null, join([(ch.types || []).map((x) => label('pzr.', x)).join(', '), ch.text])), h('span'))))) : null,
-      h('h4', null, t('pz.contractDocs')), docList(c.docs));
+      (c.docs || []).length ? [h('h4', null, t('pz.contractDocs')), docList(c.docs)] : null);
   };
   fill(body,
     h('button', { class: 'btn btn-icon close', onclick: closeSheet, 'aria-label': t('ui.close') }, icon('x')),
@@ -1539,8 +1541,11 @@ async function openTender(org, tid) {
       h('div', null, h('small', null, t('pz.contracted')), h('b', { class: 'num' }, mshort((t0.contracts || []).reduce((s, c) => s + (c.value ? c.value.amount : 0), 0)))),
       h('div', null, h('small', null, t('pz.treasuryPaid')), h('b', { class: 'num' }, r.links.some(Boolean) ? mshort(r.links.reduce((s, l) => s + (l ? l.paid : 0), 0)) : '—')),
       h('div', null, h('small', null, t('pz.bids')), h('b', { class: 'num' }, t0.bids != null ? ni.format(t0.bids) : '—'))),
-    h('section', null, h('h3', null, t('pz.payTerms')), (t0.milestones || []).length ? terms(t0.milestones) : h('p', { class: 'muted small' }, t('pz.noTerms'))),
+    (t0.milestones || []).length ? h('section', null, h('h3', null, t('pz.payTerms')), terms(t0.milestones)) : null,
+    // An organisation keeps a short list: the rest comes once a contract is taken on control.
+    !(t0.docs || []).length ? h('p', { class: 'notice small' }, t('pz.shortHint')) : null,
     (t0.contracts || []).length ? (t0.contracts || []).map(contractBlock) : h('section', null, h('p', { class: 'muted' }, t('pz.noContractYet'))),
+    !hasSigned(t0) ? h('div', { class: 'row' }, trackTenderButton(Object.assign({ buyer: org.edrpou, buyer_name: org.name }, t0))) : null,
     h('section', null, h('h3', null, t('pz.procedure')), kv([
       [t('pz.colMethod'), label('pzt.', t0.method)],
       [t('pz.status'), label('pzs.', t0.status)],
@@ -1551,7 +1556,7 @@ async function openTender(org, tid) {
       [t('pz.rationale'), t0.rationale],
       [t('pz.cancelReason'), t0.cancel],
     ])),
-    h('section', null, h('h3', null, t('pz.tenderDocs')), docList(t0.docs)),
+    (t0.docs || []).length ? h('section', null, h('h3', null, t('pz.tenderDocs')), docList(t0.docs)) : null,
     h('section', { class: 'row' }, ext(pzUrl(t0.tid), t('pz.openOnProzorro'))));
 }
 
@@ -1661,6 +1666,7 @@ function eventText(e) {
     case 'doc': return (e.updated ? t('ev.docUpdated') : t('ev.doc')) + ': ' + join([e.title, e.doc_type ? label('pzd.', e.doc_type) : null]);
     case 'payment': return (e.sure ? t('ev.payment') : t('ev.paymentMaybe')) + ' ' + money(e.amount) + (e.date ? ' · ' + fdate(e.date) : '');
     case 'act': return t('ev.act', { n: e.number || '—' }) + ' ' + money(e.amount) + (e.date ? ' · ' + fdate(e.date) : '');
+    case 'contract_new': return t('ev.contractNew', { n: e.number || '—' }) + (e.amount ? ' ' + money(e.amount) : '') + (e.supplier ? ' · ' + e.supplier : '');
     case 'due': return t('ev.due', { sum: money(e.amount) }) + (e.overdue > 1 ? ' · ' + t('tr.overdueN', { sum: money(e.overdue) }) : '');
     default: return e.type;
   }
@@ -1715,16 +1721,19 @@ function trackedPage(preset) {
     const fresh = x && tests.changed(r);
     return h('a', { class: 'tr-card' + (fresh ? ' new' : ''), href: '#/tracked/' + r.id },
       h('div', { class: 'chips', style: 'margin:0' },
-        x ? h('span', { class: 'pz-st ' + (x.status === 'active' ? 'ok' : x.status === 'terminated' ? 'off' : 'run') }, label('pzc.', x.status)) : h('span', { class: 'chip warn' }, h('i'), t('tr.pending')),
+        x && x.kind === 'tender' ? pzStatus(x.tender_status)
+          : x ? h('span', { class: 'pz-st ' + (x.status === 'active' ? 'ok' : x.status === 'terminated' ? 'off' : 'run') }, label('pzc.', x.status)) : h('span', { class: 'chip warn' }, h('i'), t('tr.pending')),
         tt.overdue > 1 ? h('span', { class: 'sev high' }, t('tr.overdueN', { sum: mshort(tt.overdue) })) : null,
         fresh ? h('span', { class: 'tag pz' }, t('tr.newEvents')) : null,
         x && x.eib ? h('span', { class: 'tag eib' }, t('eib.short')) : null,
         x && x.error ? h('span', { class: 'sev medium', title: x.error }, t('tr.error')) : null),
-      h('h3', null, (x ? x.number : p.number) && (x ? x.number : p.number) !== '—' ? t('dos.heading', { n: x ? x.number : p.number, date: fdate(x && x.signed) }) : t('pz.draftContract')),
+      h('h3', null, r.id.startsWith('tn') ? t('tr.tenderHeading', { tid: (x && x.tid) || p.tid })
+        : (x ? x.number : p.number) && (x ? x.number : p.number) !== '—' ? t('dos.heading', { n: x ? x.number : p.number, date: fdate(x && x.signed) }) : t('pz.draftContract')),
       h('div', { class: 'cell-sub' }, join([(x && x.buyer_name) || p.buyer, (x && x.supplier_name) || p.supplier], ' → ')),
       h('div', { class: 'clamp muted small' }, (x && x.title) || p.title || ''),
       !r.mine ? h('div', { class: 'faint small' }, t('tr.sharedBy', { who: p.fromName || '—' })) : null,
-      x ? [h('div', { class: 'facts' },
+      x && x.kind === 'tender' ? h('div', { class: 'cell-sub' }, join([label('pzs.', x.tender_status), t('tr.contractsN', { n: x.contracts_n || 0 }), mshort((x.totals || {}).value)]))
+      : x ? [h('div', { class: 'facts' },
         h('div', null, h('small', null, t('pz.contractValue')), h('b', { class: 'num' }, mshort(tt.value))),
         h('div', null, h('small', null, t('tr.paid')), h('b', { class: 'num' }, mshort(tt.paid))),
         h('div', { class: tt.left < -1 ? 'bad' : '' }, h('small', null, tt.left < -1 ? t('dos.overpaid') : t('tr.left')), h('b', { class: 'num' }, mshort(Math.abs(tt.left))))),
@@ -1780,6 +1789,7 @@ function trackedDossier(id) {
           } }, t('tr.off')) : null)));
       return;
     }
+    if (s.kind === 'tender') { fill(box, tenderDossier(id, s, pick)); return; }
     const c = s.contract, t0 = s.tender, tt = s.totals;
     const org = orgByCode(s.org);
     const sure = s.payments.filter((p) => p.sure), maybe = s.payments.filter((p) => !p.sure);
@@ -1830,7 +1840,7 @@ function trackedDossier(id) {
           h('h1', { class: 'org-title' }, t('dos.heading', { n: c.number || '—', date: fdate(c.signed) })),
           h('div', { class: 'chips' },
             h('span', { class: 'pz-st ' + (c.status === 'active' ? 'ok' : 'run') }, label('pzc.', c.status)),
-            h('span', { class: 'tag' }, label('pzt.', t0.method)),
+            t0.method ? h('span', { class: 'tag' }, label('pzt.', t0.method)) : h('span', { class: 'tag' }, t('dos.treasuryOnly')),
             isEib || s.eib ? h('span', { class: 'tag eib' }, s.eib ? t('eib.kind.' + s.eib) : t('eib.short')) : null,
             s.eib_tx ? h('span', { class: 'tag eib' }, t('eib.tx')) : null,
             tt.overdue > 1 ? h('span', { class: 'sev high' }, t('tr.overdueN', { sum: money(tt.overdue) })) : null,
@@ -1840,7 +1850,7 @@ function trackedDossier(id) {
         h('div', { class: 'org-actions' }, h('div', { class: 'row' },
           org && (org.files || {}).prozorro ? h('button', { class: 'btn', onclick: () => openTender(org, s.tid) }, t('pz.openProcedure')) : null,
           org && s.sp ? h('button', { class: 'btn', onclick: () => openContract(org, s.sp) }, t('pz.openDossier')) : null,
-          ext(pzUrl(s.tid), 'Prozorro', 'btn'),
+          s.tid ? ext(pzUrl(s.tid), 'Prozorro', 'btn') : null,
           t0.dream_id ? ext(dreamUrl(t0.dream_id), 'DREAM', 'btn') : null),
           isTracked(id) ? off : null)),
       partiesCard(t0, c),
@@ -1868,7 +1878,8 @@ function trackedDossier(id) {
           h('span', { class: 'num' }, a.amount ? money(a.amount) : ''))))) : null,
       (s.acts || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('kinds.act')),
         h('div', { class: 'timeline' }, s.acts.map((a) => h('div', { class: 'ev act' }, h('span', { class: 'd num' }, fdate(a.date)), h('span', null, t('kind.act') + ' № ' + (a.number || '—')), h('span', { class: 'num' }, money(a.amount)))))) : null,
-      docsCard(id, c, t0, freshDocs),
+      t0.treasury_only ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('dos.docs')), h('p', { class: 'muted small' }, t('dos.noProzorro')))
+        : docsCard(id, c, t0, freshDocs),
       isTracked(id) ? shareCard(id) : null,
       isTracked(id) ? h('div', { class: 'card pad section' },
         h('h2', { class: 'card-title' }, t('tr.note')),
@@ -1940,6 +1951,44 @@ function partyLinks(code, role) {
     a(`https://www.opensanctions.org/search/?q=${code}`, 'OpenSanctions'));
 }
 const dreamUrl = (id) => `https://dream.gov.ua/ua/project/${encodeURIComponent(id)}/profile`;
+
+// A procurement on control (no contract yet, or contracts not taken on control themselves).
+function tenderDossier(id, s, pick) {
+  const t0 = s.tender;
+  const seen = getTrackedSeen();
+  const events = (s.history || []).filter((e) => e.type !== 'tracked');
+  const org = { edrpou: t0.buyer, name: t0.buyer_name, role: 'buyer' };
+  const off = isTracked(id) ? h('button', { class: 'btn btn-sm', onclick: async () => {
+    if (!confirm(t('tr.offConfirm'))) return;
+    try { await cloud.untrack(id); location.hash = '#/tracked'; } catch (e) { toast(e.message, { bad: true }); }
+  } }, t('tr.off')) : null;
+  return [
+    h('div', { class: 'org-head' },
+      h('div', null,
+        h('div', { class: 'eyebrow' }, h('a', { href: '#/tracked', style: 'text-decoration:none' }, '← ' + t('nav.tracked'))),
+        h('h1', { class: 'org-title' }, t('tr.tenderHeading', { tid: s.tid })),
+        h('div', { class: 'chips' }, pzStatus(t0.status), t0.method ? h('span', { class: 'tag' }, label('pzt.', t0.method)) : null,
+          s.eib ? h('span', { class: 'tag eib' }, t('eib.kind.' + s.eib)) : null),
+        h('p', { class: 'muted' }, t0.title)),
+      h('div', { class: 'org-actions' }, h('div', { class: 'row' }, ext(pzUrl(s.tid), 'Prozorro', 'btn'), t0.dream_id ? ext(dreamUrl(t0.dream_id), 'DREAM', 'btn') : null), off)),
+    h('div', { class: 'card pad section parties' },
+      h('div', { class: 'party' }, h('small', null, t('dos.buyer')), h('b', null, t0.buyer_name || '—'), t0.buyer ? h('div', { class: 'cell-sub num' }, t('f.edrpou') + ' ' + t0.buyer) : null, partyLinks(t0.buyer, 'buyer')),
+      h('div', { class: 'party' }, h('small', null, t('pz.colValue')), h('b', { class: 'num' }, t0.value ? money(t0.value.amount, t0.value.currency) : '—'),
+        h('div', { class: 'cell-sub' }, join([t0.deadline ? t('pz.deadline') + ' ' + fdate(t0.deadline) : null, t0.bids != null ? t('pz.bids') + ': ' + t0.bids : null])))),
+    h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('kinds.contract')),
+      (t0.contracts || []).length ? h('div', { class: 'qs-contracts' }, t0.contracts.map((c) => h('div', { class: 'qs-contract' },
+        h('div', null, h('b', null, t('dos.heading', { n: c.number || '—', date: fdate(c.signed) })),
+          h('div', { class: 'cell-sub' }, join([(c.suppliers || []).map((x) => x.name).join(', '), c.value ? money(c.value.amount, c.value.currency) : null, label('pzc.', c.status)]))),
+        c.status !== 'cancelled' ? trackButton(org, t0, c) : null))) : h('p', { class: 'muted small' }, t('tr.noContractsYet'))),
+    complianceCard(s),
+    (t0.awards || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('dos.awards')), awardsTable(t0.awards)) : null,
+    h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('tr.history')),
+      events.length ? h('div', { class: 'timeline' }, events.map((e) => h('div', { class: 'ev ' + eventClass(e) + (e.at > seen ? ' new' : '') },
+        h('span', { class: 'd num' }, fdate(e.at)), h('span', null, eventText(e)), h('span')))) : h('p', { class: 'muted small' }, t('dos.noEvents'))),
+    h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('pz.tenderDocs')), docList(t0.docs)),
+    isTracked(id) ? shareCard(id) : null,
+  ];
+}
 
 // The two sides of a contract and whether each organisation is on monitoring (its own
 // contracts, payments and procurement in the app), apart from this one contract on control.
@@ -2056,7 +2105,7 @@ function openEibTender(t0) {
           h('div', null, h('small', null, t('eib.changes')), h('b', { class: 'num' }, ni.format(c.changes || 0)))),
         h('div', { class: 'row', style: 'margin-top:10px' }, trackButton(eibOrg(t0), t0, c)))))
         : h('p', { class: 'muted small' }, t('pz.noContractYet'))),
-    h('div', { class: 'row after' }, ext(pzUrl(t0.tid), t('pz.openOnProzorro')), t0.dream_id ? ext(dreamUrl(t0.dream_id), 'DREAM') : null));
+    h('div', { class: 'row after' }, !hasSigned(t0) ? trackTenderButton(t0) : null, ext(pzUrl(t0.tid), t('pz.openOnProzorro')), t0.dream_id ? ext(dreamUrl(t0.dream_id), 'DREAM') : null));
 }
 
 function awardsTable(awards) {
@@ -2251,7 +2300,7 @@ function orgsPage() {
   return [pageHead(t('orgs.eyebrow'), titleGrad(t('orgs.title1'), t('orgs.title2')), null), addOrgCard(), h('div', { class: 'section' }, orgGrid(state.index.orgs))];
 }
 
-const ORG_TABS = ['contracts', 'signals', 'transaction', 'prozorro', 'act', 'addendum', 'liability', 'report', 'profile'];
+const ORG_TABS = ['contracts', 'signals', 'transaction', 'prozorro', 'act', 'addendum', 'profile'];
 
 function orgPage(code, tab, preset) {
   const org = orgByCode(code);
@@ -2553,7 +2602,176 @@ function searchPage() {
     roleBox,
     h('label', { class: 'field' }, h('span', null, t('ui.from')), from), h('label', { class: 'field' }, h('span', null, t('ui.to')), to), go);
   draw();
-  return [pageHead(t('srch.eyebrow'), titleGrad(t('srch.title1'), t('srch.title2')), null), h('div', { class: 'table-card' }, form, out)];
+  return [pageHead(t('srch.eyebrow'), titleGrad(t('srch.title1'), t('srch.title2')), null),
+    quickSearch(),
+    h('div', { class: 'section-head section' }, h('h2', null, t('qs.treasuryForm'))),
+    h('div', { class: 'table-card' }, form, out)];
+}
+
+// ---- the main entry: one search over the Treasury and Prozorro ----------------------------------
+//
+// A code (EDRPOU) finds the organisation: its card with "start monitoring", its procedures and
+// contracts in Prozorro, and its Treasury contracts of the last year. Any other text searches
+// Prozorro procedures. Each contract can be taken on control right from here.
+const PZ_PROXY = 'PROXY_URL';
+async function pzProxy(params) {
+  if (/PROXY_URL/.test(PZ_PROXY)) throw new Error(t('qs.noProxy'));
+  const res = await fetch(PZ_PROXY + '?' + new URLSearchParams(params));
+  const d = await res.json();
+  if (d.error) throw new Error('Prozorro: ' + d.error);
+  return d;
+}
+const qsState = { q: '', res: null };
+function quickSearch() {
+  const input = h('input', { class: 'input', type: 'search', value: qsState.q, placeholder: t('qs.hint'), 'aria-label': t('qs.hint') });
+  const out = h('div');
+  const go = h('button', { class: 'btn btn-dark', type: 'submit' }, icon('search'), t('srch.go'));
+  async function run(q) {
+    qsState.q = q;
+    const code = /^\d{8,10}$/.test(q) ? q : null;
+    fill(out, h('div', { class: 'empty' }, t('srch.wait')));
+    const blocks = [];
+    if (code) {
+      blocks.push(orgFound(code));
+      blocks.push(pzList(t('qs.asBuyer'), { action: 'search', kind: 'tenders', buyer: code }));
+      blocks.push(pzList(t('qs.asSupplier'), { action: 'search', kind: 'contracts', supplier: code }));
+      blocks.push(treasuryList(code));
+    } else {
+      blocks.push(pzList(t('qs.byText'), { action: 'search', kind: 'tenders', text: q }));
+    }
+    fill(out, blocks);
+  }
+  const form = h('form', { class: 'qs-form', onsubmit: (e) => { e.preventDefault(); const q = input.value.trim(); if (q) run(q); } }, input, go);
+  if (qsState.q) setTimeout(() => run(qsState.q));
+  return h('div', { class: 'card pad section qs' }, form, out);
+}
+
+// The organisation behind a code: its Treasury card and whether it is on monitoring.
+function orgFound(code) {
+  const box = h('div', { class: 'qs-org' }, h('div', { class: 'muted small' }, t('ui.loading')));
+  (async () => {
+    let card = null;
+    try { card = await portal('/v2/disposers/' + code); } catch (e) { /* not a disposer: still may be a supplier */ }
+    const name = (card && card.orgName) || (orgByCode(code) || {}).name || '';
+    const on = state.mine.orgs.has(code);
+    const addBtn = (role) => {
+      const b = h('button', { class: 'btn btn-sm' + (role === 'buyer' ? ' btn-dark' : ''), onclick: async () => {
+        b.disabled = true;
+        try { await cloud.addOrg(code, name, role); toast(t('addorg.addedNow', { name: name || code })); render(); } catch (e) { b.disabled = false; toast(e.message, { bad: true }); }
+      } }, icon('building'), t(role === 'buyer' ? 'qs.monitorBuyer' : 'qs.monitorSupplier'));
+      return b;
+    };
+    fill(box,
+      h('div', null, h('small', { class: 'muted' }, t('f.edrpou') + ' ' + code), h('h3', null, name || t('qs.unknownOrg')),
+        card && card.address ? h('div', { class: 'small muted' }, address(card.address)) : null),
+      h('div', { class: 'row' },
+        on ? [h('span', { class: 'tag ok' }, t('org.monitoring')), orgByCode(code) ? h('a', { class: 'btn btn-sm', href: '#/org/' + code }, t('org.open'), icon('arrow')) : null]
+          : [addBtn('buyer'), addBtn('supplier')]),
+      partyLinks(code, 'buyer'));
+  })();
+  return box;
+}
+
+// Prozorro procedures or contracts from a search; a procedure opens into its contracts.
+function pzList(title, params) {
+  const list = h('div', { class: 'qs-list' }, h('div', { class: 'muted small' }, t('ui.loading')));
+  const head = h('div', { class: 'card-head' }, h('h3', { class: 'card-sub' }, title, ' · Prozorro'));
+  const box = h('div', { class: 'qs-block' }, head, list);
+  let page = 1;
+  async function load() {
+    try {
+      const d = await pzProxy(Object.assign({}, params, { page }));
+      const rows = d.items.map((r) => {
+        const more = h('div');
+        const open = h('button', { class: 'btn btn-sm', onclick: async () => {
+          open.disabled = true;
+          fill(more, h('div', { class: 'muted small' }, t('ui.loading')));
+          try { fill(more, pzContracts((await pzProxy({ action: 'tender', tid: r.tid })).tender)); } catch (e) { fill(more, h('div', { class: 'small' }, e.message)); }
+        } }, t('qs.contracts'));
+        return h('div', { class: 'qs-row' },
+          h('div', null, h('b', null, r.title || r.tid), h('div', { class: 'cell-sub' }, join([r.tid, r.buyer_name, r.supplier_name, label('pzs.', r.status) || label('pzc.', r.status)])),
+            more),
+          h('div', { class: 'qs-side' }, r.value ? h('b', { class: 'num' }, money(r.value.amount, r.value.currency)) : null, open));
+      });
+      fill(list, rows.length ? rows : h('div', { class: 'muted small' }, t('qs.none')),
+        d.total > page * 20 ? h('button', { class: 'btn btn-sm', onclick: () => { page += 1; load(); } }, t('list.next')) : null);
+    } catch (e) {
+      fill(list, h('div', { class: 'muted small' }, e.message));
+    }
+  }
+  load();
+  return box;
+}
+
+function pzContracts(t0) {
+  const org = { edrpou: t0.buyer, name: t0.buyer_name, role: 'buyer' };
+  if (!(t0.contracts || []).length) return h('div', { class: 'qs-contracts' }, h('div', { class: 'qs-contract' }, h('span', { class: 'muted small' }, t('pz.noContractYet')), trackTenderButton(t0)));
+  return h('div', { class: 'qs-contracts' }, t0.contracts.map((c) => h('div', { class: 'qs-contract' },
+    h('div', null, h('b', null, t('dos.heading', { n: c.number || '—', date: fdate(c.signed) })),
+      h('div', { class: 'cell-sub' }, join([(c.suppliers || []).map((x) => party(x.name, x.code)).join(', '), c.value ? money(c.value.amount, c.value.currency) : null, label('pzc.', c.status)]))),
+    c.status !== 'cancelled' ? trackButton(org, t0, c) : null)));
+}
+
+// The organisation's Treasury contracts of the last year, either side.
+function treasuryList(code) {
+  const list = h('div', { class: 'qs-list' }, h('div', { class: 'muted small' }, t('ui.loading')));
+  (async () => {
+    try {
+      const from = addDays(today(), -365), to = today();
+      const parts = await Promise.all(['disposer', 'contractor'].map((role) => portalDocuments('contract', code, role, from, to).catch(() => ({ docs: [] }))));
+      const docs = parts.flatMap((p) => p.docs).sort((a, b) => (b.documentDate || '').localeCompare(a.documentDate || ''));
+      fill(list, docs.length ? docs.slice(0, 50).map((d) => {
+        const sup = (d.contractors || [])[0] || {};
+        return h('div', { class: 'qs-row' },
+          h('div', null, h('b', null, t('dos.heading', { n: d.documentNumber || '—', date: fdate(d.documentDate) })),
+            h('div', { class: 'cell-sub' }, join([d.edrpou === code ? sup.name : d.edrpou, d.subject])),
+            d.idTenderProzorro ? h('span', { class: 'tag pz' }, 'Prozorro ' + d.idTenderProzorro) : null),
+          h('div', { class: 'qs-side' }, h('b', { class: 'num' }, money(d.amount, d.currency)), trackTreasuryButton(d)));
+      }) : h('div', { class: 'muted small' }, t('qs.none')));
+    } catch (e) {
+      fill(list, h('div', { class: 'muted small' }, e.message));
+    }
+  })();
+  return h('div', { class: 'qs-block' }, h('div', { class: 'card-head' }, h('h3', { class: 'card-sub' }, t('qs.treasury'))), list);
+}
+
+// "Take on control" for a procurement that has no contract yet: key "tn" + its Prozorro id.
+function trackTenderButton(t0) {
+  if (!t0 || !t0.id || !t0.tid) return null;
+  const cid = 'tn' + t0.id;
+  const done = () => h('a', { class: 'btn btn-sm tracked-on', href: '#/tracked/' + cid, onclick: closeSheet }, icon('star'), t('tr.tenderOnControl'));
+  if (isTracked(cid)) return done();
+  const btn = h('button', { class: 'btn btn-sm btn-dark', onclick: async () => {
+    if (!cloud || !state.user) { toast(t('auth.needed'), { bad: true }); return; }
+    btn.disabled = true;
+    try {
+      await cloud.track(cid, { org: t0.buyer || '', tid: t0.tid, sp: '', title: t0.title || '', number: '', buyer: t0.buyer_name || '', supplier: '' });
+      toast(t('tr.added'));
+      btn.replaceWith(done());
+    } catch (e) { btn.disabled = false; toast(t('tr.failed') + ' ' + (e.message || ''), { bad: true }); }
+  } }, icon('star'), t('tr.takeTender'));
+  return btn;
+}
+const hasSigned = (t0) => (t0.contracts || []).some((c) => ['active', 'terminated'].includes(c.status));
+
+// "Take on control" for a Treasury contract (one Prozorro may not have): key "sp" + its id.
+function trackTreasuryButton(d) {
+  if (!d || !d.id || !d.edrpou) return null;
+  const cid = 'sp' + d.id;
+  const done = () => h('a', { class: 'btn btn-sm tracked-on', href: '#/tracked/' + cid, onclick: closeSheet }, icon('star'), t('tr.onControl'));
+  if (isTracked(cid)) return done();
+  const sup = (d.contractors || [])[0] || {};
+  const btn = h('button', { class: 'btn btn-sm btn-dark', onclick: async () => {
+    if (!cloud || !state.user) { toast(t('auth.needed'), { bad: true }); return; }
+    btn.disabled = true;
+    try {
+      await cloud.track(cid, { org: d.edrpou, tid: '', sp: String(d.id), signed: (d.documentDate || '').slice(0, 10), title: d.subject || '',
+        number: d.documentNumber || '', buyer: (orgByCode(d.edrpou) || {}).name || '', supplier: sup.name || '' });
+      toast(t('tr.added'));
+      btn.replaceWith(done());
+    } catch (e) { btn.disabled = false; toast(t('tr.failed') + ' ' + (e.message || ''), { bad: true }); }
+  } }, icon('star'), t('tr.take'));
+  return btn;
 }
 
 // ---- methodology ------------------------------------------------------------------------------------
@@ -2907,7 +3125,7 @@ function render() {
   else if (route === 'prozorro') page = prozorroPage(parts[1]);
   else if (route === 'eib') page = eibPage();
   else if (route === 'overview') { page = overviewPage(); key = 'search'; }
-  else if (route === 'tracked' && /^[0-9a-f]{32}$/.test(parts[1] || '')) { page = trackedDossier(parts[1]); key = 'tracked'; }
+  else if (route === 'tracked' && /^([0-9a-f]{32}|sp\d{3,20}|tn[0-9a-f]{32})$/.test(parts[1] || '')) { page = trackedDossier(parts[1]); key = 'tracked'; }
   else if (route === 'orgs') { page = sectionTabs('search', 'orgs', orgsPage()); key = 'search'; }
   else if (route === 'org' && /^\d+$/.test(parts[1] || '')) { page = orgPage(parts[1], parts[2], parts[3]); key = 'search'; }
   else if (route === 'feed') page = feedPage(parts[1]);
