@@ -1672,6 +1672,7 @@ function eventText(e) {
     case 'doc': return (e.updated ? t('ev.docUpdated') : t('ev.doc')) + ': ' + join([e.title, e.doc_type ? label('pzd.', e.doc_type) : null]);
     case 'payment': return (e.sure ? t('ev.payment') : t('ev.paymentMaybe')) + ' ' + money(e.amount) + (e.date ? ' · ' + fdate(e.date) : '');
     case 'act': return t('ev.act', { n: e.number || '—' }) + ' ' + money(e.amount) + (e.date ? ' · ' + fdate(e.date) : '');
+    case 'stage_contract': return t('ev.stageContract', { n: e.number || '—' }) + (e.amount ? ' ' + money(e.amount) : '') + (e.supplier ? ' · ' + e.supplier : '');
     case 'contract_new': return t('ev.contractNew', { n: e.number || '—' }) + (e.amount ? ' ' + money(e.amount) : '') + (e.supplier ? ' · ' + e.supplier : '');
     case 'due': return t('ev.due', { sum: money(e.amount) }) + (e.overdue > 1 ? ' · ' + t('tr.overdueN', { sum: money(e.overdue) }) : '');
     default: return e.type;
@@ -1711,6 +1712,7 @@ function trackedPage(preset) {
     changed: (r) => r.row && r.row.changed_at > seen && (r.row.last_event || {}).type !== 'tracked',
     pending: (r) => !r.row,
     eib: (r) => r.row && r.row.eib,
+    tenders: (r) => (r.row ? r.row.kind === 'tender' : r.id.startsWith('tn')),
   };
   function draw() {
     const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -1718,7 +1720,7 @@ function trackedPage(preset) {
       && (!words.length || words.every((w) => [r.pick.number, r.pick.title, r.pick.buyer, r.pick.supplier, r.pick.tid, r.row && r.row.buyer_name, r.row && r.row.supplier_name].join(' ').toLowerCase().includes(w))));
     const none = f.scope === 'shared' ? [t('tr.sharedEmptyTitle'), t('tr.sharedEmptyText')] : [t('tr.emptyTitle'), t('tr.emptyText')];
     fill(list, shown.length ? h('div', { class: 'tr-list' }, shown.map(trackedCard)) : h('div', { class: 'card empty' }, h('b', null, inScope().length ? t('pz.none') : none[0]), inScope().length ? t('sigs.changeFilter') : none[1]));
-    fill(filters, pills([['', t('ui.all'), inScope().length], ['left', t('tr.fLeft'), n('left')], ['overdue', t('tr.fOverdue'), n('overdue')], ['changed', t('tr.fChanged'), n('changed')], ['eib', t('eib.short'), n('eib')], ['pending', t('tr.pending'), n('pending')]].filter((p) => p[0] === '' || p[2] || p[0] === f.which),
+    fill(filters, pills([['', t('ui.all'), inScope().length], ['left', t('tr.fLeft'), n('left')], ['overdue', t('tr.fOverdue'), n('overdue')], ['changed', t('tr.fChanged'), n('changed')], ['eib', t('eib.short'), n('eib')], ['tenders', t('stage.tenders'), n('tenders')], ['pending', t('tr.pending'), n('pending')]].filter((p) => p[0] === '' || p[2] || p[0] === f.which),
       f.which, (v) => { f.which = v; draw(); }));
     fillHead();
   }
@@ -1727,13 +1729,13 @@ function trackedPage(preset) {
     const fresh = x && tests.changed(r);
     return h('a', { class: 'tr-card' + (fresh ? ' new' : ''), href: '#/tracked/' + r.id },
       h('div', { class: 'chips', style: 'margin:0' },
-        x && x.kind === 'tender' ? pzStatus(x.tender_status)
+        x && x.kind === 'tender' ? [h('span', { class: 'tag' }, t('stage.tender')), pzStatus(x.tender_status)]
           : x ? h('span', { class: 'pz-st ' + (x.status === 'active' ? 'ok' : x.status === 'terminated' ? 'off' : 'run') }, label('pzc.', x.status)) : h('span', { class: 'chip warn' }, h('i'), t('tr.pending')),
         tt.overdue > 1 ? h('span', { class: 'sev high' }, t('tr.overdueN', { sum: mshort(tt.overdue) })) : null,
         fresh ? h('span', { class: 'tag pz' }, t('tr.newEvents')) : null,
         x && x.eib ? h('span', { class: 'tag eib' }, t('eib.short')) : null,
         x && x.error ? h('span', { class: 'sev medium', title: x.error }, t('tr.error')) : null),
-      h('h3', null, r.id.startsWith('tn') ? t('tr.tenderHeading', { tid: (x && x.tid) || p.tid })
+      h('h3', null, (x ? x.kind === 'tender' : r.id.startsWith('tn')) ? t('tr.tenderHeading', { tid: (x && x.tid) || p.tid })
         : (x ? x.number : p.number) && (x ? x.number : p.number) !== '—' ? t('dos.heading', { n: x ? x.number : p.number, date: fdate(x && x.signed) }) : t('pz.draftContract')),
       h('div', { class: 'cell-sub' }, join([(x && x.buyer_name) || p.buyer, (x && x.supplier_name) || p.supplier], ' → ')),
       h('div', { class: 'clamp muted small' }, (x && x.title) || p.title || ''),
@@ -1860,6 +1862,12 @@ function trackedDossier(id) {
           t0.dream_id ? ext(dreamUrl(t0.dream_id), 'DREAM', 'btn') : null),
           isTracked(id) ? off : null)),
       partiesCard(t0, c),
+      s.from_tender ? h('p', { class: 'notice small section' }, t('tr.fromTender', { tid: s.tid })) : null,
+      (t0.other_contracts || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('tr.otherContracts')),
+        h('div', { class: 'qs-contracts' }, t0.other_contracts.map((oc) => h('div', { class: 'qs-contract' },
+          h('div', null, h('b', null, t('dos.heading', { n: oc.number || '—', date: fdate(oc.signed) })),
+            h('div', { class: 'cell-sub' }, join([(oc.suppliers || []).map((x) => x.name).join(', '), oc.value ? money(oc.value.amount, oc.value.currency) : null, label('pzc.', oc.status)]))),
+          oc.status !== 'cancelled' ? trackButton({ edrpou: t0.buyer, name: t0.buyer_name, role: 'buyer' }, Object.assign({}, t0, { tid: s.tid }), oc) : null)))) : null,
       h('div', { class: 'tiles section' },
         h('div', { class: 'stat tint-violet' }, h('small', null, t('pz.contractValue')), h('b', { class: 'num' }, money(tt.value)), c.start || c.end ? h('span', { class: 'sub' }, `${fdate(c.start)} — ${fdate(c.end)}`) : null),
         h('div', { class: 'stat tint-blue' }, h('small', null, t('tr.paid')), h('b', { class: 'num' }, money(tt.paid)), h('span', { class: 'sub' }, tt.value ? t('bar.paidPct', { pct: Math.round((tt.paid / tt.value) * 100) }) : '')),
@@ -2017,7 +2025,7 @@ function tenderDossier(id, s, pick) {
       (t0.contracts || []).length ? h('div', { class: 'qs-contracts' }, t0.contracts.map((c) => h('div', { class: 'qs-contract' },
         h('div', null, h('b', null, t('dos.heading', { n: c.number || '—', date: fdate(c.signed) })),
           h('div', { class: 'cell-sub' }, join([(c.suppliers || []).map((x) => x.name).join(', '), c.value ? money(c.value.amount, c.value.currency) : null, label('pzc.', c.status)]))),
-        c.status !== 'cancelled' ? trackButton(org, t0, c) : null))) : h('p', { class: 'muted small' }, t('tr.noContractsYet'))),
+        h('span', { class: 'small muted' }, c.status === 'pending' ? t('tr.autoContract') : label('pzc.', c.status))))) : h('p', { class: 'muted small' }, t('tr.noContractsYet'))),
     complianceCard(s),
     (t0.awards || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('dos.awards')), awardsTable(t0.awards)) : null,
     h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('tr.history')),
@@ -2671,10 +2679,11 @@ function quickSearch() {
     fill(out, h('div', { class: 'empty' }, t('srch.wait')));
     const blocks = [];
     if (code) {
-      blocks.push(orgFound(code));
+      const org = orgFound(code);
+      blocks.push(org);
       blocks.push(pzList(t('qs.asBuyer'), { action: 'search', kind: 'tenders', buyer: code }));
       blocks.push(pzList(t('qs.asSupplier'), { action: 'search', kind: 'contracts', supplier: code }));
-      blocks.push(treasuryList(code));
+      blocks.push(treasuryList(code, org.setName));
     } else {
       blocks.push(pzList(t('qs.byText'), { action: 'search', kind: 'tenders', text: q }));
     }
@@ -2688,20 +2697,22 @@ function quickSearch() {
 // The organisation behind a code: its Treasury card and whether it is on monitoring.
 function orgFound(code) {
   const box = h('div', { class: 'qs-org' }, h('div', { class: 'muted small' }, t('ui.loading')));
+  let nameEl = null, known = '';
+  box.setName = (n) => { known = known || n; if (nameEl && nameEl.dataset.missing) { nameEl.textContent = n; delete nameEl.dataset.missing; } };
   (async () => {
     let card = null;
     try { card = await portal('/v2/disposers/' + code); } catch (e) { /* not a disposer: still may be a supplier */ }
-    const name = (card && card.orgName) || (orgByCode(code) || {}).name || '';
+    const name = (card && card.orgName) || (orgByCode(code) || {}).name || known || '';
     const on = state.mine.orgs.has(code);
     const addBtn = (role) => {
       const b = h('button', { class: 'btn btn-sm' + (role === 'buyer' ? ' btn-dark' : ''), onclick: async () => {
         b.disabled = true;
-        try { await cloud.addOrg(code, name, role); toast(t('addorg.addedNow', { name: name || code })); render(); } catch (e) { b.disabled = false; toast(e.message, { bad: true }); }
+        try { await cloud.addOrg(code, name || known, role); toast(t('addorg.addedNow', { name: name || known || code })); render(); } catch (e) { b.disabled = false; toast(e.message, { bad: true }); }
       } }, icon('building'), t(role === 'buyer' ? 'qs.monitorBuyer' : 'qs.monitorSupplier'));
       return b;
     };
     fill(box,
-      h('div', null, h('small', { class: 'muted' }, t('f.edrpou') + ' ' + code), h('h3', null, name || t('qs.unknownOrg')),
+      h('div', null, h('small', { class: 'muted' }, t('f.edrpou') + ' ' + code), nameEl = h('h3', name ? null : { 'data-missing': '1' }, name || t('qs.unknownOrg')),
         card && card.address ? h('div', { class: 'small muted' }, address(card.address)) : null),
       h('div', { class: 'row' },
         on ? [h('span', { class: 'tag ok' }, t('org.monitoring')), orgByCode(code) ? h('a', { class: 'btn btn-sm', href: '#/org/' + code }, t('org.open'), icon('arrow')) : null]
@@ -2752,20 +2763,29 @@ function pzContracts(t0) {
 }
 
 // The organisation's Treasury contracts of the last year, either side.
-function treasuryList(code) {
+function treasuryList(code, onName) {
   const list = h('div', { class: 'qs-list' }, h('div', { class: 'muted small' }, t('ui.loading')));
   (async () => {
     try {
       const from = addDays(today(), -365), to = today();
-      const parts = await Promise.all(['disposer', 'contractor'].map((role) => portalDocuments('contract', code, role, from, to).catch(() => ({ docs: [] }))));
+      const [parts, names] = await Promise.all([
+        Promise.all(['disposer', 'contractor'].map((role) => portalDocuments('contract', code, role, from, to).catch(() => ({ docs: [] })))),
+        getJSON('data/names.json', ver()).catch(() => ({})),
+      ]);
       const docs = parts.flatMap((p) => p.docs).sort((a, b) => (b.documentDate || '').localeCompare(a.documentDate || ''));
+      // A supplier has no disposer card: its name comes from the contracts that name it.
+      const self = docs.flatMap((d) => d.contractors || []).find((c) => c.identifier === code);
+      if (self && self.name && onName) onName(self.name);
       fill(list, docs.length ? docs.slice(0, 50).map((d) => {
         const sup = (d.contractors || [])[0] || {};
-        return h('div', { class: 'qs-row' },
+        const buyer = names[d.edrpou] || d.edrpou;
+        const open = () => openRecord({ kind: 'contract', role: d.edrpou === code ? 'disposer' : 'contractor', data: d, date: (d.documentDate || '').slice(0, 10),
+          amount: d.amount, currency: d.currency || 'UAH', cp_name: d.edrpou === code ? sup.name : buyer });
+        return h('div', { class: 'qs-row click', tabindex: 0, onclick: open, onkeydown: (e) => { if (e.key === 'Enter') open(); } },
           h('div', null, h('b', null, t('dos.heading', { n: d.documentNumber || '—', date: fdate(d.documentDate) })),
-            h('div', { class: 'cell-sub' }, join([d.edrpou === code ? sup.name : d.edrpou, d.subject])),
+            h('div', { class: 'cell-sub' }, join([d.edrpou === code ? sup.name : t('qs.buyer', { name: buyer }), d.subject])),
             d.idTenderProzorro ? h('span', { class: 'tag pz' }, 'Prozorro ' + d.idTenderProzorro) : null),
-          h('div', { class: 'qs-side' }, h('b', { class: 'num' }, money(d.amount, d.currency)), trackTreasuryButton(d)));
+          h('div', { class: 'qs-side', onclick: (e) => e.stopPropagation() }, h('b', { class: 'num' }, money(d.amount, d.currency)), trackTreasuryButton(d)));
       }) : h('div', { class: 'muted small' }, t('qs.none')));
     } catch (e) {
       fill(list, h('div', { class: 'muted small' }, e.message));

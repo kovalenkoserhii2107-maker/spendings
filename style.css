@@ -354,6 +354,8 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 .qs-block { margin-top: 18px; }
 .qs-list { display: grid; gap: 6px; }
 .qs-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 14px; border-radius: 14px; background: var(--soft); }
+.qs-row.click { cursor: pointer; }
+.qs-row.click:hover { background: #ECEFF4; }
 .qs-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .qs-contracts { display: grid; gap: 6px; margin-top: 10px; }
 .qs-contract { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 12px; background: #fff; }

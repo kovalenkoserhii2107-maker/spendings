@@ -316,11 +316,22 @@ def _treasury_only(req, old, treasury_by_org, log):
 def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     """Fresh snapshot of one contract on control (old = the previous one or None)."""
     key = req["key"]
-    if key.startswith("tn"):
-        return sync_tender(req, old, log)
     treasury_only = key.startswith("sp")
     tc_known = None
-    if treasury_only:
+    if key.startswith("tn"):
+        # A procurement on control: once it signs a contract, the same entry follows that
+        # contract (payments, acts, documents); until then, the procedure itself.
+        tender_id = key[2:]
+        tender = prozorro.load_tender(tender_id)
+        signed = sorted((c for c in tender.get("contracts") or [] if c.get("status") in ("active", "terminated")),
+                        key=lambda c: c.get("signed") or "")
+        if not signed:
+            return sync_tender(req, old, log, tender)
+        contract = signed[0]
+        tender["other_contracts"] = [{k: c.get(k) for k in ("id", "number", "status", "signed", "value", "suppliers")}
+                                     for c in tender.get("contracts") or [] if c.get("id") != contract.get("id")]
+        tender.pop("contracts", None)
+    elif treasury_only:
         tender_id, (tender, contract, tc_known) = None, _treasury_only(req, old, treasury_by_org, log)
     else:
         tender_id = (old or {}).get("tender_id") or (tenders_by_org.get(req["org"], {}).get(req["tid"]) or {}).get("id")
@@ -435,19 +446,27 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
         "sasu": audit,
         "payments_checked": today.isoformat(),
     }
-    events = _diff(old, snap)
+    snap["kind"] = "treasury" if treasury_only else "contract"
+    if key.startswith("tn"):
+        snap.update(contract_id=contract.get("id"), from_tender=True)
+    if old and old.get("kind") == "tender":
+        # The procurement has just signed its contract: one event, not every document and payment.
+        sup = (contract.get("suppliers") or [{}])[0]
+        events = [_event("stage_contract", number=contract.get("number") or "", amount=value, supplier=sup.get("name") or "")]
+    else:
+        events = _diff(old, snap)
     snap["history"] = (events + ((old or {}).get("history") or []))[:HISTORY_SIZE]
     snap["changed_at"] = events[0]["at"] if events else (old or {}).get("changed_at")
     log("  %s № %s: сплачено %.2f з %.2f, подій %d" % (req["tid"], contract.get("number") or "—", paid, value, len(events)))
     return snap
 
 
-def sync_tender(req, old, log=print):
+def sync_tender(req, old, log=print, tender=None):
     """A procurement on control before (or while) it gets contracts: its course, bidders,
     complaints, documents and the State Audit Service; each contract it signs can then be
     taken on control by itself."""
     key, tender_id = req["key"], req["key"][2:]
-    tender = prozorro.load_tender(tender_id)
+    tender = tender or prozorro.load_tender(tender_id)
     try:
         audit = sasu.monitorings(tender_id, req["tid"])
     except prozorro.ProzorroError as e:
@@ -492,6 +511,7 @@ def index_row(s):
     sup = (c.get("suppliers") or [{}])[0]
     return {
         "key": s["key"], "kind": s.get("kind") or ("treasury" if s["key"].startswith("sp") else "contract"),
+        "from_tender": bool(s.get("from_tender")),
         "org": s["org"], "tid": s["tid"], "sp": s.get("sp") or "", "tender_status": t.get("status") or "",
         "contracts_n": len(t.get("contracts") or []) if s.get("kind") == "tender" else None,
         "number": c.get("number") or "", "signed": c.get("signed"), "end": c.get("end"), "status": c.get("status"),
