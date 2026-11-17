@@ -93,10 +93,12 @@ def sync(old, log=print):
     funded_set = set(funded)
     wanted = list(dict.fromkeys(funded + [m for m in mentioned if m not in skip]))
     cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - REFRESH_AFTER_H * 3600))
-    todo = [tid for tid in wanted if tid not in rows] + sorted(
+    # Known procedures first: their internal ids are stored and the public API has no rate
+    # limit; new candidates need a lookup on prozorro.gov.ua (60 a minute, fewer from CI).
+    todo = sorted(
         (tid for tid in wanted if tid in rows and (not fresh_schema or rows[tid].get("_v") != SCHEMA
                                                    or not prozorro.is_final(rows[tid]) and rows[tid].get("_at", "") < cutoff)),
-        key=lambda tid: rows[tid].get("_at", ""))
+        key=lambda tid: rows[tid].get("_at", "")) + [tid for tid in wanted if tid not in rows]
     done = tried = 0
     for tid in todo:
         if time.time() - started > BUDGET_S:
