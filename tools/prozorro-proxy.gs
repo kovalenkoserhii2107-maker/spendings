@@ -4,7 +4,7 @@
  * Prozorro sends no CORS headers, so the site cannot ask it from the browser. This web
  * app (executed as its owner, open to anyone) forwards a few read-only requests:
  *
- *   ?action=search&kind=tenders|contracts&buyer=EDRPOU|supplier=EDRPOU|text=...&page=N
+ *   ?action=search&kind=tenders|contracts&buyer=EDRPOU|supplier=EDRPOU|text=...  (filters below)
  *   ?action=tender&tid=UA-2026-10-15-007639-a     a procedure with its contracts, compacted
  *   ?action=nudge                                   "something was just put on control": start
  *                                                   the site's sync now instead of waiting
@@ -44,34 +44,121 @@ function doGet(e) {
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
 }
 
+// Search sorts and filters, as prozorro.gov.ua names them.
+var SORTS = { date_desc: ['dateCreated', 'desc'], date_asc: ['dateCreated', 'asc'], value_desc: ['value.amount', 'desc'], value_asc: ['value.amount', 'asc'] };
+var DAY = /^\d{4}-\d{2}-\d{2}$/;
+var WANT = 20;        // rows per answer when a period is set
+var SCAN_PAGES = 10;  // pages read per answer at most when filtering by period
+
+// ?action=search: one answer of results. Filters: buyer|supplier (EDRPOU), text (words, CPV
+// code), status, proc_type (comma lists), vmin/vmax (expected value), eib=1 (EIB-funded),
+// sort (date_desc|date_asc|value_desc|value_asc), from/to (YYYY-MM-DD, by the date in the
+// procurement id), cursor (from the previous answer's `next`). The search shows at most 1000
+// results (50 pages); a period older than the newest 1000 is looked up from the oldest end.
 function search_(p) {
   var kind = p.kind === 'contracts' ? 'contracts' : 'tenders';
-  var page = Math.max(1, Math.min(50, parseInt(p.page || '1', 10) || 1));
-  var body = [];
+  var body = [], subject = false;
   ['buyer', 'supplier'].forEach(function (k) {
     var v = String(p[k] || '');
-    if (/^\d{8,10}$/.test(v)) body.push(k + '[]=' + v);
+    if (/^\d{8,10}$/.test(v)) { body.push(k + '[]=' + v); subject = true; }
   });
-  if (p.text) body.push('text=' + encodeURIComponent(String(p.text).slice(0, 200)));
-  if (!body.length) return { error: 'empty query' };
-  var res = UrlFetchApp.fetch(SITE + '/search/' + kind + '?page=' + page,
+  if (p.text) { body.push('text=' + encodeURIComponent(String(p.text).slice(0, 200))); subject = true; }
+  if (p.eib === '1') { body.push('funders[]=33000'); subject = true; }
+  if (!subject) return { error: 'empty query' };
+  list_(p.status, /^[a-z.]{3,40}$/).forEach(function (v) { body.push('status[]=' + v); });
+  list_(p.proc_type, /^[A-Za-z.]{3,40}$/).forEach(function (v) { body.push('proc_type[]=' + v); });
+  if (num_(p.vmin) != null) body.push('value[amount][start]=' + num_(p.vmin));
+  if (num_(p.vmax) != null) body.push('value[amount][end]=' + num_(p.vmax));
+  var sortKey = SORTS[p.sort] ? p.sort : 'date_desc';
+  var sort = SORTS[sortKey].slice();
+  if (kind === 'contracts' && sort[0] === 'dateCreated') sort[0] = 'dateSigned';
+  var from = DAY.test(p.from || '') ? p.from : '', to = DAY.test(p.to || '') ? p.to : '';
+  var cursor = Math.max(1, Math.min(50, parseInt(p.cursor || p.page || '1', 10) || 1));
+  var cache = {};
+  function get(n, order) {
+    var key = order + n;
+    if (!cache[key]) cache[key] = page_(kind, body.concat(['sort_by=' + sort[0], 'order=' + order]), n);
+    return cache[key];
+  }
+  var first = get(1, sort[1]);
+  var lastPage = Math.max(1, Math.min(50, Math.ceil(first.total / 20)));
+  var capped = first.total >= 1000;
+  if (!from && !to) {
+    var pg = get(cursor, sort[1]);
+    return { total: first.total, capped: capped, items: pg.items, next: cursor < lastPage ? cursor + 1 : null };
+  }
+  var inRange = function (r) { return (!from || r.date >= from) && (!to || r.date <= to); };
+  var out = [], n = cursor, done = false, order = sort[1];
+  if (sort[0] !== 'value.amount') {
+    // By date: jump to the first page that reaches the period, read on until it is passed.
+    var desc = order === 'desc';
+    var reaches = function (pg) { var x = pg.items[pg.items.length - 1]; return !x || (desc ? (!to || x.date <= to) : (!from || x.date >= from)); };
+    if (!p.cursor) {
+      if (!reaches(get(lastPage, order))) {
+        if (!capped) return { total: 0, items: [], next: null };
+        // The period is older (or newer) than the 1000 shown: look from the other end.
+        order = desc ? 'asc' : 'desc';
+        desc = !desc;
+        if (!reaches(get(lastPage, order))) return { total: 0, items: [], next: null, gap: true };
+      }
+      var lo = 1, hi = lastPage;
+      while (lo < hi) { var mid = Math.floor((lo + hi) / 2); if (reaches(get(mid, order))) hi = mid; else lo = mid + 1; }
+      n = lo;
+    } else if (p.order === 'asc' || p.order === 'desc') {
+      order = p.order;
+      desc = order === 'desc';
+    }
+    for (; n <= lastPage && out.length < WANT; n++) {
+      var items = get(n, order).items;
+      for (var i = 0; i < items.length; i++) {
+        var d = items[i].date;
+        if (desc ? (from && d < from) : (to && d > to)) { done = true; break; }
+        if (inRange(items[i])) out.push(items[i]);
+      }
+      if (done) break;
+    }
+  } else {
+    // By value: read on, keeping the rows of the period.
+    for (var k = 0; n <= lastPage && k < SCAN_PAGES && out.length < WANT; n++, k++) {
+      get(n, order).items.forEach(function (r) { if (inRange(r)) out.push(r); });
+    }
+  }
+  var more = !done && n <= lastPage;
+  return { total: null, capped: capped && !done && n > lastPage, items: out, next: more ? n : null, order: order };
+}
+
+function list_(v, re) {
+  return String(v || '').split(',').filter(function (x) { return re.test(x); }).slice(0, 10);
+}
+
+function num_(v) {
+  var x = parseFloat(String(v == null ? '' : v).replace(',', '.'));
+  return isFinite(x) && x >= 0 ? x : null;
+}
+
+function page_(kind, body, n) {
+  var res = UrlFetchApp.fetch(SITE + '/search/' + kind + '?page=' + n,
     { method: 'post', payload: body.join('&'), contentType: 'application/x-www-form-urlencoded', muteHttpExceptions: true });
-  if (res.getResponseCode() !== 200) return { error: 'Prozorro ' + res.getResponseCode() };
+  if (res.getResponseCode() !== 200) throw new Error('Prozorro ' + res.getResponseCode());
   var d = JSON.parse(res.getContentText());
   var items = (d.data || []).map(function (r) {
     var pe = r.procuringEntity || r.buyer || {};
     var sup = (r.suppliers || [])[0] || {};
+    var tid = r.tenderID || String(r.contractID || '').replace(/-[a-z]\d+$/, '');
     return {
-      tid: r.tenderID || String(r.contractID || '').replace(/-[a-z]\d+$/, ''),
+      tid: tid,
       cid: r.contractID || '',
+      date: tid.slice(3, 13),
       title: r.title || '',
       status: r.status || '',
       value: r.value ? { amount: r.value.amount, currency: r.value.currency } : null,
       buyer_name: (pe.identifier && pe.identifier.legalName) || pe.name || '',
+      buyer: (pe.identifier && pe.identifier.id) || '',
       supplier_name: (sup.identifier && sup.identifier.legalName) || sup.name || '',
+      supplier: (sup.identifier && sup.identifier.id) || '',
     };
   });
-  return { total: d.total || items.length, page: page, items: items };
+  return { total: d.total || 0, items: items };
 }
 
 function org_(o) {

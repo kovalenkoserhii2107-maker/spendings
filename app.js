@@ -2811,34 +2811,87 @@ function orgFound(code) {
 }
 
 // Prozorro procedures or contracts from a search; a procedure opens into its contracts.
+// Prozorro search results as a table: sorted and filtered by Prozorro itself (the proxy passes
+// the filters on), the period by the date in the procurement id. "Show more" adds the next part.
+const PZ_METHODS = ['reporting', 'priceQuotation', 'belowThreshold', 'aboveThreshold', 'aboveThresholdUA', 'aboveThresholdEU', 'negotiation', 'negotiation.quick',
+  'competitiveDialogueUA', 'competitiveOrdering', 'closeFrameworkAgreementSelectionUA', 'esco', 'simple.defense', 'requestForProposal'];
+const PZ_TSTATUS = ['active.enquiries', 'active.tendering', 'active.auction', 'active.qualification', 'active.awarded', 'complete', 'unsuccessful', 'cancelled'];
+const PZ_CSTATUS = ['active', 'terminated', 'cancelled'];
 function pzList(title, params) {
-  const list = h('div', { class: 'qs-list' }, h('div', { class: 'muted small' }, t('ui.loading')));
+  const contracts = params.kind === 'contracts';
+  const f = { sort: 'date_desc', status: '', proc_type: '', vmin: '', vmax: '', words: '' };
   const head = h('div', { class: 'card-head' }, h('h3', { class: 'card-sub' }, title, ' · Prozorro'));
-  const box = h('div', { class: 'qs-block' }, head, list);
-  let page = 1;
-  async function load() {
-    try {
-      const d = await pzProxy(Object.assign({}, params, { page }));
-      const rows = d.items.map((r) => {
-        const more = h('div');
-        const open = h('button', { class: 'btn btn-sm', onclick: async () => {
-          open.disabled = true;
-          fill(more, h('div', { class: 'muted small' }, t('ui.loading')));
-          try { fill(more, pzContracts((await pzProxy({ action: 'tender', tid: r.tid })).tender)); } catch (e) { fill(more, h('div', { class: 'small' }, e.message)); }
+  const list = h('div');
+  const foot = h('div', { class: 'foot' });
+  let rows = [], next = null, order = null, seq = 0;
+  const query = (cursor) => {
+    const q = Object.assign({}, params, { sort: f.sort, status: f.status, proc_type: f.proc_type, vmin: f.vmin, vmax: f.vmax, from: qs2.from || '', to: qs2.to || '' });
+    if (f.words) q.text = [params.text, f.words].filter(Boolean).join(' ');
+    if (cursor) { q.cursor = cursor; if (order) q.order = order; }
+    return q;
+  };
+  const sortBtn = (key, text) => {
+    const on = f.sort.startsWith(key);
+    const dir = on && f.sort.endsWith('asc') ? '↑' : on ? '↓' : '';
+    return h('button', { class: 'th-sort' + (on ? ' on' : ''), type: 'button', onclick: () => { f.sort = key + (on && f.sort.endsWith('desc') ? '_asc' : '_desc'); sortSel.value = f.sort; load(); } }, text, dir ? h('span', null, ' ' + dir) : null);
+  };
+  // The searched organisation is the same in every row: show the other side, or no column.
+  const showParty = !params.buyer;
+  const L = { d: t('col.date'), s: t('col.subject'), p: t('qs.colBuyer'), st: t('pz.status'), v: t('pz.colValue') };
+  const cols = showParty ? 6 : 5;
+  function table() {
+    if (!rows.length) return h('div', { class: 'empty' }, h('b', null, t('qs.none')), t('sigs.changeFilter'));
+    return h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
+      h('thead', null, h('tr', null, h('th', null, sortBtn('date', L.d)), h('th', null, L.s), showParty && h('th', null, L.p), h('th', null, L.st), h('th', { class: 'r' }, sortBtn('value', L.v)), h('th'))),
+      h('tbody', null, rows.map((r) => {
+        const more = h('tr', { class: 'detail', hidden: true }, h('td', { colspan: cols, 'data-label': '' }));
+        const btn = h('button', { class: 'btn btn-sm', onclick: async () => {
+          if (!more.hidden) { more.hidden = true; return; }
+          more.hidden = false;
+          fill(more.firstChild, h('div', { class: 'muted small' }, t('ui.loading')));
+          try { fill(more.firstChild, pzContracts((await pzProxy({ action: 'tender', tid: r.tid })).tender)); } catch (e) { fill(more.firstChild, h('div', { class: 'small' }, e.message)); }
         } }, t('qs.contracts'));
-        return h('div', { class: 'qs-row' },
-          h('div', null, h('b', null, r.title || r.tid), h('div', { class: 'cell-sub' }, join([r.tid, r.buyer_name, r.supplier_name, label('pzs.', r.status) || label('pzc.', r.status)])),
-            more),
-          h('div', { class: 'qs-side' }, r.value ? h('b', { class: 'num' }, money(r.value.amount, r.value.currency)) : null, open));
-      });
-      fill(list, rows.length ? rows : h('div', { class: 'muted small' }, t('qs.none')),
-        d.total > page * 20 ? h('button', { class: 'btn btn-sm', onclick: () => { page += 1; load(); } }, t('list.next')) : null);
+        return [h('tr', null,
+          td(L.d, { class: 'num' }, fdate(r.date || String(r.tid || '').slice(3, 13))),
+          td(L.s, { class: 'w-text' }, h('div', { class: 'clamp' }, r.title || r.tid), h('div', { class: 'cell-sub num' }, h('a', { href: pzUrl(r.tid), target: '_blank', rel: 'noopener noreferrer' }, contracts && r.cid ? r.cid : r.tid))),
+          showParty && td(L.p, { class: 'w-party' }, party(r.buyer_name, r.buyer)),
+          td(L.st, null, h('span', { class: 'tag' }, (contracts ? label('pzc.', r.status) : label('pzs.', r.status)) || r.status)),
+          td(L.v, { class: 'r num' }, r.value ? money(r.value.amount, r.value.currency) : '—'),
+          td('', { class: 'r' }, btn)), more];
+      }))));
+  }
+  async function load(append) {
+    const my = ++seq;
+    if (!append) { rows = []; next = null; order = null; fill(list, h('div', { class: 'empty' }, t('ui.loading'))); fill(foot); }
+    try {
+      const d = await pzProxy(query(append ? next : null));
+      if (my !== seq) return;
+      rows = rows.concat(d.items || []);
+      next = d.next || null;
+      order = d.order || order;
+      fill(list, table());
+      fill(foot,
+        h('div', null, d.total != null && !append ? t('qs.found', { n: ni.format(d.total) }) + (d.capped ? ' · ' + t('qs.capped') : '') : t('qs.shown', { n: ni.format(rows.length) }),
+          d.gap ? ' · ' + t('qs.gap') : ''),
+        next ? h('button', { class: 'btn btn-sm', onclick: (e) => { e.target.disabled = true; load(true); } }, t('qs.more')) : null);
     } catch (e) {
-      fill(list, h('div', { class: 'muted small' }, e.message));
+      if (my === seq) fill(list, h('div', { class: 'empty' }, e.message));
     }
   }
+  const set = (k) => (e) => { f[k] = e.target.value.trim(); load(); };
+  const sortSel = select(['date_desc', 'date_asc', 'value_desc', 'value_asc'].map((k) => [k, t('qs.sort.' + k)]), f.sort, set('sort'), t('qs.sort'));
+  const statusSel = select([['', t('cf.anyStatus')]].concat((contracts ? PZ_CSTATUS : PZ_TSTATUS).map((x) => [x, label(contracts ? 'pzc.' : 'pzs.', x)])), '', set('status'), t('pz.status'));
+  const methodSel = !contracts ? select([['', t('pz.anyMethod')]].concat(PZ_METHODS.map((m) => [m, label('pzt.', m)])), '', set('proc_type'), t('pz.colMethod')) : null;
+  const num = (k, ph) => h('input', { class: 'input', type: 'number', min: 0, step: 'any', inputmode: 'decimal', placeholder: ph, 'aria-label': t('pz.colValue') + ' ' + ph, onchange: set(k) });
+  const words = (params.buyer || params.supplier) ? h('input', { class: 'input', type: 'search', placeholder: t('qs.words'), 'aria-label': t('qs.words'), onchange: set('words') }) : null;
+  const field = (lbl, el) => el && h('label', { class: 'field' }, h('span', null, lbl), el);
   load();
-  return box;
+  return h('div', { class: 'qs-block qs-table' }, head,
+    h('div', { class: 'pz-tools' },
+      field(t('qs.sort'), sortSel), field(t('pz.status'), statusSel), field(t('pz.colMethod'), methodSel),
+      h('div', { class: 'field' }, h('span', null, t('pz.colValue')), h('div', { class: 'cf-range' }, num('vmin', t('cf.from')), num('vmax', t('cf.to')))),
+      field(t('qs.wordsLbl'), words)),
+    list, foot);
 }
 
 function pzContracts(t0) {
