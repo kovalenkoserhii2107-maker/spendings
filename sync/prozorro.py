@@ -16,6 +16,7 @@ Facts this module relies on (checked against the live services, 2026-11-16):
     Each signed file has a "sign.p7s" companion, which is not worth showing.
 """
 import json
+import math
 import re
 import time
 import urllib.error
@@ -68,26 +69,80 @@ def _get(url, data=None, timeout=60, retries=4):
     raise last
 
 
-def search_page(edrpou, page, role="buyer"):
-    """One page of an organisation's procedures: [tenderID], newest first.
+def search_page(edrpou, page, role="buyer", vrange=None):
+    """One page of an organisation's procedures: ([tenderID], rows on the page, total), newest first.
 
     A buyer is searched among procedures (`buyer[]`); a supplier among
     contracts (`supplier[]` on /search/contracts), whose contractID is the
-    tenderID plus a suffix ("UA-2026-10-15-007639-a-a1").
+    tenderID plus a suffix ("UA-2026-10-15-007639-a-a1"). The search shows at
+    most 1000 results (total says 1000 then); `vrange` = (from, to) limits it
+    to procedures of that expected value, so a long history is read in parts.
     """
+    query = {("supplier[]" if role == "supplier" else "buyer[]"): edrpou}
+    if vrange:
+        query["value[amount][start]"], query["value[amount][end]"] = vrange
+    body = urllib.parse.urlencode(query).encode()
     if role == "supplier":
-        body = urllib.parse.urlencode({"supplier[]": edrpou}).encode()
         res = _get("%s/search/contracts?page=%d" % (SITE, page), data=body)
         out = []
         for r in res.get("data") or []:
             m = re.match(r"^(UA-\d{4}-\d{2}-\d{2}-\d{6}-[a-z])-", r.get("contractID") or "")
             if m and m.group(1) not in out:
                 out.append(m.group(1))
-        return out, len(res.get("data") or [])
-    body = urllib.parse.urlencode({"buyer[]": edrpou}).encode()
-    res = _get("%s/search/tenders?page=%d" % (SITE, page), data=body)
-    ids = [r["tenderID"] for r in res.get("data") or [] if r.get("tenderID")]
-    return ids, len(res.get("data") or [])
+    else:
+        res = _get("%s/search/tenders?page=%d" % (SITE, page), data=body)
+        out = [r["tenderID"] for r in res.get("data") or [] if r.get("tenderID")]
+    return out, len(res.get("data") or []), int(res.get("total") or 0)
+
+
+SEARCH_CAP = SEARCH_PAGES * 20
+# Value bands a long history is first cut into; a band still at the cap is halved.
+VALUE_BANDS = (0, 1000, 3000, 10000, 30000, 100000, 300000, 1000000, 10000000, 10 ** 13)
+DEEP_BUDGET_S = 15 * 60
+
+
+def _split(lo, hi):
+    """Two halves of a value band: geometric while it spans orders of magnitude."""
+    mid = int(math.sqrt(max(lo, 1) * hi)) if hi > 4 * max(lo, 1) else (lo + hi) // 2
+    return [[lo, mid], [mid, hi]] if lo < mid < hi else None
+
+
+def deep_search(edrpou, role, deep, seen, log=print, budget=DEEP_BUDGET_S):
+    """The whole history past the newest 1000, band by band (pz_state["deep"]).
+
+    Picks up where the last run stopped; returns the tenderIDs not in `seen`.
+    """
+    started, found = time.time(), []
+    bands = deep.setdefault("bands", [[VALUE_BANDS[i], VALUE_BANDS[i + 1]] for i in range(len(VALUE_BANDS) - 1)])
+    while bands and time.time() - started < budget:
+        lo, hi = bands[0]
+        ids, raw, total = search_page(edrpou, 1, role, (lo, hi))
+        if total >= SEARCH_CAP:
+            halves = _split(lo, hi)
+            if halves:
+                bands[0:1] = halves
+                continue
+        page = deep.get("page") or 1
+        if page > 1:
+            ids, raw, total = search_page(edrpou, page, role, (lo, hi))
+        while True:
+            for i in ids:
+                if i not in seen:
+                    seen.add(i)
+                    found.append(i)
+            if raw < 20 or page >= SEARCH_PAGES:
+                break
+            if time.time() - started > budget:
+                deep["page"] = page + 1
+                return found
+            page += 1
+            ids, raw, total = search_page(edrpou, page, role, (lo, hi))
+        deep.pop("page", None)
+        bands.pop(0)
+    if not bands:
+        deep["done"] = time.strftime("%Y-%m-%d", time.gmtime())
+    log("  prozorro: архів за вартістю — знайдено %d, частин лишилось %d" % (len(found), len(bands)))
+    return found
 
 
 def internal_id(tender_id):
@@ -385,10 +440,11 @@ def sync(edrpou, tenders, pz_state, log=print, role="buyer"):
     queued = set(queue) | set(pz_state.get("missing") or [])
 
     # 1. New procedures, newest first, until a page brings nothing new.
-    found = 0
+    found, capped = 0, False
     try:
         for page in range(1, SEARCH_PAGES + 1):
-            ids, raw = search_page(edrpou, page, role)
+            ids, raw, total = search_page(edrpou, page, role)
+            capped = capped or total >= SEARCH_CAP
             new = [i for i in ids if i not in tenders and i not in queued]
             queue.extend(new)
             queued.update(new)
@@ -398,6 +454,13 @@ def sync(edrpou, tenders, pz_state, log=print, role="buyer"):
                 break
             if pz_state.get("backfilled") and not new:
                 break
+        # More than the search shows: read the older part once, in value bands.
+        deep = pz_state.get("deep") or {}
+        if (capped or deep) and not deep.get("done"):
+            pz_state["deep"] = deep
+            older = deep_search(edrpou, role, deep, queued | set(tenders), log)
+            queue.extend(older)
+            found += len(older)
     except ProzorroError as e:
         errors.append("пошук: %s" % e)
     log("  prozorro: знайдено нових процедур %d, у черзі %d" % (found, len(queue)))
