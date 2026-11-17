@@ -17,6 +17,7 @@
  *           1. Договір            signed contract and its other documents
  *           2. Зміни й додатки    annexes and additional agreements
  *           3. Закупівля          tender documents
+ *           4. Моніторинг ДАСУ    files of the State Audit Service monitorings
  *       Поділилися зі мною / <організація> / <договір> / …
  *       Реєстр договорів на контролі   (Google Sheet: price, paid, left, links)
  *
@@ -31,7 +32,7 @@ var ROOT = 'Монітор розрахунків';
 var SECTION = 'Договори на контролі';
 var SHARED = 'Поділилися зі мною';
 var SHEET = 'Реєстр договорів на контролі';
-var PARTS = { contract: '1. Договір', changes: '2. Зміни й додатки', tender: '3. Закупівля' };
+var PARTS = { contract: '1. Договір', changes: '2. Зміни й додатки', tender: '3. Закупівля', audit: '4. Моніторинг ДАСУ' };
 var FOLDER_MIME = 'application/vnd.google-apps.folder';
 var TIME_LIMIT_MS = 5 * 60 * 1000; // Apps Script stops a run at 6 minutes
 
@@ -141,7 +142,11 @@ function copyRow_(row, ctx, copy) {
     return out;
   }
   var docs = ((snap.contract || {}).docs || []).map(function (d) { return [isChange_(d) ? 'changes' : 'contract', d]; })
-    .concat(((snap.tender || {}).docs || []).map(function (d) { return ['tender', d]; }));
+    .concat(((snap.tender || {}).docs || []).map(function (d) { return ['tender', d]; }))
+    // Files of the State Audit Service monitorings: requests, explanations, removal reports.
+    .concat((snap.sasu || []).reduce(function (acc, m) {
+      return acc.concat((m.docs || []).map(function (d) { return ['audit', { id: d.id, title: d.title, url: d.url, date: d.date }]; }));
+    }, []));
   var subs = {};
   docs.forEach(function (x) {
     var part = x[0], d = x[1];

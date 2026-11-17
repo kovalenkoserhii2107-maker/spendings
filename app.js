@@ -584,26 +584,32 @@ function showInstallBanner() {
 // Five sections; the bell (notifications) and the avatar (settings) sit in the header.
 const NAV = [
   ['#/', 'tracked', 'star', 'nav.tracked'],
+  ['#/orgs', 'orgs', 'building', 'nav.orgs'],
   ['#/eib', 'eib', 'bank', 'nav.eib'],
-  ['#/prozorro', 'prozorro', 'tender', 'nav.prozorro'],
-  ['#/payments', 'payments', 'money', 'nav.payments'],
   ['#/search', 'search', 'search', 'nav.search'],
 ];
-// Pages that live inside a section, shown as its tabs.
+// Everything about organisations on monitoring lives under «Організації».
 const SECTION_TABS = {
-  payments: [['#/payments', 'payments', 'nav.payments'], ['#/contracts', 'contracts', 'nav.contracts'], ['#/signals', 'signals', 'nav.signals']],
-  search: [['#/search', 'search', 'srch.tab'], ['#/orgs', 'orgs', 'nav.orgs']],
+  orgs: [['#/orgs', 'orgs', 'orgs.tabList'], ['#/payments', 'payments', 'nav.payments'], ['#/contracts', 'contracts', 'nav.contracts'],
+    ['#/prozorro', 'prozorro', 'nav.prozorro'], ['#/signals', 'signals', 'nav.signals']],
 };
 function sectionTabs(section, active, page) {
   const tabs = SECTION_TABS[section];
   if (!tabs || !Array.isArray(page)) return page;
   const bar = h('nav', { class: 'section-tabs pills', 'aria-label': t('nav.' + section) }, tabs.map(([href, key, label]) =>
     h('a', { href, class: key === active ? 'on' : '' }, t(label), key === 'signals' && riskCount() ? h('em', { class: 'count red' }, riskCount()) : null)));
-  return [page[0], bar].concat(page.slice(1));
+  return [page[0], bar, section === 'orgs' && active !== 'orgs' ? scopeLine() : null].concat(page.slice(1));
+}
+// Whose data this is: the organisations on monitoring, by name.
+function scopeLine() {
+  const orgs = state.index.orgs || [];
+  if (!orgs.length) return h('div', { class: 'card empty section' }, h('b', null, t('scope.noneTitle')), t('scope.noneText'), h('div', { class: 'row', style: 'justify-content:center;margin-top:10px' }, h('a', { class: 'btn btn-dark btn-sm', href: '#/search' }, icon('search'), t('nav.search'))));
+  return h('p', { class: 'scope-line' }, t('scope.line', { n: orgs.length }) + ' ',
+    orgs.map((o, i) => [i ? ', ' : '', h('a', { href: '#/org/' + o.edrpou }, o.name)]));
 }
 
 function badgeFor(key) {
-  if (key === 'payments') { const n = riskCount(); return n ? h('em', { class: 'count red' }, n) : null; }
+  if (key === 'orgs') { const n = riskCount(); return n ? h('em', { class: 'count red' }, n) : null; }
   return null;
 }
 
@@ -1929,11 +1935,7 @@ function complianceCard(snap) {
   return h('div', { class: 'card pad section' },
     h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, t('chk.title')), snap.eib ? h('span', { class: 'tag eib' }, t('eib.kind.' + snap.eib)) : null),
     checklistBox(snap.checklist),
-    audit.length ? h('div', { class: 'sasu' }, h('div', { class: 'drive-part-title' }, t('dos.sasu')),
-      audit.map((m) => h('div', { class: 'sasu-row ' + (m.violation ? 'bad' : '') },
-        h('b', null, join([m.id, label('sasu.st.', m.status), fdate(m.date)])),
-        m.conclusion || m.obligations ? h('details', { class: 'small' }, h('summary', null, m.violation ? t('dos.sasuViolation') : t('dos.sasuConclusion')),
-          m.conclusion ? h('p', null, m.conclusion) : null, m.obligations ? h('p', { class: 'muted' }, m.obligations) : null) : null))) : null,
+    audit.length ? h('div', { class: 'sasu' }, h('div', { class: 'drive-part-title' }, t('dos.sasu')), audit.map(monitoringBlock)) : null,
     h('div', { class: 'card-head', style: 'margin-top:16px' }, h('h3', { class: 'card-sub' }, t('dos.signals')), pillsBox),
     box);
 }
@@ -1949,6 +1951,42 @@ function partyLinks(code, role) {
     a(`https://youcontrol.com.ua/catalog/company_details/${code}/`, 'YouControl'),
     a(`https://opendatabot.ua/c/${code}`, 'Opendatabot'),
     a(`https://www.opensanctions.org/search/?q=${code}`, 'OpenSanctions'));
+}
+// One State Audit Service monitoring: what it checked, what it found, what the buyer must do
+// and by when, the correspondence and every file (open or download).
+function monitoringBlock(m) {
+  const fileRow = (d) => h('a', { class: 'doc', href: d.url, target: '_blank', rel: 'noopener noreferrer', download: '' },
+    icon('file'), h('span', null, h('b', null, d.title), h('small', null, join([t('sasu.of.' + d.of), t('sasu.by.' + d.author), fdate(d.date)]))), icon('download'));
+  const text = (title, body, open) => body ? h('details', { class: 'sasu-text', open: open || null }, h('summary', null, title), h('p', null, body)) : null;
+  const types = (m.violation_types || []).map((x) => label('sasu.vt.', x)).concat(m.violation_other && !(m.violation_types || []).includes('other') ? [m.violation_other] : []);
+  return h('div', { class: 'sasu-row ' + (m.violation ? 'bad' : '') },
+    h('div', { class: 'card-head', style: 'margin-bottom:6px' },
+      h('b', null, m.id),
+      h('span', { class: 'tag ' + (m.violation ? 'bad' : m.status === 'declined' ? 'ok' : '') }, label('sasu.st.', m.status))),
+    kv([
+      [t('sasu.started'), join([fdate(m.date), m.period_end ? t('sasu.until', { d: fdate(m.period_end) }) : null])],
+      [t('sasu.reasons'), (m.reasons || []).map((x) => label('sasu.r.', x)).join(', ')],
+      [t('sasu.stages'), (m.stages || []).map((x) => label('sasu.s.', x)).join(', ')],
+      [t('sasu.conclusionDate'), m.conclusion_published ? join([fdate(m.conclusion_published), m.conclusion_date && m.conclusion_date !== m.conclusion_published ? t('sasu.signed', { d: fdate(m.conclusion_date) }) : null]) : null],
+      [t('sasu.violations'), m.violation === true ? types.join('; ') || t('sasu.found') : m.violation === false ? t('sasu.none') : null],
+      [t('sasu.eliminationDue'), m.elimination_due ? fdate(m.elimination_due) : null],
+      [t('sasu.eliminated'), m.elimination_date ? fdate(m.elimination_date) : null],
+    ]),
+    h('div', { class: 'row', style: 'margin:8px 0' },
+      m.conclusion_pdf ? ext(m.conclusion_pdf, t('sasu.conclusionPdf'), 'btn btn-sm btn-dark') : null,
+      m.url ? ext(m.url, t('sasu.onProzorro'), 'btn btn-sm') : null),
+    text(t('sasu.conclusion'), m.conclusion, m.violation),
+    text(t('sasu.obligations'), m.obligations, m.violation),
+    text(t('sasu.findings'), m.findings),
+    text(t('sasu.decision'), m.decision),
+    text(t('sasu.elimination'), m.elimination),
+    (m.posts || []).length ? h('details', { class: 'sasu-text' }, h('summary', null, t('sasu.posts', { n: m.posts.length })),
+      h('div', { class: 'timeline' }, m.posts.map((p) => h('div', { class: 'ev ' + (p.author === 'sasu' ? 'add' : 'act') },
+        h('span', { class: 'd num' }, fdate(p.date)),
+        h('span', null, h('b', null, t('sasu.by.' + p.author) + ': '), p.title, p.due ? h('div', { class: 'cell-sub' }, t('sasu.due', { d: fdate(p.due) })) : null,
+          p.text ? h('div', { class: 'cell-sub clamp' }, p.text) : null),
+        h('span'))))) : null,
+    (m.docs || []).length ? h('div', { style: 'margin-top:8px' }, h('div', { class: 'drive-part-title' }, t('sasu.files', { n: m.docs.length })), h('div', { class: 'doc-list' }, m.docs.map(fileRow))) : null);
 }
 const dreamUrl = (id) => `https://dream.gov.ua/ua/project/${encodeURIComponent(id)}/profile`;
 
@@ -2604,8 +2642,9 @@ function searchPage() {
   draw();
   return [pageHead(t('srch.eyebrow'), titleGrad(t('srch.title1'), t('srch.title2')), null),
     quickSearch(),
-    h('div', { class: 'section-head section' }, h('h2', null, t('qs.treasuryForm'))),
-    h('div', { class: 'table-card' }, form, out)];
+    h('details', { class: 'section adv-search', open: s.res ? true : null }, h('summary', null, t('qs.treasuryForm')),
+      h('p', { class: 'muted small' }, t('qs.treasuryFormHint')),
+      h('div', { class: 'table-card' }, form, out))];
 }
 
 // ---- the main entry: one search over the Treasury and Prozorro ----------------------------------
@@ -3119,17 +3158,17 @@ function render() {
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const route = parts[0] || '';
   let page, key = route;
-  if (route === 'signals') { page = sectionTabs('payments', 'signals', signalsPage(parts[1])); key = 'payments'; }
-  else if (route === 'contracts') { page = sectionTabs('payments', 'contracts', contractsPage(parts[1])); key = 'payments'; }
-  else if (route === 'payments') page = sectionTabs('payments', 'payments', paymentsPage(parts[1]));
-  else if (route === 'prozorro') page = prozorroPage(parts[1]);
+  if (['signals', 'contracts', 'payments', 'prozorro'].includes(route)) {
+    const pages = { signals: signalsPage, contracts: contractsPage, payments: paymentsPage, prozorro: prozorroPage };
+    page = sectionTabs('orgs', route, pages[route](parts[1])); key = 'orgs';
+  }
   else if (route === 'eib') page = eibPage();
-  else if (route === 'overview') { page = overviewPage(); key = 'search'; }
+  else if (route === 'overview') { page = overviewPage(); key = 'orgs'; }
   else if (route === 'tracked' && /^([0-9a-f]{32}|sp\d{3,20}|tn[0-9a-f]{32})$/.test(parts[1] || '')) { page = trackedDossier(parts[1]); key = 'tracked'; }
-  else if (route === 'orgs') { page = sectionTabs('search', 'orgs', orgsPage()); key = 'search'; }
-  else if (route === 'org' && /^\d+$/.test(parts[1] || '')) { page = orgPage(parts[1], parts[2], parts[3]); key = 'search'; }
+  else if (route === 'orgs') page = sectionTabs('orgs', 'orgs', orgsPage());
+  else if (route === 'org' && /^\d+$/.test(parts[1] || '')) { page = orgPage(parts[1], parts[2], parts[3]); key = 'orgs'; }
   else if (route === 'feed') page = feedPage(parts[1]);
-  else if (route === 'search') page = sectionTabs('search', 'search', searchPage());
+  else if (route === 'search') page = searchPage();
   else if (route === 'method') { page = methodPage(); key = 'settings'; }
   else if (route === 'settings') page = settingsPage();
   else { page = trackedPage(parts[1]); key = 'tracked'; }
