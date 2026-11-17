@@ -2079,15 +2079,27 @@ function subprojectOf(t0) {
   }
   return null;
 }
-const objectName = (title) => String(title || '').replace(/^\s*(?:ДК\s*021[:\-]?\s*2015\s*\(?CPV\)?\s*)?\d{8}-\d\s*[-–—:]?\s*/i, '').replace(/[«»"]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 14).join(' ');
-const REL_RX = [['supervision', /технічн\S*\s+нагляд/i], ['author', /авторськ\S*\s+нагляд/i], ['expertise', /експертиз/i],
-  ['design', /проє?кт\S*\s*[-–]?\s*кошторисн|проє?ктуванн|розробленн\S*\s+проє?кт|робоч\S+\s+проє?кт/i], ['works', /будівництв|реконструкці|капітальн\S*\s+ремонт|ремонт|монтаж/i]];
+function objectName(title) {
+  const text = String(title || '');
+  let rest = text.replace(/^\s*(?:ДК\s*021\s*[:\-]?\s*2015\s*[:\-]?\s*(?:\(?CPV\)?)?\s*[:\-]?\s*)?\d{8}-\d\s*[-–—:]?\s*/i, '');
+  if (rest !== text && rest.includes('(') && rest.split('(')[0].trim().split(/\s+/).length <= 8) rest = rest.slice(rest.indexOf('(') + 1);
+  return rest.replace(/[«»")]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 14).join(' ');
+}
+const REL_RX = [['supervision', /технічн\S*\s+нагляд/i], ['author', /авторськ\S*\s+нагляд/i], ['expertise', /експертиз|обстеженн|інвентаризац/i],
+  ['design', /про[еє]кт\S*\s*[-–‑]?\s*кошторисн|про[еє]ктуванн|розробленн\S*\s+про[еє]кт|робоч\S+\s+про[еє]кт|коригуванн/i], ['works', /будівництв|реконструкці|капітальн\S*\s+ремонт|ремонт|монтаж/i]];
+function relRole(title) {
+  for (const [role, rx] of REL_RX) {
+    if (role === 'design' && /(?<!\d)45\d{6}-\d/.test(title || '')) return 'works';
+    if (rx.test(title || '')) return role;
+  }
+  return 'other';
+}
 function liveRelated(t0) {
   const q = objectName(t0.title);
   const box = h('div', null, h('p', { class: 'muted small' }, t('ui.loading')));
   if (!t0.buyer || q.length < 12) return null;
   pzProxy({ action: 'search', kind: 'tenders', buyer: t0.buyer, text: q }).then((d) => {
-    const list = (d.items || []).filter((r) => r.tid !== t0.tid).map((r) => Object.assign({}, r, { role: (REL_RX.find(([, rx]) => rx.test(r.title || '')) || ['other'])[0] }));
+    const list = (d.items || []).filter((r) => r.tid !== t0.tid).map((r) => Object.assign({}, r, { role: relRole(r.title) }));
     fill(box, relatedCard(list, t0) || '');
   }).catch((e) => fill(box, h('p', { class: 'muted small' }, e.message)));
   return box;

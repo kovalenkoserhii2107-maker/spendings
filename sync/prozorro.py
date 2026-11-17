@@ -296,23 +296,34 @@ def subproject(t, contracts=None):
 
 # The object of a works procurement, as the related ones (design, technical and author's
 # supervision, expert review) name it: the title without the CPV prefix.
-_CPV_PREFIX = re.compile(r"^\s*(?:ДК\s*021[:\-]?\s*2015\s*\(?CPV\)?\s*)?\d{8}-\d\s*[-–—:]?\s*", re.I)
+_CPV_PREFIX = re.compile(r"^\s*(?:ДК\s*021\s*[:\-]?\s*2015\s*[:\-]?\s*(?:\(?CPV\)?)?\s*[:\-]?\s*)?\d{8}-\d\s*[-–—:]?\s*", re.I)
 RELATED_ROLES = (
     ("supervision", re.compile(r"технічн\w*\s+нагляд", re.I)),
     ("author", re.compile(r"авторськ\w*\s+нагляд", re.I)),
-    ("expertise", re.compile(r"експертиз", re.I)),
-    ("design", re.compile(r"проє?кт\w*\s*[-–]?\s*кошторисн|проє?ктуванн|розробленн\w*\s+проє?кт|\bпкд\b|робоч\w+\s+проє?кт", re.I)),
+    ("expertise", re.compile(r"експертиз|обстеженн|інвентаризац", re.I)),
+    ("design", re.compile(r"про[еє]кт\w*\s*[-–‑]?\s*кошторисн|про[еє]ктуванн|розробленн\w*\s+про[еє]кт|\bпкд\b|робоч\w+\s+про[еє]кт|коригуванн", re.I)),
     ("works", re.compile(r"будівництв|реконструкці|капітальн\w*\s+ремонт|ремонт|монтаж", re.I)),
 )
 
 
 def object_name(title):
-    words = _CPV_PREFIX.sub("", str(title or "")).replace("«", " ").replace("»", " ").replace('"', " ").split()
+    text = str(title or "")
+    rest = _CPV_PREFIX.sub("", text)
+    # "45210000-2 Будівництво будівель (Будівництво ... закладу «Центр»)": the CPV name, then
+    # the object in brackets.
+    if rest != text and "(" in rest and len(rest.split("(", 1)[0].split()) <= 8:
+        rest = rest.split("(", 1)[1]
+    words = rest.replace("«", " ").replace("»", " ").replace('"', " ").replace(")", " ").split()
     return " ".join(words[:14])
+
+
+_WORKS_CPV = re.compile(r"(?<!\d)45\d{6}-\d")
 
 
 def related_role(title):
     for role, rx in RELATED_ROLES:
+        if role == "design" and _WORKS_CPV.search(title or ""):
+            return "works"  # a works CPV code: construction, whatever the text says of the project
         if rx.search(title or ""):
             return role
     return "other"
