@@ -107,6 +107,9 @@ function syncAll() {
     var base = own ? section : folder_(section, SHARED);
     var dir = folder_(folder_(base, orgFolderName_(row)), contractFolderName_(row));
     row._folder = 'https://drive.google.com/drive/folders/' + dir;
+    // The site finds a contract's copies by these tags (drive.file: same Google project).
+    var tagged = props.getProperty('tag:' + row.key);
+    if (!tagged) tag_(dir, { monitorCid: row.key, monitorPart: 'folder' });
     if (Date.now() - started > TIME_LIMIT_MS) { pending++; return; }
     var snap;
     try {
@@ -122,18 +125,24 @@ function syncAll() {
       var part = x[0], d = x[1];
       if (Date.now() - started > TIME_LIMIT_MS) { pending++; return; }
       var key = 'doc:' + uid.slice(0, 6) + ':' + (d.id || d.url) + ':' + (d.date || '');
-      if (props.getProperty(key)) return;
+      var have = props.getProperty(key);
+      if (have) {
+        if (!tagged) tag_(have, { monitorCid: row.key, monitorPart: part });
+        return;
+      }
       try {
         var res = UrlFetchApp.fetch(d.url, { muteHttpExceptions: true, followRedirects: true });
         if (res.getResponseCode() !== 200) { Logger.log('HTTP ' + res.getResponseCode() + ' ' + d.title); return; }
         subs[part] = subs[part] || folder_(dir, PARTS[part]);
-        var id = upload_(res.getBlob(), fileName_(d), subs[part], 'Prozorro: ' + (d.id || '') + '\n' + d.url);
+        var id = upload_(res.getBlob(), fileName_(d), subs[part], 'Prozorro: ' + (d.id || '') + '\n' + d.url,
+          { monitorCid: row.key, monitorPart: part, monitorDoc: d.id || '' });
         props.setProperty(key, id);
         copied++;
       } catch (e) {
         Logger.log('Не скопійовано ' + d.title + ': ' + e);
       }
     });
+    if (!tagged) props.setProperty('tag:' + row.key, '1');
   });
   writeRegister_(section, rows);
   Logger.log('Договорів: ' + rows.length + '; скопійовано документів: ' + copied +
@@ -204,6 +213,10 @@ function find_(name, parent) {
   return found.length ? found[0].id : null;
 }
 
+function tag_(id, tags) {
+  drive_('patch', 'https://www.googleapis.com/drive/v3/files/' + id + '?fields=id', { appProperties: tags });
+}
+
 function folder_(parent, name) {
   var id = find_(name, parent);
   if (id) return id;
@@ -214,13 +227,14 @@ function folder_(parent, name) {
 
 // Upload in two steps: the content as it is (a Blob goes to UrlFetchApp untouched,
 // so large PDFs do not blow up memory), then the name, folder and description.
-function upload_(blob, name, parent, description) {
+function upload_(blob, name, parent, description, tags) {
   blob.setContentType(mimeOf_(name, blob));
   var res = drive_('post', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=media&fields=id', blob, true);
   if (res.getResponseCode() !== 200) throw new Error('Drive ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
   var id = JSON.parse(res.getContentText()).id;
   var meta = { name: name };
   if (description) meta.description = description;
+  if (tags) meta.appProperties = tags;
   res = drive_('patch', 'https://www.googleapis.com/drive/v3/files/' + id + '?addParents=' + parent + '&removeParents=root&fields=id', meta);
   if (res.getResponseCode() !== 200) throw new Error('Drive ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
   return id;

@@ -126,7 +126,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .focus .row b { margin-left: auto; font-weight: 800; }
 .focus .actions { display: flex; gap: 8px; margin-top: auto; padding-top: 6px; }
 .focus .btn { background: #fff; color: #000; }
-.stat { display: flex; flex-direction: column; justify-content: space-between; gap: 8px; padding: 18px 20px; border-radius: var(--r); background: #fff; box-shadow: var(--shadow); }
+.stat { display: flex; flex-direction: column; justify-content: flex-start; gap: 8px; padding: 18px 20px; border-radius: var(--r); background: #fff; box-shadow: var(--shadow); }
 .stat small { color: var(--muted); font-size: 12.5px; font-weight: 700; }
 .stat b { color: #000; font-size: clamp(20px, 2vw, 26px); font-weight: 800; letter-spacing: -.025em; line-height: 1.1; }
 .stat .sub { color: var(--muted); font-size: 12.5px; }
@@ -403,11 +403,32 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
 .more-list a { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 16px; background: var(--soft); font-weight: 700; text-decoration: none; }
 .more-list .count { margin-left: auto; }
 
-/* The page is at most 1240px wide whatever the screen, so the top menu goes without icons. */
-.nav .ico { display: none; }
-.nav a, .nav button { padding: 7px 12px; }
+/* Five sections fit with their icons. */
+.nav .ico { width: 16px; height: 16px; }
+.nav a { padding: 7px 14px; }
+.nav a .count { margin-left: -2px; }
+
+/* The bell: notifications, always in the header. */
+.bell { position: relative; display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 50%; background: rgba(255, 255, 255, .85); box-shadow: var(--shadow); color: #000; text-decoration: none; }
+.bell:hover { background: #fff; }
+.bell.on { background: #000; color: #fff; }
+.bell .count { position: absolute; top: -5px; right: -7px; height: 18px; min-width: 18px; padding: 0 5px; font-size: 10.5px; box-shadow: 0 0 0 2px #EEF2F7; }
+
+/* Tabs inside a section (Payments: payments, contracts, signals; Search: portal, organisations). */
+.section-tabs { display: flex; width: max-content; margin: -6px 0 20px; }
+.section-tabs a { display: inline-flex; align-items: center; gap: 6px; padding: 6px 13px; border-radius: 999px; font-size: 13.5px; font-weight: 700; white-space: nowrap; color: #2B2B2B; text-decoration: none; }
+.section-tabs a:hover { background: var(--soft); }
+.section-tabs a.on { background: #000; color: #fff; }
+.section-tabs .count { height: 18px; min-width: 18px; font-size: 11px; }
+
+/* A card title with its actions on the same line. */
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.card-head .card-title { margin: 0; }
+.drive-part { margin-top: 14px; }
+.drive-part-title { margin-bottom: 6px; color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 @media (max-width: 1180px) {
   .top-meta .chip, .brand small { display: none; }
+  .nav .ico { display: none; }
 }
 @media (max-width: 980px) {
   .bento { grid-template-columns: 1fr 1fr; }
@@ -421,7 +442,9 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
 @media (max-width: 900px) {
   .top-inner { height: 56px; }
   .nav { display: none; }
-  .top-meta { margin-left: auto; }
+  .top-meta { margin-left: auto; gap: 8px; }
+  .top-meta .lang { display: none; }
+  .section-tabs { width: auto; max-width: 100%; }
   .foot-meta { padding-bottom: calc(var(--tabbar) + 24px + var(--safe-b)); }
   .toasts, .install { bottom: calc(var(--tabbar) + 14px + var(--safe-b)); }
   .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; display: grid; grid-template-columns: repeat(5, 1fr); height: calc(var(--tabbar) + var(--safe-b)); padding-bottom: var(--safe-b);
@@ -437,6 +460,8 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
   .page { padding: 18px 0 40px; }
   .wrap { width: calc(100% - 32px); }
   .page-head h1 { font-size: 30px; }
+  .page-head > * { min-width: 0; max-width: 100%; }
+  .page-head .row { flex-wrap: wrap; }
   .bento { grid-template-columns: 1fr; }
   .tiles { grid-template-columns: 1fr 1fr; gap: 10px; }
   .tiles .stat { padding: 14px; }

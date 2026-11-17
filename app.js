@@ -561,27 +561,36 @@ function showInstallBanner() {
 
 // ---- shell -------------------------------------------------------------------------------------
 
+// Five sections; the bell (notifications) and the avatar (settings) sit in the header.
 const NAV = [
   ['#/', 'tracked', 'star', 'nav.tracked'],
   ['#/eib', 'eib', 'bank', 'nav.eib'],
-  ['#/overview', 'home', 'chart', 'nav.home'],
-  ['#/contracts', 'contracts', 'file', 'nav.contracts'],
-  ['#/payments', 'payments', 'money', 'nav.payments'],
-  ['#/orgs', 'orgs', 'building', 'nav.orgs'],
   ['#/prozorro', 'prozorro', 'tender', 'nav.prozorro'],
-  ['#/signals', 'signals', 'alert', 'nav.signals'],
-  ['#/feed', 'feed', 'bell', 'nav.feed'],
+  ['#/payments', 'payments', 'money', 'nav.payments'],
   ['#/search', 'search', 'search', 'nav.search'],
-  ['#/method', 'method', 'book', 'nav.method'],
 ];
-const TABBAR = ['tracked', 'eib', 'payments', 'orgs'];
-const TOPBAR = ['tracked', 'eib', 'contracts', 'payments', 'orgs', 'prozorro']; // desktop; the rest sit under "More"
+// Pages that live inside a section, shown as its tabs.
+const SECTION_TABS = {
+  payments: [['#/payments', 'payments', 'nav.payments'], ['#/contracts', 'contracts', 'nav.contracts'], ['#/signals', 'signals', 'nav.signals']],
+  search: [['#/search', 'search', 'srch.tab'], ['#/orgs', 'orgs', 'nav.orgs']],
+};
+function sectionTabs(section, active, page) {
+  const tabs = SECTION_TABS[section];
+  if (!tabs || !Array.isArray(page)) return page;
+  const bar = h('nav', { class: 'section-tabs pills', 'aria-label': t('nav.' + section) }, tabs.map(([href, key, label]) =>
+    h('a', { href, class: key === active ? 'on' : '' }, t(label), key === 'signals' && riskCount() ? h('em', { class: 'count red' }, riskCount()) : null)));
+  return [page[0], bar].concat(page.slice(1));
+}
 
 function badgeFor(key) {
-  if (key === 'signals') { const n = riskCount(); return n ? h('em', { class: 'count red' }, n) : null; }
-  if (key === 'feed') { const n = unreadCount(); return n ? h('em', { class: 'count' }, n) : null; }
-  if (key === 'tracked') { const n = trackedChanged(); return n ? h('em', { class: 'count' }, n) : null; }
+  if (key === 'payments') { const n = riskCount(); return n ? h('em', { class: 'count red' }, n) : null; }
   return null;
+}
+
+function bellButton(route) {
+  const n = bellCount();
+  return h('a', { class: 'bell' + (route === 'feed' ? ' on' : ''), href: '#/feed', title: t('ntf.title'), 'aria-label': t('ntf.title') + (n ? ' (' + n + ')' : '') },
+    icon('bell'), n ? h('em', { class: 'count' }, n > 99 ? '99+' : n) : null);
 }
 
 function accountButton() {
@@ -595,33 +604,24 @@ function shell(route, page) {
   const last = state.index.runs && state.index.runs[0];
   const failed = last && last.orgs_failed;
   const link = ([href, key, ico, label]) => h('a', { href, class: route === key ? 'on' : '' }, icon(ico), h('span', null, t(label)), badgeFor(key));
-  const moreOn = !TABBAR.includes(route);
   return [
     h('div', { class: 'aurora', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
     h('header', { class: 'top' }, h('div', { class: 'wrap top-inner' },
       h('a', { class: 'brand', href: '#/' },
         logo(),
         h('span', null, h('b', null, t('app.name')), h('small', null, t('app.tagline')))),
-      h('nav', { class: 'nav', 'aria-label': t('nav.label') }, NAV.filter((n) => TOPBAR.includes(n[1])).map(link),
-        h('button', { class: TOPBAR.includes(route) ? '' : 'on', onclick: () => openMore(TOPBAR) }, icon('more'), h('span', null, t('nav.more')), badgeFor('feed'))),
+      h('nav', { class: 'nav', 'aria-label': t('nav.label') }, NAV.map(link)),
       h('div', { class: 'top-meta' },
         h('span', { class: 'chip' + (failed ? ' warn' : ''), title: last ? t('top.lastCheck', { at: ftime(last.finished_at) }) : '' }, h('i'), last ? ftime(last.finished_at).slice(0, 5) + ' ' + ftime(last.finished_at).slice(11) : '—'),
         langSwitch(),
+        bellButton(route),
         accountButton()))),
     h('main', { class: 'page' }, h('div', { class: 'wrap' }, page)),
     h('footer', { class: 'foot-meta wrap' }, h('span', null, t('app.name'), ' · ', h('a', { href: '#/settings' }, 'v' + APP.version)), h('span', null, t('foot.data'))),
-    // Phone layout: the four main sections stay one tap away, the rest sit under "More".
+    // Phone layout: the same five sections at the bottom.
     h('nav', { class: 'tabbar', 'aria-label': t('nav.label') },
-      NAV.filter((n) => TABBAR.includes(n[1])).map(([href, key, ico, label]) => h('a', { href, class: route === key ? 'on' : '' }, icon(ico), h('span', null, t(key === 'eib' ? 'eib.short' : label)), badgeFor(key))),
-      h('button', { class: moreOn ? 'on' : '', onclick: () => openMore(TABBAR) }, icon('more'), h('span', null, t('nav.more')), badgeFor('signals'))),
+      NAV.map(([href, key, ico, label]) => h('a', { href, class: route === key ? 'on' : '' }, icon(ico), h('span', null, t(key === 'eib' ? 'eib.short' : label)), badgeFor(key)))),
   ];
-}
-
-function openMore(shown) {
-  const items = NAV.filter((n) => !(shown || TABBAR).includes(n[1])).concat([['#/settings', 'settings', 'gear', 'nav.settings']]);
-  sheet(h('h2', null, t('nav.more')),
-    h('div', { class: 'more-list' }, items.map(([href, key, ico, label]) => h('a', { href, onclick: closeSheet }, icon(ico), h('span', null, t(label)), badgeFor(key)))),
-    h('section', null, langSwitch()));
 }
 
 function pageHead(eyebrow, title, lead, side) {
@@ -1387,7 +1387,7 @@ function tenderCsv(rows) {
 
 function tendersBrowser(orgs, preset) {
   const box = h('div', null, h('div', { class: 'empty' }, t('pz.loading')));
-  const f = { which: preset || '', method: '', q: '', page: 0 };
+  const f = { which: preset || '', method: '', org: '', q: '', page: 0 };
   const list = h('div');
   let all = [];
   const tests = {
@@ -1400,7 +1400,7 @@ function tendersBrowser(orgs, preset) {
   };
   function draw() {
     const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
-    const rows = all.filter((r) => (!f.which || tests[f.which](r)) && (!f.method || r.t.method === f.method)
+    const rows = all.filter((r) => (!f.which || tests[f.which](r)) && (!f.method || r.t.method === f.method) && (!f.org || r.org.edrpou === f.org)
       && (!words.length || words.every((w) => [r.t.tid, r.t.title, r.t.cpv, r.t.buyer_name, ...(r.t.contracts || []).flatMap((c) => [c.number, ...(c.suppliers || []).flatMap((s) => [s.name, s.code])])].join(' ').toLowerCase().includes(w))));
     const sum = rows.reduce((acc, r) => acc + (r.t.contracts || []).reduce((s, c) => s + (c.value && c.value.currency === 'UAH' ? c.value.amount : 0), 0), 0);
     pagedList(list, rows, f.page, { showOrg: orgs.length > 1, sum, csv: 'prozorro-procedures', csvRows: (items, name) => csvDownload(tenderCsv(items), name) },
@@ -1423,6 +1423,7 @@ function tendersBrowser(orgs, preset) {
             ['unlinked', t('pz.fUnlinked'), n('unlinked')], ['open', t('pz.fOpen'), n('open')], ['terms', t('pz.fTerms'), n('terms')], ['tracked', t('tr.onControl'), n('tracked')]].filter((p) => p[0] === '' || p[2]),
           f.which, (v) => { f.which = v; f.page = 0; draw(); }),
           select([['', t('pz.anyMethod')]].concat(methods.map((m) => [m, label('pzt.', m)])), '', (e) => { f.method = e.target.value; f.page = 0; draw(); }, t('pz.colMethod')),
+          orgs.length > 1 ? select([['', t('ui.allOrgs')]].concat(orgs.map((o) => [o.edrpou, o.name])), '', (e) => { f.org = e.target.value; f.page = 0; draw(); }, t('ui.allOrgs')) : null,
           q),
         list));
       draw();
@@ -1519,7 +1520,6 @@ const isSharedWithMe = (id) => !isTracked(id) && state.mine.shared.has(id);
 const trackedRow = (id) => (state.trackedIndex.items || []).find((r) => r.key === id) || null;
 function getTrackedSeen() { try { return localStorage.getItem('trackedSeen') || ''; } catch (e) { return ''; } }
 function setTrackedSeen(v) { try { localStorage.setItem('trackedSeen', v); } catch (e) { /* not kept */ } }
-const trackedChanged = () => (state.trackedIndex.items || []).filter((r) => (isTracked(r.key) || isSharedWithMe(r.key)) && r.changed_at && r.changed_at > getTrackedSeen() && (r.last_event || {}).type !== 'tracked').length;
 const loadTracked = (id) => cached(`tracked:${id}:${ver()}`, () => getJSON(`data/tracked/${id}.json`, ver()));
 
 // ---- copies on the user's own Google Drive ----
@@ -1555,18 +1555,51 @@ function driveBanner() {
     h('div', null, h('b', null, t('gs.bannerTitle')), h('div', { class: 'small' }, t('gs.bannerText'))),
     h('button', { class: 'btn btn-dark btn-sm', onclick: connectDrive }, t('gs.connect')));
 }
-function driveCard() {
+// The Drive block. In a contract's dossier (cid) it lists what was copied and opens that
+// contract's own folder; in Settings it only connects the Drive.
+const DRIVE_PARTS = ['contract', 'changes', 'tender'];
+const fsize = (n) => (n == null ? '' : n > 1048576 ? nf1.format(n / 1048576) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
+function driveCard(cid) {
   const on = driveState.connected;
-  return h('div', { class: 'card pad section' },
-    h('h2', { class: 'card-title' }, t('tr.drive')),
-    h('p', { class: 'muted' }, on ? t('gs.onText') : t('gs.lead')),
-    h('div', { class: 'row after' },
-      on ? driveFolderLink(t('tr.openDrive')) : null,
-      h('button', { class: 'btn btn-sm' + (on ? '' : ' btn-dark'), onclick: connectDrive }, on ? t('gs.reconnect') : t('gs.connect'))),
-    on && driveState.at ? h('p', { class: 'faint small', style: 'margin-top:8px' }, t('gs.connectedAt', { at: ftime(driveState.at) })) : null,
-    h('details', { class: 'multi-acc' }, h('summary', null, t('gs.multiTitle')),
-      h('p', { class: 'muted small' }, t('gs.multiText')),
-      h('div', { class: 'row' }, [0, 1, 2, 3].map((n) => h('button', { class: 'btn btn-sm', onclick: () => connectDrive(n) }, t('gs.account', { n: n + 1 }))))));
+  const head = h('div', { class: 'row' });
+  const body = h('div');
+  const connectBtn = () => h('button', { class: 'btn btn-sm' + (on ? '' : ' btn-dark'), onclick: connectDrive }, icon('drive'), on ? t('gs.reconnect') : t('gs.connect'));
+  async function load(ask) {
+    if (!ask && !cloud.hasDriveToken()) {
+      fill(head, h('button', { class: 'btn btn-sm btn-dark', onclick: () => load(true) }, icon('drive'), t('drv.show')));
+      fill(body, h('p', { class: 'muted small' }, t('gs.onText')));
+      return;
+    }
+    fill(body, h('p', { class: 'muted small' }, t('ui.loading')));
+    let r;
+    try { r = await cloud.contractCopies(cid); } catch (e) {
+      fill(head, h('button', { class: 'btn btn-sm', onclick: () => load(true) }, icon('refresh'), t('drv.retry')), driveFolderLink(t('tr.openDrive'), 'btn btn-sm'));
+      fill(body, h('p', { class: 'muted small' }, e.message || String(e)));
+      return;
+    }
+    fill(head, r.folder ? ext(r.folder.webViewLink, t('drv.contractFolder'), 'btn btn-sm btn-dark') : driveFolderLink(t('tr.openDrive'), 'btn btn-sm'));
+    if (!r.files.length) { fill(body, h('p', { class: 'muted small' }, t('drv.none'))); return; }
+    const last = r.files.reduce((m, f) => (f.createdTime > m ? f.createdTime : m), '');
+    fill(body,
+      h('p', { class: 'faint small' }, t('drv.count', { n: r.files.length, at: ftime(last) })),
+      DRIVE_PARTS.concat(['']).map((part) => {
+        const list = r.files.filter((f) => ((f.appProperties || {}).monitorPart || '') === part || (part === '' && !DRIVE_PARTS.includes((f.appProperties || {}).monitorPart)));
+        if (!list.length) return null;
+        return h('div', { class: 'drive-part' }, h('div', { class: 'drive-part-title' }, part ? t('drv.part.' + part) : t('drv.part.other')),
+          h('div', { class: 'doc-list' }, list.map((f) => h('a', { class: 'doc', href: f.webViewLink, target: '_blank', rel: 'noopener noreferrer' },
+            icon('file'), h('span', null, h('b', null, f.name), h('small', null, join([fsize(f.size != null ? Number(f.size) : null), t('drv.copied', { at: fdate(f.createdTime) })]))), icon('ext')))));
+      }));
+  }
+  if (cid && on && cloud) load(false);
+  else {
+    fill(head, on ? driveFolderLink(t('tr.openDrive'), 'btn btn-sm') : null, connectBtn());
+    fill(body, h('p', { class: 'muted small' }, on ? t('gs.onText') : t('gs.lead')),
+      on && driveState.at ? h('p', { class: 'faint small' }, t('gs.connectedAt', { at: ftime(driveState.at) })) : null,
+      !cid ? h('details', { class: 'multi-acc' }, h('summary', null, t('gs.multiTitle')),
+        h('p', { class: 'muted small' }, t('gs.multiText')),
+        h('div', { class: 'row' }, [0, 1, 2, 3].map((n) => h('button', { class: 'btn btn-sm', onclick: () => connectDrive(n) }, t('gs.account', { n: n + 1 }))))) : null);
+  }
+  return h('div', { class: 'card pad section' }, h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, t('tr.drive')), head), body);
 }
 
 // "Take on control" for one Prozorro contract (c) of a procedure (t0) seen from an organisation.
@@ -1633,9 +1666,9 @@ function trackedPage(preset) {
   const byDate = (a, b) => ((b.row && b.row.changed_at) || '9').localeCompare((a.row && a.row.changed_at) || '9') || (b.pick.addedAt || b.pick.at || 0) - (a.pick.addedAt || a.pick.at || 0);
   const own = [...state.mine.tracked.entries()].map(([id, v]) => ({ id, pick: v, row: trackedRow(id), mine: true })).sort(byDate);
   const shared = [...state.mine.shared.entries()].filter(([id]) => !isTracked(id)).map(([id, v]) => ({ id, pick: v, row: trackedRow(id), mine: false })).sort(byDate);
-  const scopes = ['mine', 'shared', 'changes'];
-  const f = { which: scopes.includes(preset) ? '' : preset || '', q: '', ev: '', scope: scopes.includes(preset) ? preset : (!own.length && shared.length ? 'shared' : 'mine') };
-  const inScope = () => (f.scope === 'shared' ? shared : f.scope === 'changes' ? own.concat(shared) : own);
+  const scopes = ['mine', 'shared'];
+  const f = { which: scopes.includes(preset) ? '' : preset || '', q: '', scope: scopes.includes(preset) ? preset : (!own.length && shared.length ? 'shared' : 'mine') };
+  const inScope = () => (f.scope === 'shared' ? shared : own);
   const sum = (k) => inScope().reduce((acc, r) => acc + ((r.row && r.row.totals && r.row.totals[k]) || 0), 0);
   const list = h('div');
   const tests = {
@@ -1645,24 +1678,7 @@ function trackedPage(preset) {
     pending: (r) => !r.row,
     eib: (r) => r.row && r.row.eib,
   };
-  // Every change of every contract, newest first.
-  function changes() {
-    const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
-    const all = inScope().flatMap((r) => ((r.row && r.row.events) || []).map((e) => ({ e, r })))
-      .filter(({ r }) => !words.length || words.every((w) => [r.pick.number, r.pick.title, r.pick.buyer, r.pick.supplier, r.row && r.row.supplier_name].join(' ').toLowerCase().includes(w)))
-      .sort((x, y) => (y.e.at || '').localeCompare(x.e.at || '') || (y.e.date || '').localeCompare(x.e.date || ''));
-    const shown = all.filter(({ e }) => !f.ev || eventGroup(e) === f.ev);
-    fill(filters, eventPills(all.map((x) => x.e), f.ev, (v) => { f.ev = v; draw(); }));
-    fill(list, shown.length ? h('div', { class: 'ev-feed' }, shown.slice(0, 300).map(({ e, r }) => h('a', { class: 'ev-row ' + eventClass(e) + (e.at > seen ? ' new' : ''), href: '#/tracked/' + r.id },
-      h('span', { class: 'd num' }, fdate(e.at)),
-      h('span', null, h('b', null, t('dos.heading', { n: (r.row && r.row.number) || r.pick.number || '—', date: fdate(r.row && r.row.signed) })),
-        h('span', { class: 'faint small' }, ' · ' + ((r.row && r.row.supplier_name) || r.pick.supplier || '')),
-        h('div', null, eventText(e)), eventSub(e)))))
-      : h('div', { class: 'card empty' }, h('b', null, t('tr.noChanges'))));
-    fillHead();
-  }
   function draw() {
-    if (f.scope === 'changes') { changes(); return; }
     const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
     const shown = inScope().filter((r) => (!f.which || tests[f.which](r))
       && (!words.length || words.every((w) => [r.pick.number, r.pick.title, r.pick.buyer, r.pick.supplier, r.pick.tid, r.row && r.row.buyer_name, r.row && r.row.supplier_name].join(' ').toLowerCase().includes(w))));
@@ -1705,14 +1721,10 @@ function trackedPage(preset) {
       h('div', { class: 'stat tint-blue' }, h('small', null, t('tr.paid')), h('b', { class: 'num' }, mshort(sum('paid')))),
       h('div', { class: 'stat tint-yellow' }, h('small', null, t('tr.left')), h('b', { class: 'num' }, mshort(sum('left'))), sum('overdue') > 1 ? h('span', { class: 'sub' }, t('tr.overdueN', { sum: mshort(sum('overdue')) })) : null));
   }
-  const nChanges = own.concat(shared).reduce((acc, r) => acc + ((r.row && r.row.events) || []).filter((e) => e.at > seen).length, 0);
-  const scope = pills([['mine', t('tr.mine'), own.length], ['shared', t('tr.sharedTab'), shared.length], ['changes', t('tr.changesTab'), nChanges || null]].filter((p) => p[0] !== 'shared' || p[2]),
-    f.scope, (v) => { f.scope = v; f.which = ''; f.ev = ''; draw(); });
+  const scope = shared.length ? pills([['mine', t('tr.mine'), own.length], ['shared', t('tr.sharedTab'), shared.length]], f.scope, (v) => { f.scope = v; f.which = ''; draw(); }) : null;
   draw();
   return [
-    pageHead(t('tr.eyebrow'), titleGrad(t('tr.title1'), t('tr.title2')), null,
-      h('div', { class: 'row' }, scope,
-        trackedChanged() ? h('button', { class: 'btn', onclick: () => { setTrackedSeen(new Date().toISOString().slice(0, 10) + 'T99'); render(); } }, icon('check'), t('tr.markSeen')) : null)),
+    pageHead(t('tr.eyebrow'), titleGrad(t('tr.title1'), t('tr.title2')), null, scope),
     driveBanner(),
     tiles,
     h('div', { class: 'table-card section' }, h('div', { class: 'table-tools' }, filters, q), list),
@@ -1817,7 +1829,7 @@ function trackedDossier(id) {
         h('div', { class: 'card pad' },
           h('h2', { class: 'card-title' }, t('tr.stages')),
           stageRows.length ? h('div', { class: 'explain' }, stageRows) : h('p', { class: 'muted small' }, t('pz.noTerms')),
-          delivery.length ? h('div', { class: 'explain', style: 'margin-top:8px' }, delivery.map((m) => h('div', null, h('b', null, label('pzm.type.', m.type) + '. '), h('span', null, milestoneText(m))))) : null),
+          delivery.length ? h('div', { class: 'explain', style: 'margin-top:8px' }, delivery.map((m) => h('div', null, h('span', null, h('b', null, label('pzm.type.', m.type) + '. '), milestoneText(m))))) : null),
         h('div', { class: 'card pad' },
           h('h2', { class: 'card-title' }, t('tr.history')), histPills, hist)),
       h('div', { class: 'table-card section' },
@@ -1830,7 +1842,7 @@ function trackedDossier(id) {
         h('div', { class: 'card pad' }, h('h2', { class: 'card-title' }, t('pz.contractDocs')), docList(c.docs, freshDocs)),
         h('div', { class: 'card pad' }, h('h2', { class: 'card-title' }, t('pz.tenderDocs')), docList(t0.docs, freshDocs))),
       isTracked(id) ? shareCard(id) : null,
-      driveCard(),
+      driveCard(id),
       isTracked(id) ? h('div', { class: 'card pad section' },
         h('h2', { class: 'card-title' }, t('tr.note')),
         h('div', { class: 'review-form' }, h('label', { class: 'field grow' }, note), saveNote),
@@ -2220,23 +2232,70 @@ function recordsBrowser(org, kind) {
 
 // ---- feed ---------------------------------------------------------------------------------------
 
-function feedPage() {
-  const f = { kind: '', org: '', page: 0 };
-  const all = state.feed.items;
-  const list = h('div');
-  function draw() {
-    const items = all.filter((i) => (!f.kind || i.kind === f.kind) && (!f.org || i.org_edrpou === f.org));
-    pagedList(list, items, f.page, { showOrg: state.index.orgs.length > 1, marks: true, noSum: true, emptyTitle: t('feed.empty'), emptyText: t('feed.emptyText') }, (p) => { f.page = p; draw(); });
+// Changes of one's contracts on control, from the summary rows (each carries its recent events).
+function trackedEvents() {
+  const rows = [...state.mine.tracked.keys()].concat([...state.mine.shared.keys()].filter((id) => !isTracked(id)))
+    .map((id) => ({ id, pick: state.mine.tracked.get(id) || state.mine.shared.get(id) || {}, row: trackedRow(id) }));
+  return rows.flatMap((r) => ((r.row && r.row.events) || []).map((e) => ({ e, r })))
+    .sort((x, y) => (y.e.at || '').localeCompare(x.e.at || '') || (y.e.date || '').localeCompare(x.e.date || ''));
+}
+const newTrackedEvents = () => { const seen = getTrackedSeen(); return trackedEvents().filter(({ e }) => e.at > seen).length; };
+const bellCount = () => newTrackedEvents() + unreadCount();
+function markAllSeen() {
+  setTrackedSeen(new Date().toISOString().slice(0, 10) + 'T99');
+  if (state.feed.items.length) setSeen(state.feed.items[0].first_seen_at);
+  render();
+}
+
+// Behind the bell: what changed in one's contracts on control, and what is new on the portal.
+function feedPage(preset) {
+  const seen = getTrackedSeen();
+  const tab = { which: preset === 'portal' ? 'portal' : 'tracked' };
+  const box = h('div');
+  const evs = trackedEvents();
+  function drawTracked() {
+    const f = { ev: '', q: '' };
+    const list = h('div');
+    const filters = h('div');
+    const draw = () => {
+      const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
+      const all = evs.filter(({ r }) => !words.length || words.every((w) => [r.pick.number, r.pick.title, r.pick.buyer, r.pick.supplier, r.row && r.row.supplier_name].join(' ').toLowerCase().includes(w)));
+      const shown = all.filter(({ e }) => !f.ev || eventGroup(e) === f.ev);
+      fill(filters, eventPills(all.map((x) => x.e), f.ev, (v) => { f.ev = v; draw(); }));
+      fill(list, shown.length ? h('div', { class: 'ev-feed' }, shown.slice(0, 300).map(({ e, r }) => h('a', { class: 'ev-row ' + eventClass(e) + (e.at > seen ? ' new' : ''), href: '#/tracked/' + r.id },
+        h('span', { class: 'd num' }, fdate(e.at)),
+        h('span', null, h('b', null, t('dos.heading', { n: (r.row && r.row.number) || r.pick.number || '—', date: fdate(r.row && r.row.signed) })),
+          h('span', { class: 'faint small' }, ' · ' + ((r.row && r.row.supplier_name) || r.pick.supplier || '')),
+          h('div', null, eventText(e)), eventSub(e)))))
+        : h('div', { class: 'empty' }, h('b', null, t('tr.noChanges'))));
+    };
+    const q = h('input', { class: 'input', type: 'search', placeholder: t('tr.searchHint'), 'aria-label': t('ui.search'), oninput: () => { f.q = q.value; draw(); } });
+    draw();
+    return h('div', { class: 'table-card' }, h('div', { class: 'table-tools' }, filters, q), list);
   }
-  draw();
-  const readBtn = h('button', { class: 'btn', onclick: () => { if (all.length) setSeen(all[0].first_seen_at); render(); } }, icon('check'), t('feed.markRead'));
-  return [
-    pageHead(t('nav.feed'), titleGrad(t('feed.title1'), t('feed.title2')), null, readBtn),
-    h('div', { class: 'table-card' },
+  function drawPortal() {
+    const f = { kind: '', org: '', page: 0 };
+    const all = state.feed.items;
+    const list = h('div');
+    const draw = () => {
+      const items = all.filter((i) => (!f.kind || i.kind === f.kind) && (!f.org || i.org_edrpou === f.org));
+      pagedList(list, items, f.page, { showOrg: state.index.orgs.length > 1, marks: true, noSum: true, emptyTitle: t('feed.empty'), emptyText: t('feed.emptyText') }, (p) => { f.page = p; draw(); });
+    };
+    draw();
+    return h('div', { class: 'table-card' },
       h('div', { class: 'table-tools' },
         pills([['', t('ui.all')]].concat(KINDS.map((k) => [k, kindMany(k)])), '', (v) => { f.kind = v; f.page = 0; draw(); }),
         state.index.orgs.length > 1 ? select([['', t('ui.allOrgs')]].concat(state.index.orgs.map((o) => [o.edrpou, o.name])), '', (e) => { f.org = e.target.value; f.page = 0; draw(); }, t('ui.allOrgs')) : null),
-      list),
+      list);
+  }
+  const show = () => fill(box, tab.which === 'portal' ? drawPortal() : drawTracked());
+  const nTracked = evs.filter(({ e }) => e.at > seen).length;
+  const tabs = pills([['tracked', t('ntf.tracked'), nTracked || null], ['portal', t('ntf.portal'), unreadCount() || null]], tab.which, (v) => { tab.which = v; show(); });
+  show();
+  return [
+    pageHead(t('ntf.eyebrow'), titleGrad(t('ntf.title1'), t('ntf.title2')), null,
+      h('div', { class: 'row' }, tabs, bellCount() ? h('button', { class: 'btn', onclick: markAllSeen }, icon('check'), t('feed.markRead')) : null)),
+    box,
   ];
 }
 
@@ -2398,7 +2457,7 @@ function settingsPage() {
       h('div', { class: 'card pad' }, h('h2', { class: 'card-title' }, t('set.install')), installBox),
       h('div', { class: 'card pad' }, h('h2', { class: 'card-title' }, t('set.version')),
         kv([[t('set.versionLabel'), 'v' + APP.version], [t('set.build'), APP.build], [t('set.stage'), t('set.stageDev')], [t('set.dataAt'), state.index.generated_at ? ftime(state.index.generated_at) : '—']]),
-        h('div', { class: 'row', style: 'margin-top:12px' }, upd, ghLink('blob/main/CHANGELOG.md', t('set.changelog'), 'btn')))),
+        h('div', { class: 'row', style: 'margin-top:12px' }, upd, ghLink('blob/main/CHANGELOG.md', t('set.changelog'), 'btn'), h('a', { class: 'btn', href: '#/method' }, icon('book'), t('nav.method'))))),
     h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('db.title')), h('p', { class: 'muted small' }, t('db.note')), dbBox),
     h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('set.drive')), h('p', { class: 'muted small' }, t('set.driveNote')),
       h('div', { class: 'row' }, h('button', { class: 'btn', onclick: (e) => openDriveFolder(e.currentTarget) }, icon('drive'), t('drv.openFolder')))),
@@ -2653,18 +2712,18 @@ function render() {
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const route = parts[0] || '';
   let page, key = route;
-  if (route === 'signals') page = signalsPage(parts[1]);
-  else if (route === 'contracts') page = contractsPage(parts[1]);
-  else if (route === 'payments') page = paymentsPage(parts[1]);
+  if (route === 'signals') { page = sectionTabs('payments', 'signals', signalsPage(parts[1])); key = 'payments'; }
+  else if (route === 'contracts') { page = sectionTabs('payments', 'contracts', contractsPage(parts[1])); key = 'payments'; }
+  else if (route === 'payments') page = sectionTabs('payments', 'payments', paymentsPage(parts[1]));
   else if (route === 'prozorro') page = prozorroPage(parts[1]);
   else if (route === 'eib') page = eibPage();
-  else if (route === 'overview') { page = overviewPage(); key = 'home'; }
+  else if (route === 'overview') { page = overviewPage(); key = 'search'; }
   else if (route === 'tracked' && /^[0-9a-f]{32}$/.test(parts[1] || '')) { page = trackedDossier(parts[1]); key = 'tracked'; }
-  else if (route === 'orgs') page = orgsPage();
-  else if (route === 'org' && /^\d+$/.test(parts[1] || '')) { page = orgPage(parts[1], parts[2], parts[3]); key = 'orgs'; }
-  else if (route === 'feed') page = feedPage();
-  else if (route === 'search') page = searchPage();
-  else if (route === 'method') page = methodPage();
+  else if (route === 'orgs') { page = sectionTabs('search', 'orgs', orgsPage()); key = 'search'; }
+  else if (route === 'org' && /^\d+$/.test(parts[1] || '')) { page = orgPage(parts[1], parts[2], parts[3]); key = 'search'; }
+  else if (route === 'feed') page = feedPage(parts[1]);
+  else if (route === 'search') page = sectionTabs('search', 'search', searchPage());
+  else if (route === 'method') { page = methodPage(); key = 'settings'; }
   else if (route === 'settings') page = settingsPage();
   else { page = trackedPage(parts[1]); key = 'tracked'; }
   fill(app, shell(key, page));
