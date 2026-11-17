@@ -1924,7 +1924,7 @@ function trackedDossier(id) {
             isEib || s.eib ? h('span', { class: 'tag eib' }, s.eib ? t('eib.kind.' + s.eib) : t('eib.short')) : null,
             s.eib_tx ? h('span', { class: 'tag eib' }, t('eib.tx')) : null,
             t0.subproject ? h('span', { class: 'tag eib', title: t('sub.title') }, t0.subproject.code) : null,
-            tt.overdue > 1 ? h('span', { class: 'sev high' }, t('tr.overdueN', { sum: money(tt.overdue) })) : null,
+            tt.overdue > 1 && !tt.partial ? h('span', { class: 'sev high' }, t('tr.overdueN', { sum: money(tt.overdue) })) : null,
             s.error ? h('span', { class: 'sev medium', title: s.error }, t('tr.error')) : null),
           h('p', { class: 'muted' }, c.title || t0.title),
           funders.length ? h('p', { class: 'small' }, t('eib.funders') + ': ' + funders.join(', ')) : null),
@@ -1936,6 +1936,7 @@ function trackedDossier(id) {
           isTracked(id) ? off : null)),
       partiesCard(t0, c),
       s.related ? relatedCard(s.related, t0) : null,
+      (t0.plan_info || []).length ? planCard(t0.plan_info) : null,
       s.from_tender ? h('p', { class: 'notice small section' }, t('tr.fromTender', { tid: s.tid })) : null,
       (t0.other_contracts || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('tr.otherContracts')),
         h('div', { class: 'qs-contracts' }, t0.other_contracts.map((oc) => h('div', { class: 'qs-contract' },
@@ -1946,7 +1947,7 @@ function trackedDossier(id) {
         h('div', { class: 'stat tint-violet' }, h('small', null, t('pz.contractValue')), h('b', { class: 'num' }, money(tt.value)), c.start || c.end ? h('span', { class: 'sub' }, `${fdate(c.start)} — ${fdate(c.end)}`) : null),
         h('div', { class: 'stat tint-blue' }, h('small', null, t('tr.paid')), h('b', { class: 'num' }, money(tt.paid)), h('span', { class: 'sub' }, tt.value ? t('bar.paidPct', { pct: Math.round((tt.paid / tt.value) * 100) }) : '')),
         h('div', { class: 'stat tint-yellow' }, h('small', null, tt.left < -1 ? t('dos.overpaid') : t('tr.left')), h('b', { class: 'num' }, money(Math.abs(tt.left))), tt.maybe ? h('span', { class: 'sub' }, t('tr.maybeSub', { sum: money(tt.maybe) })) : null),
-        h('div', { class: 'stat' + (tt.overdue > 1 ? ' bad' : '') }, h('small', null, t('tr.dueNow')), h('b', { class: 'num' }, money(tt.due_now)), h('span', { class: 'sub' }, tt.overdue > 1 ? t('tr.overdueN', { sum: money(tt.overdue) }) : tt.partial ? t('tr.partialPaid') : t('tr.noOverdue')))),
+        h('div', { class: 'stat' + (tt.overdue > 1 && !tt.partial ? ' bad' : '') }, h('small', null, t('tr.dueNow')), h('b', { class: 'num' }, money(tt.due_now)), h('span', { class: 'sub' }, tt.overdue > 1 ? (tt.partial ? t('tr.notSeen', { sum: money(tt.overdue) }) : t('tr.overdueN', { sum: money(tt.overdue) })) : t('tr.noOverdue')))),
       h('div', { class: 'card pad section' }, trackedBar(tt, s.acts_sum), h('div', { class: 'bar-label' }, h('span', null, t('tr.paidOf', { paid: money(tt.paid), value: money(tt.value) })), h('span', null, s.acts_sum ? t('tr.actsSum', { sum: money(s.acts_sum) }) : ''))),
       complianceCard(s),
       h('div', { class: 'grid-2 section' },
@@ -2067,6 +2068,21 @@ function relatedCard(list, t0) {
     h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, t('rel.title')), t0.subproject ? h('span', { class: 'tag eib', title: t('sub.title') }, t0.subproject.code) : null),
     list.length ? relatedRows(list) : h('p', { class: 'muted small' }, t('rel.none')),
     works && !sup ? h('p', { class: 'notice small', style: 'margin-top:10px' }, t('rel.noSupervision')) : null);
+}
+// The procurement plan: the year, the amount and where the money comes from.
+function planCard(plans) {
+  return h('div', { class: 'card pad section' },
+    h('h2', { class: 'card-title' }, t('plan.title')),
+    plans.map((p) => h('div', { class: 'plan' },
+      kv([
+        [t('plan.id'), h('a', { href: 'https://prozorro.gov.ua/plan/' + encodeURIComponent(p.pid || ''), target: '_blank', rel: 'noopener noreferrer' }, p.pid || '—')],
+        [t('plan.year'), p.year],
+        [t('plan.amount'), p.amount != null ? money(p.amount, p.currency) : null],
+        [t('plan.sources'), (p.sources || []).map((x) => h('div', null, h('b', null, t('plan.src.' + x.kind)), x.amount != null ? ' · ' + money(x.amount) + (p.amount ? ` (${Math.round((x.amount / p.amount) * 100)}%)` : '') : '',
+          x.text ? h('div', { class: 'cell-sub' }, x.text) : null, x.program ? h('div', { class: 'cell-sub' }, t('plan.program') + ': ' + x.program) : null))],
+        [t('plan.kekv'), (p.kekv || []).join('; ')],
+        [t('plan.project'), p.project ? join([p.project.id, p.project.name]) : null],
+      ]))));
 }
 // The same, asked live (the EIB catalogue keeps no such list).
 const SUBPROJECT_RE = /(?<![A-Z0-9])([A-Z]{2}\d{2}[A-Z]?)_(\d{2})(?![0-9])/;

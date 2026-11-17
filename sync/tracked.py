@@ -420,11 +420,9 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
         log("  ! Держаудитслужба: %s" % e)
         audit = (old or {}).get("sasu") or []
     eib_kind = eib.classify(dict(tender, contracts=[contract]))
-    # An EIB loan is paid by another spending unit: the buyer's own Treasury payments are only its
-    # share (co-financing, VAT), so what is overdue cannot be told from them.
+    # EIB-financed: payments may also go by other routes than the buyer's Treasury account, so
+    # what looks overdue is shown as "not seen" rather than as a debt.
     partial = bool(eib_kind)
-    if partial:
-        overdue = 0.0
     # Payments against the portal's acts and addendums; the advance and its closing by acts.
     pay_sig, pay_notes, doc_audit, advance = compliance.payment_checks(
         pays, acts, addendums, contract.get("changes"), value, today.isoformat(), contract, acts_known=tc is not None)
@@ -432,6 +430,17 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     # (design, technical and author's supervision, expert review).
     works = (tender.get("cpv") or "").startswith("45") or tender.get("category") == "works"
     tender["subproject"] = prozorro.subproject(tender, [contract])
+    # The procurement plan: year, amount, funding sources (local, state, loan...), КЕКВ.
+    plans = []
+    for pid in (tender.get("plans") or [])[:3]:
+        try:
+            plans.append(prozorro.load_plan(pid))
+        except prozorro.ProzorroError as e:
+            log("  ! план %s: %s" % (pid, e))
+            plans = ((old or {}).get("tender") or {}).get("plan_info") or []
+            break
+    if plans:
+        tender["plan_info"] = plans
     related = (old or {}).get("related")
     if works and tender_id and not treasury_only:
         try:
@@ -441,7 +450,7 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     pay_notes["oversight"] = [["no_supervision", {}]] if works and eib_kind and related is not None \
         and not any(r.get("role") == "supervision" for r in related) else []
     review = compliance.evaluate(tender, contract, eib=bool(eib_kind), paid=paid, acts_sum=acts_sum,
-                                 treasury=dict(chk, flags=flags) if tc else None, overdue=overdue, sasu=audit,
+                                 treasury=dict(chk, flags=flags) if tc else None, overdue=0 if partial else overdue, sasu=audit,
                                  extra=(pay_sig, pay_notes))
     if treasury_only:  # no procurement in Prozorro: nothing to say about it
         review["signals"] = [x for x in review["signals"] if x["type"] not in ("single_bidder", "unanswered_questions")]

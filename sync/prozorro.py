@@ -402,6 +402,7 @@ def compact_tender(t, contracts):
         "id": t.get("id"),
         "tid": t.get("tenderID"),
         "title": t.get("title") or "",
+        "plans": [p.get("id") for p in t.get("plans") or [] if p.get("id")],
         "method": t.get("procurementMethodType") or "",
         "status": t.get("status") or "",
         # "date" moves with every status change; the procedure's own date is when it was created.
@@ -448,6 +449,36 @@ def short_tender(t):
     out["contracts"] = [{k: c[k] for k in SHORT_CONTRACT if k in c} for c in t.get("contracts") or []]
     out["_v"] = SHORT
     return out
+
+
+PLAN_SOURCES = ("state", "crimea", "local", "own", "fund", "loan", "other")
+
+
+def load_plan(pid):
+    """A procurement plan compacted: year, amount, funding sources, budget programme, КЕКВ."""
+    p = _get("%s/plans/%s" % (API, pid))["data"]
+    b = p.get("budget") or {}
+    period = b.get("period") or {}
+    sources = []
+    for x in b.get("breakdown") or []:
+        cls = x.get("classification") or {}
+        sources.append({k: v for k, v in {
+            "kind": x.get("title") if x.get("title") in PLAN_SOURCES else "other",
+            "amount": (x.get("value") or {}).get("amount"),
+            "text": (x.get("description") or "")[:300],
+            "program": "%s %s" % (cls.get("id") or "", cls.get("description") or "") if cls else "",
+        }.items() if v not in (None, "")})
+    project = b.get("project") or {}
+    return {k: v for k, v in {
+        "id": p.get("id"), "pid": p.get("planID"), "status": p.get("status"),
+        "year": (period.get("startDate") or "")[:4] or None,
+        "amount": b.get("amount"), "currency": b.get("currency"),
+        "text": (b.get("description") or "")[:300],
+        "sources": sources,
+        "kekv": ["%s %s" % (c.get("id"), c.get("description") or "") for c in p.get("additionalClassifications") or [] if c.get("scheme") == "КЕКВ"],
+        "project": {"id": project.get("id"), "name": project.get("name")} if project.get("id") else None,
+        "published": _day(p.get("datePublished")),
+    }.items() if v not in (None, "", [])}
 
 
 def load_tender(pid):
