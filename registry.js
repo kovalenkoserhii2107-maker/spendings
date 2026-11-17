@@ -31,7 +31,7 @@ const RG = {
     h_failed: 'невдалих тендерів: {n}', h_overdue: 'строк завершення {date} минув, виконано {pct}%', h_stale: 'коментар не оновлювався {days} дн.',
     h_funding: 'статус фінансування: {s}', h_disq: 'відхилено учасників: {n}', h_single: 'одна пропозиція', h_noContract: 'договору ще немає',
     h_paidGap: 'оплачено {paid}% при виконанні {pct}%',
-    importFailed: 'не збережено: {list}',
+    importFailed: 'не збережено: {list}', refreshN: 'Оновити з Prozorro ({n})', pickExpert: 'Оберіть експерта: оновлюються лише його субпроєкти',
     trackAll: 'Відстежувати мої з таблиці ({n})', trackConfirm: 'Поставити на відстеження договори й закупівлі ваших {n} субпроєктів? Діючі договори — на контроль, закупівлі без договору — до підписання.',
     tracking: 'Відстеження: {n} з {total}, додано {added}…', trackDone: 'На відстеження додано {added}, уже було {already}, не вдалося {failed}',
     denied: 'Немає дозволу на запис у реєстр — перевірте, що ви увійшли акаунтом зі списку доступу.', refreshFailed: 'Не оновилось субпроєктів: {n}',
@@ -63,7 +63,7 @@ const RG = {
     h_failed: 'failed tenders: {n}', h_overdue: 'completion date {date} passed, {pct}% done', h_stale: 'comment not updated for {days} days',
     h_funding: 'funding status: {s}', h_disq: 'bidders rejected: {n}', h_single: 'single bid', h_noContract: 'no contract yet',
     h_paidGap: '{paid}% paid at {pct}% done',
-    importFailed: 'not saved: {list}',
+    importFailed: 'not saved: {list}', refreshN: 'Refresh from Prozorro ({n})', pickExpert: 'Choose an expert: only their sub-projects are refreshed',
     trackAll: 'Track mine from the table ({n})', trackConfirm: 'Put the contracts and procurements of your {n} sub-projects on control? Contracts in force go on control, procurements without a contract until it is signed.',
     tracking: 'Tracking: {n} of {total}, {added} added…', trackDone: '{added} added to tracking, {already} already there, {failed} failed',
     denied: 'No permission to write to the registry — check you are signed in with an account on the access list.', refreshFailed: 'Not refreshed: {n} sub-projects',
@@ -412,11 +412,20 @@ function registryPage() {
   const file = h('input', { type: 'file', accept: '.xlsx', hidden: true, onchange: () => file.files[0] && importFile(file.files[0]) });
   const meta = REG.meta;
   const own = REG.access.expert ? rows.filter((r) => (r.t || {}).expert === REG.access.expert) : [];
+  // Prozorro is read only for the chosen expert's sub-projects: all 400+ would take half an hour.
+  const ofExpert = () => (REGF.expert ? rows.filter((r) => (r.t || {}).expert === REGF.expert) : []);
+  const refreshBtn = h('button', { class: 'btn', onclick: () => {
+    const list = ofExpert();
+    if (!list.length) { toast(rt('pickExpert'), { bad: true }); return; }
+    refreshMany(list);
+  } });
+  const drawRefresh = () => { const n = ofExpert().length; fill(refreshBtn, icon('refresh'), n ? rt('refreshN', { n }) : rt('refresh')); refreshBtn.title = n ? REGF.expert : rt('pickExpert'); };
+  drawRefresh();
   const head = pageHead(rt('eyebrow'), titleGrad(rt('title1'), rt('title2')),
     meta ? rt('imported', { at: ftime(meta.at && meta.at.toDate ? meta.at.toDate().toISOString() : meta.at), by: meta.byName || '—', n: meta.rows }) : rt('noTable'),
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => file.click() }, icon('cloud'), rt('upload')), file,
       rows.length ? h('button', { class: 'btn', onclick: () => exportXlsx(filtered()) }, icon('download'), rt('export')) : null,
-      rows.length ? h('button', { class: 'btn', onclick: () => refreshMany(filtered()) }, icon('refresh'), rt('refresh')) : null,
+      rows.length ? refreshBtn : null,
       // Only an expert's own sub-projects, into their own tracking, whatever the filters show.
       own.length ? h('button', { class: 'btn btn-dark', onclick: () => { if (confirm(rt('trackConfirm', { n: own.length }))) trackAll(own); } }, icon('star'), rt('trackAll', { n: own.length })) : null, status));
   if (!rows.length) return [head];
@@ -443,7 +452,7 @@ function registryPage() {
   }
   const list = h('div');
   const draw = () => pagedList(list, filtered(), REGF.page, { noSum: true }, (p) => { REGF.page = p; draw(); }, registryTable);
-  const set = (k) => (e) => { REGF[k] = e.target.value; REGF.page = 0; draw(); };
+  const set = (k) => (e) => { REGF[k] = e.target.value; REGF.page = 0; draw(); if (k === 'expert') drawRefresh(); };
   const q = h('input', { class: 'input', type: 'search', value: REGF.q, placeholder: rt('search'), 'aria-label': rt('search'), oninput: () => { REGF.q = q.value; REGF.page = 0; draw(); } });
   draw();
   return [head, h('div', { class: 'table-card section' },
