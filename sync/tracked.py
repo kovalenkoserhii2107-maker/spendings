@@ -1,8 +1,8 @@
 """Contracts on control: the ones an analyst picked in the app.
 
-An analyst takes a Prozorro contract "on control" in the app; the request lands
-in the Firestore collection `tracked` (publicly readable, like `watchlist`).
-Every run this module re-reads each active contract in full and writes:
+A user takes a Prozorro contract "on control" in the app; its id reaches the sync
+through the anonymous public lists pub/{hash}. Every run this module re-reads
+each contract in full and writes:
 
   data/tracked/<contract id>.json   the contract, its procedure, payment terms,
                                     Treasury payments and the history of changes
@@ -30,6 +30,7 @@ KEY_RE = re.compile(r"^[0-9a-f]{32}$")
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 OVERLAP_DAYS = 7
 HISTORY_SIZE = 300
+EVENTS_IN_INDEX = 15  # recent events per contract, for the app's feed of changes
 
 
 def _val(v):
@@ -193,16 +194,29 @@ def _diff(old, new):
     for ch in nc.get("changes") or []:
         if json.dumps(ch, sort_keys=True) not in seen:
             ev.append(_event("change", date=ch.get("date"), types=ch.get("types") or [], text=ch.get("text") or ""))
-    docs = lambda s: {d.get("id") or d.get("url") for d in (s.get("contract") or {}).get("docs") or []} | {
-        d.get("id") or d.get("url") for d in (s.get("tender") or {}).get("docs") or []}
-    old_docs = docs(old)
-    for d in ((nc.get("docs") or []) + ((new.get("tender") or {}).get("docs") or [])):
-        if (d.get("id") or d.get("url")) not in old_docs:
-            ev.append(_event("doc", title=d.get("title"), doc_type=d.get("type"), date=(d.get("date") or "")[:10]))
+    def docs(snap):
+        out = {}
+        for of in ("contract", "tender"):
+            for d in (snap.get(of) or {}).get("docs") or []:
+                out[d.get("id") or d.get("url")] = (of, d)
+        return out
+    old_docs = {k: d.get("date") for k, (_, d) in docs(old).items()}
+    for k, (of, d) in docs(new).items():
+        if k not in old_docs or (d.get("date") and old_docs[k] and d.get("date") != old_docs[k]):
+            ev.append(_event("doc", id=d.get("id") or "", title=d.get("title"), doc_type=d.get("type"), of=of,
+                             date=(d.get("date") or "")[:10], updated=k in old_docs))
     old_pay = {p["id"] for p in old.get("payments") or []}
     for p in new.get("payments") or []:
         if p["id"] not in old_pay:
-            ev.append(_event("payment", date=p["date"], amount=p["amount"], sure=p["sure"]))
+            ev.append(_event("payment", date=p["date"], amount=p["amount"], sure=p["sure"], purpose=(p.get("purpose") or "")[:160]))
+    act_key = lambda a: (a.get("number"), a.get("date"), a.get("amount"))
+    old_acts = {act_key(a) for a in old.get("acts") or []}
+    for a in new.get("acts") or []:
+        if act_key(a) not in old_acts:
+            ev.append(_event("act", number=a.get("number"), date=a.get("date"), amount=a.get("amount")))
+    od, nd = (old.get("totals") or {}).get("due_now") or 0, (new.get("totals") or {}).get("due_now") or 0
+    if nd > od + 1:
+        ev.append(_event("due", amount=round(nd - od, 2), overdue=(new.get("totals") or {}).get("overdue") or 0))
     ots, nts = (old.get("tender") or {}).get("status"), (new.get("tender") or {}).get("status")
     if ots != nts:
         ev.append(_event("tender_status", old=ots, new=nts))
@@ -288,6 +302,8 @@ def index_row(s):
         "supplier": sup.get("code") or "", "supplier_name": sup.get("name") or "",
         "method": t.get("method"), "totals": s["totals"], "changed_at": s.get("changed_at"),
         "last_event": (s.get("history") or [{}])[0], "docs": len(c.get("docs") or []) + len(t.get("docs") or []),
+        "events": [e for e in s.get("history") or [] if e.get("type") != "tracked"][:EVENTS_IN_INDEX],
+        "eib": any(f.get("code") == "33000" for f in t.get("funders") or []),
         "viewers": s.get("viewers") or [],  # hashes; the Drive script copies the contracts it sees itself in
         "owners": s.get("owners") or [],
     }

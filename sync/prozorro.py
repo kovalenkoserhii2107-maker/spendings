@@ -220,6 +220,10 @@ def compact_tender(t, contracts):
         "cpv": "%s %s" % (cls.get("id") or "", cls.get("description") or "") if cls else "",
         "buyer": _org(t.get("procuringEntity")).get("code"),
         "buyer_name": _org(t.get("procuringEntity")).get("name"),
+        "region": ((t.get("procuringEntity") or {}).get("address") or {}).get("region") or "",
+        # Donors (code list: XM-DAC 33000 = European Investment Bank, 44000 = World Bank, ...).
+        "funders": [{"code": (f.get("identifier") or {}).get("id") or "", "name": f.get("name") or (f.get("identifier") or {}).get("legalName") or ""}
+                    for f in t.get("funders") or []],
         "rationale": t.get("procurementMethodRationale") or "",
         "bids": t.get("numberOfBids"),
         "lots": lots or None,

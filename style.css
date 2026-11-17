@@ -299,6 +299,17 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 .tr-card { display: flex; flex-direction: column; gap: 10px; padding: 18px; border-radius: var(--r); background: #fff; box-shadow: var(--shadow); color: inherit; text-decoration: none; transition: box-shadow .3s var(--ease), transform .3s var(--ease); }
 .tr-card:hover { box-shadow: var(--shadow-up); transform: translateY(-2px); }
 .tr-card.new { box-shadow: 0 0 0 2px #0B6E62, var(--shadow); }
+/* EIB financing and the feed of changes */
+.tag.eib { display: inline-block; background: #E3ECFB; color: #1D4FA8; }
+.eib-list { padding: 0; }
+.ev.new, .ev-row.new { background: #EAF7F4; }
+.ev-feed { display: grid; gap: 2px; padding: 6px 10px 12px; }
+.ev-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 10px 12px; border-radius: 12px; color: inherit; text-decoration: none; font-size: 14px; border-left: 3px solid #E6EAF0; }
+.ev-row:hover { background: var(--soft); }
+.ev-row.pay { border-left-color: var(--green); }
+.ev-row.act { border-left-color: var(--violet); }
+.ev-row.add { border-left-color: #E5A000; }
+.ev-row .d { color: var(--muted); font-size: 13px; }
 .tr-card h3 { font-size: 17px; font-weight: 800; line-height: 1.2; }
 .tr-card .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .tr-card .facts div { padding: 9px 11px; border-radius: 14px; background: var(--soft); }
@@ -436,6 +447,7 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
   .kv { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .kv dd { margin-bottom: 10px; }
   .ev { grid-template-columns: 80px minmax(0, 1fr); }
+  .ev-row { grid-template-columns: 76px minmax(0, 1fr); gap: 8px; padding: 10px 8px; }
   .ev .num:last-child { grid-column: 2; }
   .sheet { top: auto; right: 0; bottom: 0; left: 0; width: 100vw; max-height: 92dvh; border-radius: 24px 24px 0 0; padding: 22px 18px calc(40px + var(--safe-b)); animation: up .35s var(--ease); }
   @keyframes up { from { transform: translateY(40px); opacity: 0; } }

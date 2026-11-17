@@ -37,6 +37,7 @@ const ICONS = {
   chart: ['M3 3v18h18', 'M7 15l4-4 3 3 5-6'],
   alert: ['M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z', 'M12 9v4', 'M12 17h.01'],
   file: ['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z', 'M14 2v6h6', 'M8 13h8', 'M8 17h5'],
+  bank: ['M3 21h18', 'M3 10h18', 'M12 3 3 8h18z', 'M5 10v8', 'M9.5 10v8', 'M14.5 10v8', 'M19 10v8'],
   building: ['M3 21h18', 'M5 21V7l7-4 7 4v14', 'M9 10h.01', 'M15 10h.01', 'M9 14h.01', 'M15 14h.01'],
   bell: ['M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9', 'M13.7 21a2 2 0 0 1-3.4 0'],
   search: ['M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z', 'M21 21l-4.3-4.3'],
@@ -562,6 +563,7 @@ function showInstallBanner() {
 
 const NAV = [
   ['#/', 'tracked', 'star', 'nav.tracked'],
+  ['#/eib', 'eib', 'bank', 'nav.eib'],
   ['#/overview', 'home', 'chart', 'nav.home'],
   ['#/contracts', 'contracts', 'file', 'nav.contracts'],
   ['#/payments', 'payments', 'money', 'nav.payments'],
@@ -572,8 +574,8 @@ const NAV = [
   ['#/search', 'search', 'search', 'nav.search'],
   ['#/method', 'method', 'book', 'nav.method'],
 ];
-const TABBAR = ['tracked', 'contracts', 'payments', 'orgs'];
-const TOPBAR = ['tracked', 'contracts', 'payments', 'orgs', 'prozorro', 'signals']; // desktop; the rest sit under "More"
+const TABBAR = ['tracked', 'eib', 'payments', 'orgs'];
+const TOPBAR = ['tracked', 'eib', 'contracts', 'payments', 'orgs', 'prozorro']; // desktop; the rest sit under "More"
 
 function badgeFor(key) {
   if (key === 'signals') { const n = riskCount(); return n ? h('em', { class: 'count red' }, n) : null; }
@@ -610,7 +612,7 @@ function shell(route, page) {
     h('footer', { class: 'foot-meta wrap' }, h('span', null, t('app.name'), ' · ', h('a', { href: '#/settings' }, 'v' + APP.version)), h('span', null, t('foot.data'))),
     // Phone layout: the four main sections stay one tap away, the rest sit under "More".
     h('nav', { class: 'tabbar', 'aria-label': t('nav.label') },
-      NAV.filter((n) => TABBAR.includes(n[1])).map(([href, key, ico, label]) => h('a', { href, class: route === key ? 'on' : '' }, icon(ico), h('span', null, t(label)), badgeFor(key))),
+      NAV.filter((n) => TABBAR.includes(n[1])).map(([href, key, ico, label]) => h('a', { href, class: route === key ? 'on' : '' }, icon(ico), h('span', null, t(key === 'eib' ? 'eib.short' : label)), badgeFor(key))),
       h('button', { class: moreOn ? 'on' : '', onclick: () => openMore(TABBAR) }, icon('more'), h('span', null, t('nav.more')), badgeFor('signals'))),
   ];
 }
@@ -1056,7 +1058,7 @@ function signalsPage(preset) {
   const q = h('input', { class: 'input', type: 'search', placeholder: t('sigs.searchHint'), 'aria-label': t('ui.search'), oninput: () => { f.q = q.value; draw(); } });
   draw();
   return [
-    pageHead(t('sigs.eyebrow'), titleGrad(t('sigs.title1'), t('sigs.title2')), t('sigs.lead')),
+    pageHead(t('sigs.eyebrow'), titleGrad(t('sigs.title1'), t('sigs.title2')), null),
     h('div', { class: 'filters' },
       pills([['risk', t('sigs.risk'), counts.risk], ['high', t('sev.high'), counts.high], ['medium', t('sev.medium'), counts.medium], ['low', t('sev.low'), counts.low], ['all', t('ui.all'), all.length]], f.sev, (v) => { f.sev = v; draw(); }),
       pills([['open', t('rv.open')], ['in_progress', t('rv.in_progress')], ['resolved', t('rv.resolved')], ['false_positive', t('rv.false_positive')], ['all', t('ui.all')]], f.rv, (v) => { f.rv = v; draw(); }),
@@ -1118,7 +1120,7 @@ function overviewPage() {
   })();
 
   return [
-    pageHead(t('ov.eyebrow'), titleGrad(t('ov.title1'), t('ov.title2')), t('ov.lead', { n: orgs.length })),
+    pageHead(t('ov.eyebrow'), titleGrad(t('ov.title1'), t('ov.title2'))),
     h('div', { class: 'bento' },
       h('div', { class: 'focus' },
         h('small', null, t('ov.now')),
@@ -1223,7 +1225,7 @@ function contractsBrowser(orgs, presetFlag) {
 }
 
 function contractsPage(preset) {
-  return [pageHead(t('ct.eyebrow'), titleGrad(t('ct.title1'), t('ct.title2')), t('ct.lead')), contractsBrowser(state.index.orgs, preset)];
+  return [pageHead(t('ct.eyebrow'), titleGrad(t('ct.title1'), t('ct.title2')), null), contractsBrowser(state.index.orgs, preset)];
 }
 
 // ---- payments: every Treasury payment with the contract it pays -------------------------------
@@ -1307,7 +1309,7 @@ function paymentsBrowser(orgs, preset) {
 }
 
 function paymentsPage(preset) {
-  return [pageHead(t('pay.eyebrow'), titleGrad(t('pay.title1'), t('pay.title2')), t('pay.lead')), paymentsBrowser(state.index.orgs, preset)];
+  return [pageHead(t('pay.eyebrow'), titleGrad(t('pay.title1'), t('pay.title2')), null), paymentsBrowser(state.index.orgs, preset)];
 }
 
 // ---- Prozorro: procedures, payment terms, contracts and documents ---------------------------------
@@ -1431,10 +1433,11 @@ function tendersBrowser(orgs, preset) {
   return box;
 }
 
-function docList(docs) {
+function docList(docs, fresh) {
   if (!docs || !docs.length) return h('div', { class: 'muted small' }, t('pz.noDocs'));
   return h('div', { class: 'doc-list' }, docs.slice().reverse().map((d) => h('a', { class: 'doc', href: d.url, target: '_blank', rel: 'noopener noreferrer' },
-    icon('file'), h('span', null, h('b', null, d.title || '—'), h('small', null, join([d.type ? label('pzd.', d.type) : null, fdate(d.date)]))), icon('ext'))));
+    icon('file'), h('span', null, h('b', null, d.title || '—', fresh && fresh.has(d.id) ? h('span', { class: 'tag pz', style: 'margin-left:6px' }, t('tr.newDoc')) : null),
+      h('small', null, join([d.type ? label('pzd.', d.type) : null, fdate(d.date)]))), icon('ext'))));
 }
 
 async function openTender(org, tid) {
@@ -1600,12 +1603,23 @@ function eventText(e) {
     case 'value': return t('ev.value', { old: money(e.old), new: money(e.new) });
     case 'end': return t('ev.end', { old: fdate(e.old), new: fdate(e.new) });
     case 'change': return t('ev.change') + ': ' + join([(e.types || []).map((x) => label('pzr.', x)).join(', '), e.text]);
-    case 'doc': return t('ev.doc') + ': ' + join([e.title, e.doc_type ? label('pzd.', e.doc_type) : null]);
+    case 'doc': return (e.updated ? t('ev.docUpdated') : t('ev.doc')) + ': ' + join([e.title, e.doc_type ? label('pzd.', e.doc_type) : null]);
     case 'payment': return (e.sure ? t('ev.payment') : t('ev.paymentMaybe')) + ' ' + money(e.amount) + (e.date ? ' · ' + fdate(e.date) : '');
+    case 'act': return t('ev.act', { n: e.number || '—' }) + ' ' + money(e.amount) + (e.date ? ' · ' + fdate(e.date) : '');
+    case 'due': return t('ev.due', { sum: money(e.amount) }) + (e.overdue > 1 ? ' · ' + t('tr.overdueN', { sum: money(e.overdue) }) : '');
     default: return e.type;
   }
 }
-const eventClass = (e) => ({ payment: 'pay', change: 'add', value: 'add', end: 'add', doc: 'act' }[e.type] || '');
+const eventClass = (e) => ({ payment: 'pay', change: 'add', value: 'add', end: 'add', doc: 'act', act: 'act', due: 'add' }[e.type] || '');
+// Kinds of change a user filters by.
+const EVENT_GROUPS = { pay: ['payment', 'due'], docs: ['doc', 'act'], terms: ['change', 'value', 'end'], status: ['status', 'tender_status'] };
+const eventGroup = (e) => Object.keys(EVENT_GROUPS).find((g) => EVENT_GROUPS[g].includes(e.type)) || '';
+function eventPills(events, value, onpick) {
+  const n = (g) => events.filter((e) => eventGroup(e) === g).length;
+  return pills([['', t('ui.all'), events.length], ['pay', t('evg.pay'), n('pay')], ['docs', t('evg.docs'), n('docs')], ['terms', t('evg.terms'), n('terms')], ['status', t('evg.status'), n('status')]]
+    .filter((x) => x[0] === '' || x[2] || x[0] === value), value, onpick);
+}
+const eventSub = (e) => (e.type === 'payment' && e.purpose ? h('div', { class: 'cell-sub clamp1' }, e.purpose) : null);
 
 function trackedBar(tt, acts) {
   const base = Math.max(tt.value || 0, tt.paid || 0, acts || 0) || 1;
@@ -1619,8 +1633,9 @@ function trackedPage(preset) {
   const byDate = (a, b) => ((b.row && b.row.changed_at) || '9').localeCompare((a.row && a.row.changed_at) || '9') || (b.pick.addedAt || b.pick.at || 0) - (a.pick.addedAt || a.pick.at || 0);
   const own = [...state.mine.tracked.entries()].map(([id, v]) => ({ id, pick: v, row: trackedRow(id), mine: true })).sort(byDate);
   const shared = [...state.mine.shared.entries()].filter(([id]) => !isTracked(id)).map(([id, v]) => ({ id, pick: v, row: trackedRow(id), mine: false })).sort(byDate);
-  const f = { which: preset === 'shared' ? '' : preset || '', q: '', scope: preset === 'shared' || (!own.length && shared.length) ? 'shared' : 'mine' };
-  const inScope = () => (f.scope === 'shared' ? shared : own);
+  const scopes = ['mine', 'shared', 'changes'];
+  const f = { which: scopes.includes(preset) ? '' : preset || '', q: '', ev: '', scope: scopes.includes(preset) ? preset : (!own.length && shared.length ? 'shared' : 'mine') };
+  const inScope = () => (f.scope === 'shared' ? shared : f.scope === 'changes' ? own.concat(shared) : own);
   const sum = (k) => inScope().reduce((acc, r) => acc + ((r.row && r.row.totals && r.row.totals[k]) || 0), 0);
   const list = h('div');
   const tests = {
@@ -1628,13 +1643,33 @@ function trackedPage(preset) {
     overdue: (r) => r.row && r.row.totals.overdue > 1,
     changed: (r) => r.row && r.row.changed_at > seen && (r.row.last_event || {}).type !== 'tracked',
     pending: (r) => !r.row,
+    eib: (r) => r.row && r.row.eib,
   };
+  // Every change of every contract, newest first.
+  function changes() {
+    const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
+    const all = inScope().flatMap((r) => ((r.row && r.row.events) || []).map((e) => ({ e, r })))
+      .filter(({ r }) => !words.length || words.every((w) => [r.pick.number, r.pick.title, r.pick.buyer, r.pick.supplier, r.row && r.row.supplier_name].join(' ').toLowerCase().includes(w)))
+      .sort((x, y) => (y.e.at || '').localeCompare(x.e.at || '') || (y.e.date || '').localeCompare(x.e.date || ''));
+    const shown = all.filter(({ e }) => !f.ev || eventGroup(e) === f.ev);
+    fill(filters, eventPills(all.map((x) => x.e), f.ev, (v) => { f.ev = v; draw(); }));
+    fill(list, shown.length ? h('div', { class: 'ev-feed' }, shown.slice(0, 300).map(({ e, r }) => h('a', { class: 'ev-row ' + eventClass(e) + (e.at > seen ? ' new' : ''), href: '#/tracked/' + r.id },
+      h('span', { class: 'd num' }, fdate(e.at)),
+      h('span', null, h('b', null, t('dos.heading', { n: (r.row && r.row.number) || r.pick.number || '—', date: fdate(r.row && r.row.signed) })),
+        h('span', { class: 'faint small' }, ' · ' + ((r.row && r.row.supplier_name) || r.pick.supplier || '')),
+        h('div', null, eventText(e)), eventSub(e)))))
+      : h('div', { class: 'card empty' }, h('b', null, t('tr.noChanges'))));
+    fillHead();
+  }
   function draw() {
+    if (f.scope === 'changes') { changes(); return; }
     const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
     const shown = inScope().filter((r) => (!f.which || tests[f.which](r))
       && (!words.length || words.every((w) => [r.pick.number, r.pick.title, r.pick.buyer, r.pick.supplier, r.pick.tid, r.row && r.row.buyer_name, r.row && r.row.supplier_name].join(' ').toLowerCase().includes(w))));
     const none = f.scope === 'shared' ? [t('tr.sharedEmptyTitle'), t('tr.sharedEmptyText')] : [t('tr.emptyTitle'), t('tr.emptyText')];
     fill(list, shown.length ? h('div', { class: 'tr-list' }, shown.map(trackedCard)) : h('div', { class: 'card empty' }, h('b', null, inScope().length ? t('pz.none') : none[0]), inScope().length ? t('sigs.changeFilter') : none[1]));
+    fill(filters, pills([['', t('ui.all'), inScope().length], ['left', t('tr.fLeft'), n('left')], ['overdue', t('tr.fOverdue'), n('overdue')], ['changed', t('tr.fChanged'), n('changed')], ['eib', t('eib.short'), n('eib')], ['pending', t('tr.pending'), n('pending')]].filter((p) => p[0] === '' || p[2] || p[0] === f.which),
+      f.which, (v) => { f.which = v; draw(); }));
     fillHead();
   }
   function trackedCard(r) {
@@ -1645,6 +1680,7 @@ function trackedPage(preset) {
         x ? h('span', { class: 'pz-st ' + (x.status === 'active' ? 'ok' : x.status === 'terminated' ? 'off' : 'run') }, label('pzc.', x.status)) : h('span', { class: 'chip warn' }, h('i'), t('tr.pending')),
         tt.overdue > 1 ? h('span', { class: 'sev high' }, t('tr.overdueN', { sum: mshort(tt.overdue) })) : null,
         fresh ? h('span', { class: 'tag pz' }, t('tr.newEvents')) : null,
+        x && x.eib ? h('span', { class: 'tag eib' }, t('eib.short')) : null,
         x && x.error ? h('span', { class: 'sev medium', title: x.error }, t('tr.error')) : null),
       h('h3', null, (x ? x.number : p.number) && (x ? x.number : p.number) !== '—' ? t('dos.heading', { n: x ? x.number : p.number, date: fdate(x && x.signed) }) : t('pz.draftContract')),
       h('div', { class: 'cell-sub' }, join([(x && x.buyer_name) || p.buyer, (x && x.supplier_name) || p.supplier], ' → ')),
@@ -1668,19 +1704,18 @@ function trackedPage(preset) {
       h('div', { class: 'stat' }, h('small', null, t('tr.tValue')), h('b', { class: 'num' }, mshort(sum('value')))),
       h('div', { class: 'stat tint-blue' }, h('small', null, t('tr.paid')), h('b', { class: 'num' }, mshort(sum('paid')))),
       h('div', { class: 'stat tint-yellow' }, h('small', null, t('tr.left')), h('b', { class: 'num' }, mshort(sum('left'))), sum('overdue') > 1 ? h('span', { class: 'sub' }, t('tr.overdueN', { sum: mshort(sum('overdue')) })) : null));
-    fill(filters, pills([['', t('ui.all'), inScope().length], ['left', t('tr.fLeft'), n('left')], ['overdue', t('tr.fOverdue'), n('overdue')], ['changed', t('tr.fChanged'), n('changed')], ['pending', t('tr.pending'), n('pending')]].filter((p) => p[0] === '' || p[2] || p[0] === f.which),
-      f.which, (v) => { f.which = v; draw(); }));
   }
-  const scope = pills([['mine', t('tr.mine'), own.length], ['shared', t('tr.sharedTab'), shared.length]], f.scope, (v) => { f.scope = v; f.which = ''; draw(); });
+  const nChanges = own.concat(shared).reduce((acc, r) => acc + ((r.row && r.row.events) || []).filter((e) => e.at > seen).length, 0);
+  const scope = pills([['mine', t('tr.mine'), own.length], ['shared', t('tr.sharedTab'), shared.length], ['changes', t('tr.changesTab'), nChanges || null]].filter((p) => p[0] !== 'shared' || p[2]),
+    f.scope, (v) => { f.scope = v; f.which = ''; f.ev = ''; draw(); });
   draw();
   return [
-    pageHead(t('tr.eyebrow'), titleGrad(t('tr.title1'), t('tr.title2')), t('tr.lead'),
+    pageHead(t('tr.eyebrow'), titleGrad(t('tr.title1'), t('tr.title2')), null,
       h('div', { class: 'row' }, scope,
         trackedChanged() ? h('button', { class: 'btn', onclick: () => { setTrackedSeen(new Date().toISOString().slice(0, 10) + 'T99'); render(); } }, icon('check'), t('tr.markSeen')) : null)),
     driveBanner(),
     tiles,
     h('div', { class: 'table-card section' }, h('div', { class: 'table-tools' }, filters, q), list),
-    h('p', { class: 'muted small section' }, t('tr.howTo')),
   ];
 }
 
@@ -1740,6 +1775,20 @@ function trackedDossier(id) {
         st.due_now ? ' · ' + t('tr.stageDueNow', { sum: money(st.due_now) }) : '',
         !st.due && st.event !== 'signingTheContract' && !(s.acts || []).length ? h('div', { class: 'cell-sub' }, t('tr.noActs')) : null)));
     const delivery = (t0.milestones || []).filter((m) => m.type !== 'financing' && (!m.lot || !c.lot || m.lot === c.lot));
+    const seen = getTrackedSeen();
+    const freshDocs = new Set((s.history || []).filter((e) => e.type === 'doc' && e.at > seen && e.id).map((e) => e.id));
+    const funders = (t0.funders || []).map((x) => x.name).filter(Boolean);
+    const isEib = (t0.funders || []).some((x) => x.code === '33000');
+    const events = (s.history || []).filter((e) => e.type !== 'tracked');
+    const hist = h('div');
+    const histPills = h('div');
+    const drawHistory = (g) => {
+      const shown = events.filter((e) => !g || eventGroup(e) === g);
+      fill(histPills, events.length ? eventPills(events, g, drawHistory) : null);
+      fill(hist, shown.length ? h('div', { class: 'timeline' }, shown.map((e) => h('div', { class: 'ev ' + eventClass(e) + (e.at > seen ? ' new' : '') },
+        h('span', { class: 'd num' }, fdate(e.at)), h('span', null, eventText(e), eventSub(e)), h('span')))) : h('p', { class: 'muted small' }, t('dos.noEvents')));
+    };
+    drawHistory('');
     fill(box,
       h('div', { class: 'org-head' },
         h('div', null,
@@ -1748,10 +1797,12 @@ function trackedDossier(id) {
           h('div', { class: 'chips' },
             h('span', { class: 'pz-st ' + (c.status === 'active' ? 'ok' : 'run') }, label('pzc.', c.status)),
             h('span', { class: 'tag' }, label('pzt.', t0.method)),
+            isEib ? h('span', { class: 'tag eib' }, t('eib.short')) : null,
             tt.overdue > 1 ? h('span', { class: 'sev high' }, t('tr.overdueN', { sum: money(tt.overdue) })) : null,
             s.error ? h('span', { class: 'sev medium', title: s.error }, t('tr.error')) : null),
           h('p', { class: 'lead' }, join([t0.buyer_name, (c.suppliers || []).map((x) => party(x.name, x.code)).join(', ')], ' → ')),
-          h('p', { class: 'muted' }, c.title || t0.title)),
+          h('p', { class: 'muted' }, c.title || t0.title),
+          funders.length ? h('p', { class: 'small' }, t('eib.funders') + ': ' + funders.join(', ')) : null),
         h('div', { class: 'org-actions' }, h('div', { class: 'row' },
           org && (org.files || {}).prozorro ? h('button', { class: 'btn', onclick: () => openTender(org, s.tid) }, t('pz.openProcedure')) : null,
           org && s.sp ? h('button', { class: 'btn', onclick: () => openContract(org, s.sp) }, t('pz.openDossier')) : null,
@@ -1766,21 +1817,18 @@ function trackedDossier(id) {
         h('div', { class: 'card pad' },
           h('h2', { class: 'card-title' }, t('tr.stages')),
           stageRows.length ? h('div', { class: 'explain' }, stageRows) : h('p', { class: 'muted small' }, t('pz.noTerms')),
-          delivery.length ? h('div', { class: 'explain', style: 'margin-top:8px' }, delivery.map((m) => h('div', null, h('b', null, label('pzm.type.', m.type) + '. '), h('span', null, milestoneText(m))))) : null,
-          h('p', { class: 'muted small', style: 'margin-top:10px' }, t('tr.stagesHelp'))),
+          delivery.length ? h('div', { class: 'explain', style: 'margin-top:8px' }, delivery.map((m) => h('div', null, h('b', null, label('pzm.type.', m.type) + '. '), h('span', null, milestoneText(m))))) : null),
         h('div', { class: 'card pad' },
-          h('h2', { class: 'card-title' }, t('tr.history')),
-          (s.history || []).length ? h('div', { class: 'timeline' }, s.history.map((e) => h('div', { class: 'ev ' + eventClass(e) },
-            h('span', { class: 'd num' }, fdate(e.at)), h('span', null, eventText(e)), h('span')))) : h('p', { class: 'muted small' }, t('dos.noEvents')))),
+          h('h2', { class: 'card-title' }, t('tr.history')), histPills, hist)),
       h('div', { class: 'table-card section' },
-        h('div', { class: 'table-tools' }, h('b', null, t('tr.payments')), h('span', { class: 'faint small' }, t('tr.paymentsHelp'))),
+        h('div', { class: 'table-tools' }, h('b', null, t('tr.payments'))),
         sure.length ? payTable(sure) : h('div', { class: 'empty' }, t('dos.noPayments')),
         maybe.length ? [h('div', { class: 'table-tools' }, h('b', null, t('tr.maybe')), h('span', { class: 'faint small' }, t('tr.maybeHelp'))), payTable(maybe)] : null),
       (s.acts || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('kinds.act')),
         h('div', { class: 'timeline' }, s.acts.map((a) => h('div', { class: 'ev act' }, h('span', { class: 'd num' }, fdate(a.date)), h('span', null, t('kind.act') + ' № ' + (a.number || '—')), h('span', { class: 'num' }, money(a.amount)))))) : null,
       h('div', { class: 'grid-2 section' },
-        h('div', { class: 'card pad' }, h('h2', { class: 'card-title' }, t('pz.contractDocs')), docList(c.docs)),
-        h('div', { class: 'card pad' }, h('h2', { class: 'card-title' }, t('pz.tenderDocs')), docList(t0.docs))),
+        h('div', { class: 'card pad' }, h('h2', { class: 'card-title' }, t('pz.contractDocs')), docList(c.docs, freshDocs)),
+        h('div', { class: 'card pad' }, h('h2', { class: 'card-title' }, t('pz.tenderDocs')), docList(t0.docs, freshDocs))),
       isTracked(id) ? shareCard(id) : null,
       driveCard(),
       isTracked(id) ? h('div', { class: 'card pad section' },
@@ -1832,6 +1880,107 @@ function shareCard(id) {
       } }, t('tr.unshare'))))) : h('p', { class: 'faint small' }, t('tr.notShared')));
 }
 
+// ---- procurements financed by the European Investment Bank, across all of Prozorro ----
+
+const loadEib = () => cached('eib:' + ver(), () => getJSON('data/eib.json', ver()));
+const eibOrg = (t0) => ({ edrpou: t0.buyer || '', name: t0.buyer_name || '', role: 'buyer' });
+
+function openEibTender(t0) {
+  const funders = (t0.funders || []).map((x) => x.name).filter(Boolean);
+  sheet(
+    h('div', { class: 'eyebrow' }, t0.tid),
+    h('h2', null, t0.title || '—'),
+    h('div', { class: 'chips' }, pzStatus(t0.status), h('span', { class: 'tag' }, label('pzt.', t0.method)),
+      h('span', { class: 'tag eib' }, t0.eib === 'funder' ? t('eib.byFunder') : t('eib.byText'))),
+    kv([[t('eib.buyer'), party(t0.buyer_name, t0.buyer)], [t('eib.region'), t0.region], [t('eib.funders'), funders.join(', ')],
+      [t('pz.colValue'), t0.value ? money(t0.value.amount, t0.value.currency) : ''], [t('col.date'), fdate(t0.date)], ['CPV', t0.cpv]]),
+    (t0.terms || []).length ? h('section', null, h('h3', null, t('tr.stages')), h('div', { class: 'explain' }, t0.terms.map((m) => h('div', { class: 'pay' }, h('span', null, milestoneText(m)))))) : null,
+    h('section', null, h('h3', null, t('kinds.contract')),
+      (t0.contracts || []).length ? h('div', { class: 'tr-list eib-list' }, t0.contracts.map((c) => h('div', { class: 'tr-card' },
+        h('div', { class: 'chips', style: 'margin:0' }, h('span', { class: 'pz-st ' + (c.status === 'active' ? 'ok' : c.status === 'terminated' ? 'off' : 'run') }, label('pzc.', c.status))),
+        h('b', { style: 'font-size:16px' }, t('dos.heading', { n: c.number || '—', date: fdate(c.signed) })),
+        h('div', { class: 'cell-sub' }, (c.suppliers || []).map((x) => party(x.name, x.code)).join(', ')),
+        h('div', { class: 'facts' },
+          h('div', null, h('small', null, t('pz.contractValue')), h('b', { class: 'num' }, c.value ? money(c.value.amount, c.value.currency) : '—')),
+          h('div', null, h('small', null, t('eib.term')), h('b', null, c.start || c.end ? `${fdate(c.start)} — ${fdate(c.end)}` : '—')),
+          h('div', null, h('small', null, t('eib.changes')), h('b', { class: 'num' }, ni.format(c.changes || 0)))),
+        h('div', { class: 'row', style: 'margin-top:10px' }, trackButton(eibOrg(t0), t0, c)))))
+        : h('p', { class: 'muted small' }, t('pz.noContractYet'))),
+    h('div', { class: 'row after' }, ext(pzUrl(t0.tid), t('pz.openOnProzorro'))));
+}
+
+function eibTable(rows) {
+  if (!rows.length) return h('div', { class: 'empty' }, h('b', null, t('pz.none')), t('sigs.changeFilter'));
+  const L = { c: t('pz.colContract'), b: t('eib.buyer'), s: t('eib.supplier'), subj: t('col.subject'), v: t('col.amount') };
+  return h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
+    h('thead', null, h('tr', null, h('th', null, L.c), h('th', null, L.b), h('th', null, L.s), h('th', null, L.subj), h('th', { class: 'r' }, L.v), h('th'))),
+    h('tbody', null, rows.map(({ t: t0, c }) => {
+      const open = () => openEibTender(t0);
+      return h('tr', { class: 'click', tabindex: 0, onclick: open, onkeydown: (e) => { if (e.key === 'Enter') open(); } },
+        td(L.c, null, c ? [h('div', { class: 'cell-main' }, '№ ' + (c.number || '—')), h('div', { class: 'cell-sub num' }, fdate(c.signed)), h('span', { class: 'pz-st ' + (c.status === 'active' ? 'ok' : c.status === 'terminated' ? 'off' : 'run') }, label('pzc.', c.status))]
+          : [h('div', { class: 'cell-main num' }, t0.tid), pzStatus(t0.status)]),
+        td(L.b, { class: 'w-party' }, h('div', { class: 'cell-main' }, t0.buyer_name || '—'), h('div', { class: 'cell-sub' }, t0.region || '')),
+        td(L.s, { class: 'w-party' }, c ? (c.suppliers || []).map((x) => x.name).join(', ') || '—' : h('span', { class: 'faint small' }, t('pz.noContractYet'))),
+        td(L.subj, { class: 'w-text' }, h('div', { class: 'clamp' }, (c && c.title) || t0.title || '—'), t0.eib === 'text' ? h('span', { class: 'tag' }, t('eib.byText')) : null),
+        td(L.v, { class: 'r num' }, c && c.value ? money(c.value.amount, c.value.currency) : t0.value ? money(t0.value.amount, t0.value.currency) : '—'),
+        td('', { class: 'r', onclick: (e) => e.stopPropagation() }, c ? trackButton(eibOrg(t0), t0, c) : null));
+    }))));
+}
+
+function eibCsv(rows) {
+  const head = ['Procedure', 'Status', 'Buyer EDRPOU', 'Buyer', 'Region', 'Contract №', 'Signed', 'Contract status', 'Supplier EDRPOU', 'Supplier', 'Subject', 'Amount', 'EIB'];
+  return [head].concat(rows.map(({ t: t0, c }) => [t0.tid, t0.status, t0.buyer, t0.buyer_name, t0.region, c ? c.number : '', c ? c.signed : '', c ? c.status : '',
+    c ? (c.suppliers || []).map((x) => x.code).join(' ') : '', c ? (c.suppliers || []).map((x) => x.name).join('; ') : '', (c && c.title) || t0.title,
+    dec(c && c.value ? c.value.amount : t0.value ? t0.value.amount : ''), t0.eib]));
+}
+
+function eibPage() {
+  const box = h('div', null, h('div', { class: 'card empty' }, t('ui.loading')));
+  const f = { which: 'contracts', kind: '', region: '', q: '', page: 0 };
+  (async () => {
+    let data;
+    try { data = await loadEib(); } catch (e) { data = null; }
+    if (!data || !(data.items || []).length) { fill(box, h('div', { class: 'card empty' }, h('b', null, t('eib.noData')), t('pz.noDataText'))); return; }
+    const all = data.items.flatMap((t0) => ((t0.contracts || []).length ? t0.contracts.map((c) => ({ t: t0, c })) : [{ t: t0, c: null }]));
+    const tests = {
+      contracts: (r) => !!r.c,
+      active: (r) => r.c && r.c.status === 'active',
+      open: (r) => !r.c && pzOpen(r.t),
+      tracked: (r) => r.c && isTracked(r.c.id),
+    };
+    const list = h('div');
+    const tiles = h('div', { class: 'tiles section' });
+    function draw() {
+      const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
+      const rows = all.filter((r) => (!f.which || tests[f.which](r)) && (!f.kind || r.t.eib === f.kind) && (!f.region || r.t.region === f.region)
+        && (!words.length || words.every((w) => [r.t.tid, r.t.title, r.t.cpv, r.t.buyer, r.t.buyer_name, r.c && r.c.number, r.c && r.c.title,
+          ...((r.c && r.c.suppliers) || []).flatMap((x) => [x.name, x.code])].join(' ').toLowerCase().includes(w))))
+        .sort((x, y) => (((y.c && y.c.signed) || y.t.date || '').localeCompare((x.c && x.c.signed) || x.t.date || '')));
+      const uah = (r) => { const v = (r.c && r.c.value) || (!r.c && r.t.value); return v && v.currency === 'UAH' ? v.amount : 0; };
+      const sum = rows.reduce((acc, r) => acc + uah(r), 0);
+      fill(tiles,
+        h('div', { class: 'stat tint-violet' }, h('small', null, t('eib.tProcedures')), h('b', { class: 'num' }, ni.format(new Set(rows.map((r) => r.t.tid)).size))),
+        h('div', { class: 'stat' }, h('small', null, t('eib.tContracts')), h('b', { class: 'num' }, ni.format(rows.filter((r) => r.c).length))),
+        h('div', { class: 'stat tint-blue' }, h('small', null, t('eib.tValue')), h('b', { class: 'num' }, mshort(sum))),
+        h('div', { class: 'stat tint-yellow' }, h('small', null, t('tr.onControl')), h('b', { class: 'num' }, ni.format(all.filter(tests.tracked).length))));
+      pagedList(list, rows, f.page, { sum, csv: 'eib-contracts', csvRows: (items, name) => csvDownload(eibCsv(items), name) }, (p) => { f.page = p; draw(); }, eibTable);
+    }
+    const n = (k) => all.filter(tests[k]).length;
+    const regions = [...new Set(all.map((r) => r.t.region).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const q = h('input', { class: 'input', type: 'search', placeholder: t('eib.searchHint'), 'aria-label': t('ui.search'), oninput: () => { f.q = q.value; f.page = 0; draw(); } });
+    fill(box, tiles, h('div', { class: 'table-card section' },
+      h('div', { class: 'table-tools' },
+        pills([['contracts', t('eib.fContracts'), n('contracts')], ['active', t('eib.fActive'), n('active')], ['open', t('eib.fOpen'), n('open')], ['tracked', t('tr.onControl'), n('tracked')], ['', t('ui.all'), all.length]]
+          .filter((p) => p[0] === '' || p[0] === 'contracts' || p[2]), f.which, (v) => { f.which = v; f.page = 0; draw(); }),
+        select([['', t('eib.anyKind')], ['funder', t('eib.byFunder')], ['text', t('eib.byText')]], '', (e) => { f.kind = e.target.value; f.page = 0; draw(); }, t('eib.kind')),
+        regions.length > 1 ? select([['', t('eib.anyRegion')]].concat(regions.map((r) => [r, r])), '', (e) => { f.region = e.target.value; f.page = 0; draw(); }, t('eib.region')) : null,
+        q),
+      list));
+    draw();
+  })();
+  return [pageHead('Prozorro', titleGrad(t('eib.title1'), t('eib.title2'))), box];
+}
+
 function prozorroPage(preset) {
   const pz = state.index.orgs.reduce((acc, o) => {
     const p = o.prozorro || {};
@@ -1839,7 +1988,7 @@ function prozorroPage(preset) {
     return acc;
   }, { tenders: 0, contracts: 0, linked: 0, value: 0, queue: 0 });
   return [
-    pageHead(t('pz.eyebrow'), titleGrad(t('pz.title1'), t('pz.title2')), t('pz.lead')),
+    pageHead(t('pz.eyebrow'), titleGrad(t('pz.title1'), t('pz.title2')), null),
     h('div', { class: 'tiles section' },
       h('div', { class: 'stat tint-violet' }, h('small', null, t('pz.tProcedures')), h('b', { class: 'num' }, ni.format(pz.tenders)), pz.queue ? h('span', { class: 'sub' }, t('pz.queued', { n: ni.format(pz.queue) })) : null),
       h('div', { class: 'stat' }, h('small', null, t('pz.tContracts')), h('b', { class: 'num' }, ni.format(pz.contracts))),
@@ -1938,7 +2087,7 @@ function addOrgCard() {
 }
 
 function orgsPage() {
-  return [pageHead(t('orgs.eyebrow'), titleGrad(t('orgs.title1'), t('orgs.title2')), t('orgs.lead')), addOrgCard(), h('div', { class: 'section' }, orgGrid(state.index.orgs))];
+  return [pageHead(t('orgs.eyebrow'), titleGrad(t('orgs.title1'), t('orgs.title2')), null), addOrgCard(), h('div', { class: 'section' }, orgGrid(state.index.orgs))];
 }
 
 const ORG_TABS = ['contracts', 'signals', 'transaction', 'prozorro', 'act', 'addendum', 'liability', 'report', 'profile'];
@@ -2082,7 +2231,7 @@ function feedPage() {
   draw();
   const readBtn = h('button', { class: 'btn', onclick: () => { if (all.length) setSeen(all[0].first_seen_at); render(); } }, icon('check'), t('feed.markRead'));
   return [
-    pageHead(t('nav.feed'), titleGrad(t('feed.title1'), t('feed.title2')), t('feed.lead'), readBtn),
+    pageHead(t('nav.feed'), titleGrad(t('feed.title1'), t('feed.title2')), null, readBtn),
     h('div', { class: 'table-card' },
       h('div', { class: 'table-tools' },
         pills([['', t('ui.all')]].concat(KINDS.map((k) => [k, kindMany(k)])), '', (v) => { f.kind = v; f.page = 0; draw(); }),
@@ -2184,7 +2333,7 @@ function searchPage() {
     roleBox,
     h('label', { class: 'field' }, h('span', null, t('ui.from')), from), h('label', { class: 'field' }, h('span', null, t('ui.to')), to), go);
   draw();
-  return [pageHead(t('srch.eyebrow'), titleGrad(t('srch.title1'), t('srch.title2')), t('srch.lead')), h('div', { class: 'table-card' }, form, out)];
+  return [pageHead(t('srch.eyebrow'), titleGrad(t('srch.title1'), t('srch.title2')), null), h('div', { class: 'table-card' }, form, out)];
 }
 
 // ---- methodology ------------------------------------------------------------------------------------
@@ -2508,6 +2657,7 @@ function render() {
   else if (route === 'contracts') page = contractsPage(parts[1]);
   else if (route === 'payments') page = paymentsPage(parts[1]);
   else if (route === 'prozorro') page = prozorroPage(parts[1]);
+  else if (route === 'eib') page = eibPage();
   else if (route === 'overview') { page = overviewPage(); key = 'home'; }
   else if (route === 'tracked' && /^[0-9a-f]{32}$/.test(parts[1] || '')) { page = trackedDossier(parts[1]); key = 'tracked'; }
   else if (route === 'orgs') page = orgsPage();

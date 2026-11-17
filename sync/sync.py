@@ -30,6 +30,7 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import analysis  # noqa: E402
+import eib  # noqa: E402
 import prozorro  # noqa: E402
 import tracked  # noqa: E402
 import spending  # noqa: E402
@@ -45,6 +46,7 @@ SIGNALS_FILE = os.path.join(DATA, "signals.json")
 ORG_DIR = os.path.join(DATA, "org")
 REMOVED_FILE = os.path.join(DATA, "removed.json")
 TRACKED_DIR = os.path.join(DATA, "tracked")
+EIB_FILE = os.path.join(DATA, "eib.json")
 TENDERS, TREASURY = {}, {}  # per organisation, filled while syncing, read by the contracts on control
 
 DOC_KINDS = ("contract", "act", "addendum", "peny")
@@ -544,6 +546,13 @@ def main():
         failed += 1 if error else 0
 
     tracked_rows = sync_tracked()
+    if not SKIP_PROZORRO:
+        try:
+            found = eib.sync(read_json(EIB_FILE, None), log=lambda m: print(m, flush=True))
+            if found:
+                write_json(EIB_FILE, found)
+        except Exception:
+            traceback.print_exc()
     feed.sort(key=lambda i: (i["first_seen_at"], i.get("date") or "", i["ext_id"]), reverse=True)
     runs = state.setdefault("runs", [])
     runs.insert(0, {
