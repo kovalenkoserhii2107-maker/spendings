@@ -31,7 +31,8 @@ const RG = {
     h_failed: 'невдалих тендерів: {n}', h_overdue: 'строк завершення {date} минув, виконано {pct}%', h_stale: 'коментар не оновлювався {days} дн.',
     h_funding: 'статус фінансування: {s}', h_disq: 'відхилено учасників: {n}', h_single: 'одна пропозиція', h_noContract: 'договору ще немає',
     h_paidGap: 'оплачено {paid}% при виконанні {pct}%',
-    importFailed: 'не збережено: {list}', refreshN: 'Оновити з Prozorro ({n})', pickExpert: 'Оберіть експерта: оновлюються лише його субпроєкти',
+    importFailed: 'не збережено: {list}', autoLinked: 'прив’язано автоматично', candTitle: 'Можливі закупівлі за назвою', candHint: 'Знайдено за назвою субпроєкту; прив’яжіть ті, що стосуються його.',
+    refreshDone: 'Оновлено: з ID у таблиці {linked}, знайдено за назвою {auto}, є варіанти для підтвердження {cand}, не знайдено {none}, лише англ. назва {noName}', refreshN: 'Оновити з Prozorro ({n})', pickExpert: 'Оберіть експерта: оновлюються лише його субпроєкти',
     trackAll: 'Відстежувати мої з таблиці ({n})', trackConfirm: 'Поставити на відстеження договори й закупівлі ваших {n} субпроєктів? Діючі договори — на контроль, закупівлі без договору — до підписання.',
     tracking: 'Відстеження: {n} з {total}, додано {added}…', trackDone: 'На відстеження додано {added}, уже було {already}, не вдалося {failed}',
     denied: 'Немає дозволу на запис у реєстр — перевірте, що ви увійшли акаунтом зі списку доступу.', refreshFailed: 'Не оновилось субпроєктів: {n}',
@@ -63,7 +64,8 @@ const RG = {
     h_failed: 'failed tenders: {n}', h_overdue: 'completion date {date} passed, {pct}% done', h_stale: 'comment not updated for {days} days',
     h_funding: 'funding status: {s}', h_disq: 'bidders rejected: {n}', h_single: 'single bid', h_noContract: 'no contract yet',
     h_paidGap: '{paid}% paid at {pct}% done',
-    importFailed: 'not saved: {list}', refreshN: 'Refresh from Prozorro ({n})', pickExpert: 'Choose an expert: only their sub-projects are refreshed',
+    importFailed: 'not saved: {list}', autoLinked: 'linked automatically', candTitle: 'Possible procurements by name', candHint: 'Found by the sub-project name; link the ones that belong to it.',
+    refreshDone: 'Refreshed: with ids in the table {linked}, found by name {auto}, candidates to confirm {cand}, not found {none}, English name only {noName}', refreshN: 'Refresh from Prozorro ({n})', pickExpert: 'Choose an expert: only their sub-projects are refreshed',
     trackAll: 'Track mine from the table ({n})', trackConfirm: 'Put the contracts and procurements of your {n} sub-projects on control? Contracts in force go on control, procurements without a contract until it is signed.',
     tracking: 'Tracking: {n} of {total}, {added} added…', trackDone: '{added} added to tracking, {already} already there, {failed} failed',
     denied: 'No permission to write to the registry — check you are signed in with an account on the access list.', refreshFailed: 'Not refreshed: {n} sub-projects',
@@ -271,14 +273,46 @@ function spTids(r) {
   return [...ids];
 }
 
+// A sub-project with no Prozorro id in the table is looked up by its Ukrainian name. Its works
+// procurement is linked by itself when the title starts like the name and holds nearly all its
+// words; the rest (supervision, design, look-alikes) waits in pz.cand for the expert to confirm.
+const nameWords = (s) => String(s || '').toLowerCase().replace(/[’'`ʼ]/g, '').replace(/[^0-9a-zа-яіїєґ]+/g, ' ').trim().split(' ').filter((w) => w.length > 2);
+function nameMatch(spName, title) {
+  const a = nameWords(objectName(spName)).slice(0, 14), tw = nameWords(objectName(title)), b = new Set(tw);
+  return { score: a.length ? a.filter((w) => b.has(w)).length / a.length : 0, head: a.length >= 4 && a.slice(0, 4).join(' ') === tw.slice(0, 4).join(' ') };
+}
+async function findByName(r) {
+  const name = (r.t || {}).name_uk;
+  const q = objectName(name || '').split(/\s+/).slice(0, 12).join(' ');
+  if (q.length < 12) return null;
+  const d = await pzProxy({ action: 'search', kind: 'tenders', text: q });
+  const cand = (d.items || []).map((x) => {
+    const m = nameMatch(name, x.title);
+    return { tid: x.tid, title: (x.title || '').slice(0, 300), status: x.status, value: x.value, buyer_name: x.buyer_name || '', role: relRole(x.title), score: Math.round(m.score * 100) / 100, head: m.head };
+  }).filter((x) => x.score >= 0.6).sort((a, b) => b.score - a.score).slice(0, 12);
+  const auto = cand.filter((x) => x.role === 'works' && x.head && x.score >= 0.8 && x.status !== 'cancelled').map((x) => x.tid);
+  return { cand, auto };
+}
+
 async function refreshSp(r) {
+  let tids = spTids(r), cand = null, link = null;
+  if (!tids.length && !((r.link || {}).off || []).length) {
+    const found = await findByName(r);
+    if (found) {
+      cand = found.cand;
+      if (found.auto.length) { tids = found.auto; link = { tids: found.auto, off: [], auto: found.auto }; }
+    }
+  }
   const tenders = [];
-  for (const tid of spTids(r)) {
+  for (const tid of tids) {
     try { tenders.push((await pzProxy({ action: 'tender', tid })).tender); } catch (e) { tenders.push({ tid, error: e.message.slice(0, 200) }); }
   }
   tenders.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const pz = { at: new Date().toISOString(), tenders };
-  await cloud.updateRegistry(r.code, { pz, risk: riskHints(Object.assign({}, r, { pz })) });
+  if (cand) pz.cand = cand.filter((x) => !tids.includes(x.tid));
+  const patch = { pz, risk: riskHints(Object.assign({}, r, { pz })) };
+  if (link) patch.link = link;
+  await cloud.updateRegistry(r.code, patch);
   return pz;
 }
 
@@ -333,15 +367,24 @@ async function trackAll(rows) {
 async function refreshMany(rows) {
   if (REG.busy) return;
   REG.busy = 'refresh';
-  let n = 0, failed = 0;
+  let n = 0, failed = 0, linked = 0, auto = 0, cand = 0, none = 0, noName = 0;
   for (const r of rows) {
     n++;
     setStatus(rt('refreshing', { n, total: rows.length }));
-    if (!spTids(r).length) continue;
-    try { await refreshSp(r); } catch (e) { failed++; console.error('registry refresh', r.code, e); }
+    const had = spTids(r).length > 0;
+    if (!had && !(r.t || {}).name_uk) { noName++; continue; }
+    try {
+      const pz = await refreshSp(r);
+      if (had) linked++;
+      else if ((pz.tenders || []).length) auto++;
+      else if ((pz.cand || []).length) cand++;
+      else none++;
+    } catch (e) { failed++; console.error('registry refresh', r.code, e); }
   }
   REG.busy = null;
-  setStatus(failed ? rt('refreshFailed', { n: failed }) : '', !!failed);
+  const msg = rt('refreshDone', { linked, auto, cand, none, noName }) + (failed ? ' · ' + rt('refreshFailed', { n: failed }) : '');
+  setStatus(msg, !!failed);
+  toast(msg, { sticky: true });
 }
 
 // The works contract of a sub-project: the latest signed one of its linked procedures.
@@ -488,7 +531,7 @@ function registryTable(rows) {
         td(L.e, null, tt.expert || '—'),
         td(L.p, null, tids.length ? [h('div', { class: 'cell-main num' }, tids.length > 1 ? `${tids.length} × UA-…` : tids[0]), last ? pzStatus(last.status) : h('span', { class: 'faint small' }, rt('never')),
           trackPicks(r.pz).some((p) => isTracked(p.cid)) ? h('span', { class: 'tag pz' }, t('tr.onControl')) : null]
-          : h('span', { class: 'tag' }, rt('notLinked'))),
+          : ((r.pz || {}).cand || []).length ? h('span', { class: 'tag warn' }, rt('candidates', { n: r.pz.cand.length })) : h('span', { class: 'tag' }, rt('notLinked'))),
         td(L.k, { class: 'w-party' }, m ? [h('div', { class: 'cell-main' }, ((m.c.suppliers || [])[0] || {}).name || '—'), h('div', { class: 'cell-sub' }, join([m.c.number && '№ ' + m.c.number, m.c.value ? money(m.c.value.amount) : null]))]
           : tt.contractor ? tt.contractor : h('span', { class: 'faint' }, '—')),
         td(L.g, { class: 'num' }, join([pctOf(tt.pct) != null ? pctOf(tt.pct) + '%' : null, pctOf(tt.paid_pct) != null ? rt('paidShort', { pct: pctOf(tt.paid_pct) }) : null]) || '—'),
@@ -568,7 +611,7 @@ function pzCard(r) {
     const org = t0 ? { edrpou: t0.buyer, name: t0.buyer_name, role: 'buyer' } : null;
     return h('div', { class: 'qs-row' },
       h('div', null,
-        h('b', null, t0 ? t0.title : tid),
+        h('b', null, t0 ? t0.title : tid), ((r.link || {}).auto || []).includes(tid) ? h('span', { class: 'tag', style: 'margin-left:6px' }, rt('autoLinked')) : null,
         h('div', { class: 'cell-sub' }, join([tid, t0 && label('pzs.', t0.status), t0 && label('pzt.', t0.method), t0 && t0.value ? money(t0.value.amount, t0.value.currency) : null,
           t0 && t0.bids != null ? t('pz.bids') + ': ' + t0.bids : null, t0 && t0.date ? fdate(t0.date) : null])),
         t0 && t0.error ? h('div', { class: 'small bad' }, t0.error) : null,
@@ -600,7 +643,13 @@ function pzCard(r) {
         : h('p', { class: 'muted small' }, t('qs.none')));
     } catch (e) { fill(find, h('p', { class: 'small bad' }, e.message)); }
   };
-  fill(box, tids.length ? h('div', { class: 'qs-list' }, tids.map(tenderBlock)) : h('p', { class: 'muted small' }, rt('notLinked')));
+  const cands = (pz.cand || []).filter((x) => !tids.includes(x.tid));
+  fill(box, tids.length ? h('div', { class: 'qs-list' }, tids.map(tenderBlock)) : h('p', { class: 'muted small' }, rt('notLinked')),
+    cands.length ? [h('h3', { class: 'card-sub', style: 'margin-top:14px' }, rt('candTitle')), h('p', { class: 'muted small' }, rt('candHint')),
+      h('div', { class: 'qs-list' }, cands.map((x) => h('div', { class: 'qs-row' },
+        h('div', null, h('span', { class: 'tag' }, t('rel.role.' + x.role)), ' ', h('b', null, x.title),
+          h('div', { class: 'cell-sub' }, join([x.tid, x.buyer_name, label('pzs.', x.status), x.value ? money(x.value.amount, x.value.currency) : null]))),
+        h('div', { class: 'qs-side' }, ext(pzUrl(x.tid), 'Prozorro'), h('button', { class: 'btn btn-sm btn-dark', onclick: () => save([...new Set(linkIds.concat(x.tid))], off.filter((y) => y !== x.tid)) }, rt('link'))))))] : null);
   return h('div', { class: 'card pad section' },
     h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('pz')),
       h('div', { class: 'row' }, h('span', { class: 'faint small' }, pz.at ? rt('updated', { at: ftime(pz.at) }) : rt('never')),
