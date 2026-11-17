@@ -1646,7 +1646,7 @@ function trackButton(org, t0, c) {
       btn.disabled = true;
       const sup = (c.suppliers || [])[0] || {};
       try {
-        await cloud.track(c.id, { org: org.edrpou, tid: t0.tid, sp: c.sp || '', title: c.title || t0.title || '', number: c.number || '', buyer: t0.buyer_name || (org.role !== 'supplier' ? org.name : ''), supplier: sup.name || '' });
+        await cloud.track(c.id, { org: org.edrpou, tid: t0.tid, sp: c.sp || '', title: c.title || t0.title || '', number: c.number || '', buyer: t0.buyer_name || (org.role !== 'supplier' ? org.name : ''), supplier: sup.name || '' }); nudgeSync();
         if (driveState.connected === false) toast(t('tr.addedNoDrive'), { sticky: true, action: { label: t('gs.connect'), run: connectDrive } });
         else toast(t('tr.added'));
         btn.replaceWith(h('a', { class: 'btn btn-sm tracked-on', href: '#/tracked/' + c.id, onclick: closeSheet }, icon('star'), t('tr.onControl')));
@@ -2044,7 +2044,7 @@ function partiesCard(t0, c) {
     const on = !!code && state.mine.orgs.has(code);
     const add = h('button', { class: 'btn btn-sm', onclick: async () => {
       add.disabled = true;
-      try { await cloud.addOrg(code, name, role); toast(t('addorg.addedNow', { name: name || code })); } catch (e) { add.disabled = false; toast(e.message, { bad: true }); }
+      try { await cloud.addOrg(code, name, role); nudgeSync(); toast(t('addorg.addedNow', { name: name || code })); } catch (e) { add.disabled = false; toast(e.message, { bad: true }); }
     } }, icon('building'), t('org.addMonitor'));
     return h('div', { class: 'party' },
       h('small', null, t(key)),
@@ -2319,7 +2319,7 @@ function addOrgCard() {
       if (synced) name = synced.name;
       else try { name = ((await portal('/v2/disposers/' + code)) || {}).orgName || ''; } catch (err) { /* not a fund holder or portal busy: track by code */ }
       try {
-        await cloud.addOrg(code, name, role);
+        await cloud.addOrg(code, name, role); nudgeSync();
         input.value = '';
         // Already synced for someone else: it is in my list right away.
         if (synced) fill(msg, h('p', { class: 'small ok-text' }, t('addorg.addedNow', { name }), ' ', h('a', { href: '#/org/' + code }, t('addorg.open'))));
@@ -2661,6 +2661,12 @@ function searchPage() {
 // contracts in Prozorro, and its Treasury contracts of the last year. Any other text searches
 // Prozorro procedures. Each contract can be taken on control right from here.
 const PZ_PROXY = 'PROXY_URL';
+// Something was just put on control or on monitoring: ask the proxy to start the sync now
+// (GitHub runs its schedule unreliably). Fire and forget.
+function nudgeSync() {
+  if (/PROXY_URL/.test(PZ_PROXY)) return;
+  fetch(PZ_PROXY + '?action=nudge', { mode: 'no-cors' }).catch(() => {});
+}
 async function pzProxy(params) {
   if (/PROXY_URL/.test(PZ_PROXY)) throw new Error(t('qs.noProxy'));
   const res = await fetch(PZ_PROXY + '?' + new URLSearchParams(params));
@@ -2707,7 +2713,7 @@ function orgFound(code) {
     const addBtn = (role) => {
       const b = h('button', { class: 'btn btn-sm' + (role === 'buyer' ? ' btn-dark' : ''), onclick: async () => {
         b.disabled = true;
-        try { await cloud.addOrg(code, name || known, role); toast(t('addorg.addedNow', { name: name || known || code })); render(); } catch (e) { b.disabled = false; toast(e.message, { bad: true }); }
+        try { await cloud.addOrg(code, name || known, role); nudgeSync(); toast(t('addorg.addedNow', { name: name || known || code })); render(); } catch (e) { b.disabled = false; toast(e.message, { bad: true }); }
       } }, icon('building'), t(role === 'buyer' ? 'qs.monitorBuyer' : 'qs.monitorSupplier'));
       return b;
     };
@@ -2804,7 +2810,7 @@ function trackTenderButton(t0) {
     if (!cloud || !state.user) { toast(t('auth.needed'), { bad: true }); return; }
     btn.disabled = true;
     try {
-      await cloud.track(cid, { org: t0.buyer || '', tid: t0.tid, sp: '', title: t0.title || '', number: '', buyer: t0.buyer_name || '', supplier: '' });
+      await cloud.track(cid, { org: t0.buyer || '', tid: t0.tid, sp: '', title: t0.title || '', number: '', buyer: t0.buyer_name || '', supplier: '' }); nudgeSync();
       toast(t('tr.added'));
       btn.replaceWith(done());
     } catch (e) { btn.disabled = false; toast(t('tr.failed') + ' ' + (e.message || ''), { bad: true }); }
@@ -2825,7 +2831,7 @@ function trackTreasuryButton(d) {
     btn.disabled = true;
     try {
       await cloud.track(cid, { org: d.edrpou, tid: '', sp: String(d.id), signed: (d.documentDate || '').slice(0, 10), title: d.subject || '',
-        number: d.documentNumber || '', buyer: (orgByCode(d.edrpou) || {}).name || '', supplier: sup.name || '' });
+        number: d.documentNumber || '', buyer: (orgByCode(d.edrpou) || {}).name || '', supplier: sup.name || '' }); nudgeSync();
       toast(t('tr.added'));
       btn.replaceWith(done());
     } catch (e) { btn.disabled = false; toast(t('tr.failed') + ' ' + (e.message || ''), { bad: true }); }

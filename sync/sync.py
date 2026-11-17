@@ -487,6 +487,8 @@ def main():
     parser.add_argument("--role", default="buyer", help="role of the organisation being added: buyer or supplier")
     parser.add_argument("--remove", default="", help="remove an organisation (EDRPOU) from the watch list")
     parser.add_argument("--check", action="store_true", help="only report whether the app has new requests")
+    parser.add_argument("--tracked-only", action="store_true",
+                        help="re-read only the contracts and procurements on control (a minute or two, for new picks)")
     args = parser.parse_args()
 
     watch = load_watchlist()
@@ -505,6 +507,17 @@ def main():
         if os.environ.get("GITHUB_OUTPUT"):
             with open(os.environ["GITHUB_OUTPUT"], "a") as f:
                 f.write("run=%s\n" % ("true" if pending or new_tracked else "false"))
+                # Only new contracts on control: the quick run is enough.
+                f.write("mode=%s\n" % ("full" if pending else "tracked"))
+        return
+    if args.tracked_only:
+        rows = sync_tracked()
+        index = read_json(INDEX_FILE, {})
+        if index and rows is not None:
+            # A new data version, so browsers fetch the fresh files.
+            index.update(generated_at=now_iso(), tracked=len(rows))
+            write_json(INDEX_FILE, index)
+        print("Готово: договорів на контролі %d" % len(rows or []))
         return
     if args.remove.strip():
         code = clean_edrpou(args.remove)

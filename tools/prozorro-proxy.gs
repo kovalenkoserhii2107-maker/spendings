@@ -6,9 +6,23 @@
  *
  *   ?action=search&kind=tenders|contracts&buyer=EDRPOU|supplier=EDRPOU|text=...&page=N
  *   ?action=tender&tid=UA-2026-10-15-007639-a     a procedure with its contracts, compacted
+ *   ?action=nudge                                   "something was just put on control": start
+ *                                                   the site's sync now instead of waiting
  *
- * Nothing else is fetched: no arbitrary URLs, no writes. Code: pages/tools/prozorro-proxy.gs.
+ * GitHub runs scheduled workflows unreliably, so this script also checks every 10 minutes
+ * (checkNew, a time trigger set up once with setupTrigger) whether users picked contracts or
+ * organisations the site has not read yet, and starts the sync workflow for them. That needs
+ * a GitHub token with "Actions: read and write" on the repository, kept in the Script
+ * Properties as GITHUB_TOKEN; without it the script only searches.
+ *
+ * Nothing else is fetched: no arbitrary URLs, no writes besides starting that workflow.
+ * Code: pages/tools/prozorro-proxy.gs.
  */
+var REPO = 'kovalenkoserhii2107-maker/spendings';
+var SITE_DATA = 'https://kovalenkoserhii2107-maker.github.io/spendings/data/';
+var PUB = 'https://firestore.googleapis.com/v1/projects/spending-monitor-2122b/databases/(default)/documents/pub?pageSize=300';
+var MIN_GAP_MS = 3 * 60 * 1000;   // no more than one start every 3 minutes
+var SENT_TTL_MS = 40 * 60 * 1000; // a pick already sent waits this long for its run
 var SITE = 'https://prozorro.gov.ua/api';
 var API = 'https://public-api.prozorro.gov.ua/api/2.5';
 var TID = /^UA-\d{4}-\d{2}-\d{2}-\d{6}-[a-z]$/;
@@ -19,6 +33,7 @@ function doGet(e) {
   try {
     if (p.action === 'search') out = search_(p);
     else if (p.action === 'tender') out = tender_(String(p.tid || ''));
+    else if (p.action === 'nudge') out = checkNew_();
     else out = { error: 'unknown action' };
   } catch (err) {
     out = { error: String(err).slice(0, 300) };
@@ -94,4 +109,76 @@ function tender_(tid) {
       contracts: contracts,
     },
   };
+}
+
+// ---- starting the site's sync -----------------------------------------------------------------
+
+function checkNew() {
+  checkNew_();
+}
+
+// Run once from the editor: a check every 10 minutes.
+function setupTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'checkNew') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('checkNew').timeBased().everyMinutes(10).create();
+}
+
+function checkNew_() {
+  var props = PropertiesService.getScriptProperties();
+  var token = props.getProperty('GITHUB_TOKEN');
+  if (!token) return { started: false, reason: 'no token' };
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return { started: false, reason: 'busy' };
+  try {
+    if (Date.now() - Number(props.getProperty('lastStart') || 0) < MIN_GAP_MS) return { started: false, reason: 'just started' };
+    var pub = pubLists_();
+    var tracked = getJson_(SITE_DATA + 'tracked/index.json?v=' + Date.now());
+    var index = getJson_(SITE_DATA + 'index.json?v=' + Date.now());
+    var haveKeys = (tracked.items || []).map(function (r) { return r.key; });
+    var haveOrgs = (index.orgs || []).map(function (o) { return o.edrpou; });
+    var sent = JSON.parse(props.getProperty('sent') || '{}');
+    var now = Date.now();
+    Object.keys(sent).forEach(function (k) { if (now - sent[k] > SENT_TTL_MS) delete sent[k]; });
+    var newKeys = pub.keys.filter(function (k) { return haveKeys.indexOf(k) < 0 && !sent[k]; });
+    var newOrgs = pub.orgs.filter(function (k) { return haveOrgs.indexOf(k) < 0 && !sent['org:' + k]; });
+    if (!newKeys.length && !newOrgs.length) return { started: false, reason: 'nothing new' };
+    var mode = newOrgs.length ? 'full' : 'tracked';
+    var res = UrlFetchApp.fetch('https://api.github.com/repos/' + REPO + '/actions/workflows/sync.yml/dispatches', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json' },
+      payload: JSON.stringify({ ref: 'main', inputs: { mode: mode } }),
+    });
+    if (res.getResponseCode() !== 204) return { started: false, reason: 'GitHub ' + res.getResponseCode() };
+    newKeys.forEach(function (k) { sent[k] = now; });
+    newOrgs.forEach(function (k) { sent['org:' + k] = now; });
+    props.setProperties({ sent: JSON.stringify(sent), lastStart: String(now) });
+    return { started: true, mode: mode, contracts: newKeys.length, orgs: newOrgs.length };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getJson_(url) {
+  return JSON.parse(UrlFetchApp.fetch(url, { muteHttpExceptions: true }).getContentText() || '{}');
+}
+
+// What users follow, from the anonymous public lists (codes and contract ids only).
+function pubLists_() {
+  var keys = {}, orgs = {}, url = PUB;
+  while (url) {
+    var page = getJson_(url);
+    (page.documents || []).forEach(function (d) {
+      var f = d.fields || {};
+      ((f.tracked || {}).arrayValue || {}).values && f.tracked.arrayValue.values.forEach(function (v) {
+        var cid = (((v.mapValue || {}).fields || {}).cid || {}).stringValue;
+        if (cid) keys[cid] = 1;
+      });
+      ((f.orgs || {}).arrayValue || {}).values && f.orgs.arrayValue.values.forEach(function (v) {
+        var code = (((v.mapValue || {}).fields || {}).edrpou || {}).stringValue;
+        if (code) orgs[code] = 1;
+      });
+    });
+    url = page.nextPageToken ? PUB + '&pageToken=' + page.nextPageToken : null;
+  }
+  return { keys: Object.keys(keys), orgs: Object.keys(orgs) };
 }

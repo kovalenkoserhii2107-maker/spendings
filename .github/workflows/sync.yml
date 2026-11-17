@@ -3,7 +3,9 @@ name: Синхронізація і публікація
 on:
   schedule:
     - cron: "17 */6 * * *"   # кожні 6 годин (час UTC)
-    - cron: "5,35 * * * *"   # нове з додатка: організації й договори на контролі
+    # Нове з додатка (організації, договори на контролі). GitHub часто пропускає часті
+    # розклади, тож надійний запуск — ще й зі скрипта-посередника (workflow_dispatch).
+    - cron: "8,18,28,38,48,58 * * * *"
   push:
     branches: [main]
   workflow_dispatch:
@@ -20,6 +22,10 @@ on:
         description: "Прибрати організацію: код ЄДРПОУ"
         required: false
         default: ""
+      mode:
+        description: "full — усе; tracked — лише договори й закупівлі на контролі (1–2 хв)"
+        required: false
+        default: "full"
 
 permissions:
   contents: write   # зберігати оновлені дані в репозиторій
@@ -39,6 +45,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       run: ${{ steps.check.outputs.run }}
+      mode: ${{ steps.check.outputs.mode }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -48,11 +55,16 @@ jobs:
         id: check
         env:
           SCHEDULE: ${{ github.event.schedule }}
+          MODE: ${{ inputs.mode }}
         run: |
-          if [ "$SCHEDULE" = "5,35 * * * *" ]; then
+          if [ "$SCHEDULE" = "8,18,28,38,48,58 * * * *" ]; then
             python3 sync/sync.py --check
+          elif [ "$MODE" = "tracked" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "mode=tracked" >> "$GITHUB_OUTPUT"
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "mode=full" >> "$GITHUB_OUTPUT"
           fi
 
   update:
@@ -75,7 +87,13 @@ jobs:
           ADD: ${{ inputs.add }}
           NOTE: ${{ inputs.note }}
           REMOVE: ${{ inputs.remove }}
-        run: python3 sync/sync.py --add "$ADD" --note "$NOTE" --remove "$REMOVE"
+          MODE: ${{ needs.check.outputs.mode }}
+        run: |
+          if [ "$MODE" = "tracked" ]; then
+            python3 sync/sync.py --tracked-only
+          else
+            python3 sync/sync.py --add "$ADD" --note "$NOTE" --remove "$REMOVE"
+          fi
 
       - name: Зберегти дані в репозиторій
         run: |
