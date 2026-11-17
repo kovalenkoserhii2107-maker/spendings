@@ -28,6 +28,12 @@ rules_version = '2';
 //     /{collection}/{id}        contracts, acts, addendums, penalties, payments,
 //                               liabilities, reports, signals
 //     /meta/{collection}        fingerprints of uploaded records (incremental upload)
+//   registryAccess/{email}      who may use the sub-project registry (added in the console
+//                               only): {expert, admin}; each person reads only their own entry
+//   registry/{code}             the team's compliance working table, one sub-project per
+//                               document, with the Prozorro links and notes the team adds;
+//                               read and written only by people in registryAccess
+//   registryMeta/{id}           the last upload of the table
 //   watchlist/{edrpou}, tracked/{contractId}   before v0.10: closed; a legacy contract
 //                               is read once by whoever picked it, to move it over
 service cloud.firestore {
@@ -36,6 +42,10 @@ service cloud.firestore {
     function signedIn() {
       return request.auth != null && request.auth.token.firebase.sign_in_provider == 'google.com'
         && request.auth.token.email_verified == true;
+    }
+    // Listed in registryAccess by the e-mail of the Google account.
+    function isRegistry() {
+      return signedIn() && exists(/databases/$(database)/documents/registryAccess/$(request.auth.token.email.lower()));
     }
     function isAnalyst() {
       return signedIn() && exists(/databases/$(database)/documents/analysts/$(request.auth.uid));
@@ -195,6 +205,23 @@ service cloud.firestore {
           && (get(/databases/$(database)/documents/orgs/$(edrpou)).data.uploadedBy == request.auth.uid || isAnalyst());
         allow delete: if false;
       }
+    }
+
+    match /registryAccess/{email} {
+      allow get: if signedIn() && request.auth.token.email.lower() == email;
+      allow list, write: if false;
+    }
+    match /registry/{code} {
+      allow read: if isRegistry();
+      allow create, update: if isRegistry() && code.matches('^[0-9A-Za-zА-Яа-яІіЇїЄє_.-]{2,60}$')
+        && request.resource.data.keys().hasOnly(['code', 't', 'tenders', 'paid', 'link', 'pz', 'risk', 'note',
+                                                 'updatedBy', 'updatedByName', 'updatedAt'])
+        && (!('note' in request.resource.data) || str(request.resource.data.note, 4000));
+      allow delete: if false;
+    }
+    match /registryMeta/{id} {
+      allow read: if isRegistry();
+      allow write: if isRegistry() && id == 'import' && request.resource.data.by == request.auth.uid;
     }
   }
 }

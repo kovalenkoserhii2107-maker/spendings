@@ -30,6 +30,7 @@ export async function init({ onUser, lang }) {
     current = user;
     if (unwatch && !user) { unwatch(); unwatch = null; }
     if (!user) { unwatchMine.forEach((u) => u()); unwatchMine = []; myHashValue = null; Object.assign(mine, { orgs: new Map(), tracked: new Map(), shared: new Map(), seen: { orgs: false, tracked: false, shared: false } }); }
+    if (!user && unwatchRegistry) unwatchRegistry();
     if (user) { saveProfile(user, lang()).catch(() => {}); registerEmail(user).catch(() => {}); }
     else sessionStorage.removeItem('driveToken');
     onUser(user);
@@ -466,4 +467,69 @@ export async function exportFiles(orgFolderName, files, onProgress) {
     onProgress && onProgress(++done, files.length);
   }
   return { folderUrl: base.webViewLink, files: out };
+}
+
+// ---- Sub-project registry (the team's compliance working table) ----------------------------
+//
+// Private to the people listed in registryAccess/{email} (added in the console): the table's
+// rows, the Prozorro links the team confirms and what the app found for them.
+//   registryAccess/{email}   {expert: name in the table, admin: bool}
+//   registry/{code}          t: the table's own fields; tenders: its rows of the Tenders sheet;
+//                            paid: its line of the Payments sheet; link: Prozorro ids the team
+//                            confirmed; pz: what Prozorro says of them; risk: hints; note
+//   registryMeta/import      the last upload of the table
+
+export async function registryAccess() {
+  if (!current || !current.email) return null;
+  try {
+    const snap = await fb.getDoc(fb.doc(db, 'registryAccess', current.email.toLowerCase()));
+    return snap.exists() ? snap.data() : null;
+  } catch (e) {
+    return null;  // no access: the rules refuse the read
+  }
+}
+
+let unwatchRegistry = null;
+export function watchRegistry(cb) {
+  if (unwatchRegistry) unwatchRegistry();
+  const out = { rows: new Map(), meta: null };
+  const u1 = fb.onSnapshot(fb.collection(db, 'registry'), (snap) => {
+    snap.docChanges().forEach((ch) => {
+      if (ch.type === 'removed') out.rows.delete(ch.doc.id);
+      else out.rows.set(ch.doc.id, ch.doc.data());
+    });
+    cb(out);
+  }, () => cb(out));
+  const u2 = fb.onSnapshot(fb.doc(db, 'registryMeta', 'import'), (snap) => {
+    out.meta = snap.exists() ? snap.data() : null;
+    cb(out);
+  }, () => {});
+  unwatchRegistry = () => { u1(); u2(); unwatchRegistry = null; };
+  return unwatchRegistry;
+}
+
+const regId = (code) => String(code).replace(/[\/\s]+/g, '_').slice(0, 60);
+
+// The table's rows (table fields only: links, Prozorro data and notes stay as they are).
+export async function importRegistry(rows, meta, onProgress) {
+  let done = 0;
+  for (let i = 0; i < rows.length; i += 400) {
+    const batch = fb.writeBatch(db);
+    for (const r of rows.slice(i, i + 400)) {
+      batch.set(fb.doc(db, 'registry', regId(r.code)), storable({ code: r.code, t: r.t, tenders: r.tenders || [], paid: r.paid || null }), { merge: true });
+    }
+    await batch.commit();
+    done += Math.min(400, rows.length - i);
+    onProgress && onProgress(done, rows.length);
+  }
+  await fb.setDoc(fb.doc(db, 'registryMeta', 'import'), Object.assign(storable(meta), {
+    by: current.uid, byName: current.displayName || current.email || '', at: fb.serverTimestamp(),
+  }));
+}
+
+// Our side of one sub-project: confirmed links, Prozorro data, risk hints, a note.
+export function updateRegistry(code, patch) {
+  return fb.setDoc(fb.doc(db, 'registry', regId(code)), Object.assign(storable(patch), {
+    updatedBy: current.uid, updatedByName: current.displayName || current.email || '', updatedAt: fb.serverTimestamp(),
+  }), { merge: true });
 }

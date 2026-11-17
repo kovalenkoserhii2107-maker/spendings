@@ -182,23 +182,63 @@ function tender_(tid) {
   var contracts = refs.map(function (c, i) {
     var x = c;
     try { if (full[i].getResponseCode() === 200) x = JSON.parse(full[i].getContentText()).data; } catch (e) { /* keep the short copy */ }
+    var changes = (x.changes || []).filter(function (ch) { return ch.status === 'active'; });
     return {
       id: x.id, cid: x.contractID, number: x.contractNumber || '', title: x.title || '', status: x.status,
       signed: day_(x.dateSigned), start: day_((x.period || {}).startDate), end: day_((x.period || {}).endDate),
       value: x.value ? { amount: x.value.amount, currency: x.value.currency } : null,
       suppliers: (x.suppliers || []).map(org_),
+      changes: changes.length, last_change: changes.length ? day_(changes[changes.length - 1].dateSigned || changes[changes.length - 1].date) : null,
+      change_types: changes.reduce(function (acc, ch) { (ch.rationaleTypes || []).forEach(function (r) { if (acc.indexOf(r) < 0) acc.push(r); }); return acc; }, []),
     };
   });
   var buyer = org_(t.procuringEntity);
+  // Complaints to the Antimonopoly Committee: of the procedure and of its awards.
+  var complaints = (t.complaints || []).concat((t.awards || []).reduce(function (acc, a) { return acc.concat(a.complaints || []); }, []))
+    .filter(function (c) { return c.type === 'complaint'; });
+  var open = ['draft', 'pending', 'accepted'];
+  var cls = (((t.items || [])[0] || {}).classification) || {};
+  var dream = DREAM.exec([t.title || '', t.description || ''].join(' '));
   return {
     tender: {
       id: t.id, tid: t.tenderID, title: t.title || '', status: t.status, method: t.procurementMethodType || '',
       date: day_(t.dateCreated), value: t.value ? { amount: t.value.amount, currency: t.value.currency } : null,
+      deadline: day_((t.tenderPeriod || {}).endDate), cpv: cls.id ? cls.id + ' ' + (cls.description || '') : '',
       buyer: buyer.code, buyer_name: buyer.name,
       funders: (t.funders || []).map(function (f) { return { code: (f.identifier || {}).id || '', name: f.name || '' }; }),
+      bids: t.numberOfBids != null ? t.numberOfBids : (t.bids || []).length || null,
+      disqualified: (t.awards || []).filter(function (a) { return a.status === 'unsuccessful'; }).length,
+      complaints: { n: complaints.length, open: complaints.filter(function (c) { return open.indexOf(c.status) >= 0; }).length,
+                    satisfied: complaints.filter(function (c) { return c.status === 'satisfied' || c.status === 'resolved'; }).length },
+      sasu: sasu_(t.id),
+      dream_id: dream ? 'DREAM-UA-' + dream[1] + '-' + dream[2].toUpperCase() : '',
       contracts: contracts,
     },
   };
+}
+
+var DREAM = /DREAM\s*[-‐‑–]\s*UA\s*[-‐‑–]\s*(\d{6})\s*[-‐‑–]\s*([0-9A-Za-z]{8})/;
+var AUDIT = 'https://audit-api.prozorro.gov.ua/api/2.5';
+
+// State Audit Service monitorings of a procedure: how many, any violation found, any going on.
+function sasu_(id) {
+  try {
+    var list = JSON.parse(UrlFetchApp.fetch(AUDIT + '/tenders/' + id + '/monitorings', { muteHttpExceptions: true }).getContentText() || '{}').data || [];
+    if (!list.length) return { n: 0 };
+    var full = UrlFetchApp.fetchAll(list.map(function (m) { return { url: AUDIT + '/monitorings/' + m.id, muteHttpExceptions: true }; }));
+    var out = { n: list.length, violation: false, active: false, ids: [] };
+    full.forEach(function (res) {
+      try {
+        var m = JSON.parse(res.getContentText()).data || {};
+        out.ids.push(m.monitoring_id || m.id);
+        if ((m.conclusion || {}).violationOccurred) out.violation = true;
+        if (m.status === 'active' || m.status === 'draft') out.active = true;
+      } catch (e) { /* skip one */ }
+    });
+    return out;
+  } catch (e) {
+    return null;
+  }
 }
 
 // ---- starting the site's sync -----------------------------------------------------------------

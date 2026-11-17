@@ -282,11 +282,15 @@ SUBPROJECT = re.compile(r"(?<![A-Z0-9])([A-Z]{2}\d{2}[A-Z]?)_(\d{2})(?![0-9])")
 _TO_LATIN = str.maketrans("АВСЕНІКМОРТХ", "ABCEHIKMOPTX")
 
 
+def _list(x):
+    return x if isinstance(x, list) else []  # the EIB catalogue keeps a count there
+
+
 def subproject(t, contracts=None):
     """{"code": "OD08_03", "object": "OD08"} or None."""
     cs = contracts if contracts is not None else t.get("contracts") or []
     texts = [c.get("number") for c in cs] + [t.get("title")] \
-        + [d.get("title") for c in cs for d in c.get("docs") or []] + [d.get("title") for d in t.get("docs") or []]
+        + [d.get("title") for c in cs for d in _list(c.get("docs"))] + [d.get("title") for d in _list(t.get("docs"))]
     for x in texts:
         m = SUBPROJECT.search(str(x or "").upper().translate(_TO_LATIN))
         if m and not m.group(1).startswith("UA"):

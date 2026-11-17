@@ -632,7 +632,7 @@ function shell(route, page) {
       h('a', { class: 'brand', href: '#/' },
         logo(),
         h('span', null, h('b', null, t('app.name')), h('small', null, t('app.tagline')))),
-      h('nav', { class: 'nav', 'aria-label': t('nav.label') }, NAV.map(link)),
+      h('nav', { class: 'nav', 'aria-label': t('nav.label') }, NAV.concat(typeof hasRegistry === 'function' && hasRegistry() ? [['#/registry', 'registry', 'building', 'nav.registry']] : []).map(link)),
       h('div', { class: 'top-meta' },
         h('span', { class: 'chip' + (failed ? ' warn' : ''), title: last ? t('top.lastCheck', { at: ftime(last.finished_at) }) : '' }, h('i'), last ? ftime(last.finished_at).slice(0, 5) + ' ' + ftime(last.finished_at).slice(11) : '—'),
         langSwitch(),
@@ -3432,6 +3432,7 @@ function render() {
   else if (route === 'tracked' && /^([0-9a-f]{32}|sp\d{3,20}|tn[0-9a-f]{32})$/.test(parts[1] || '')) { page = trackedDossier(parts[1]); key = 'tracked'; }
   else if (route === 'orgs') { page = trackedPage('orgs'); key = 'tracked'; }
   else if (route === 'org' && /^\d+$/.test(parts[1] || '')) { page = orgPage(parts[1], parts[2], parts[3]); key = 'tracked'; }
+  else if (route === 'registry' && typeof registryPage === 'function') { page = parts[1] ? registryCard(decodeURIComponent(parts[1])) : registryPage(); key = 'registry'; }
   else if (route === 'feed') page = feedPage(parts[1]);
   else if (route === 'search') page = searchPage(parts[1]);
   else if (route === 'method') { page = methodPage(); key = 'settings'; }
@@ -3480,9 +3481,11 @@ async function boot() {
           });
           loadDriveState();
           autoSyncDb();
+          if (typeof registryInit === 'function') registryInit();
           if (!was) setTimeout(showInstallBanner, 1200);
         } else {
           state.reviews = new Map();
+          if (typeof REG !== 'undefined') Object.assign(REG, { access: null, rows: new Map(), meta: null });
           state.mine = { orgs: new Map(), tracked: new Map(), shared: new Map(), ready: false };
           applyScope();
           document.querySelectorAll('.install').forEach((n) => n.remove());

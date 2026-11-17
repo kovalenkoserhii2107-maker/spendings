@@ -16,6 +16,7 @@ const SHELL = [
   'i18n.js?v=' + BUILD,
   'app.js?v=' + BUILD,
   'cloud.js?v=' + BUILD,
+  'registry.js?v=' + BUILD,
   'manifest.webmanifest',
   'icon.svg',
   'icons/icon-192.png',

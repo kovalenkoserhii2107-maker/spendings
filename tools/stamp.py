@@ -14,7 +14,7 @@ import sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 # Everything the browser loads apart from data/.
-SOURCES = ["VERSION", "index.html", "style.css", "firebase-config.js", "i18n.js", "app.js", "cloud.js", "sw.js",
+SOURCES = ["VERSION", "index.html", "style.css", "firebase-config.js", "i18n.js", "app.js", "cloud.js", "registry.js", "sw.js",
            "manifest.webmanifest", "icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png",
            "icons/apple-touch-icon.png"]
 STAMPED = ["index.html", "app.js", "sw.js"]
