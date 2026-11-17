@@ -2580,7 +2580,7 @@ function feedPage(preset) {
 // A code (EDRPOU) finds the organisation: its card with "start monitoring", its procedures and
 // contracts in Prozorro, and its Treasury contracts of the last year. Any other text searches
 // Prozorro procedures. Each contract can be taken on control right from here.
-const PZ_PROXY = 'PROXY_URL';
+const PZ_PROXY = 'https://script.google.com/macros/s/AKfycbxJsXhPf2vr0tM-TpXwBwR81RKeq6Vs01cIsjtCgh-M3UqamFFpHd4iM11ezasjac4/exec';
 // Something was just put on control or on monitoring: ask the proxy to start the sync now
 // (GitHub runs its schedule unreliably). Fire and forget.
 function nudgeSync() {
