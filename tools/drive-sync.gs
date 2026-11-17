@@ -40,6 +40,10 @@ var TIME_LIMIT_MS = 5 * 60 * 1000; // Apps Script stops a run at 6 minutes
 function doGet(e) {
   var p = (e && e.parameter) || {};
   var en = p.lang === 'en';
+  // From a contract's card on the site: copy its documents now, or just show them.
+  if ((p.action === 'copy' || p.action === 'open') && /^[0-9a-f]{32}$/.test(p.cid || '')) {
+    return contractPage_(p.cid, p.action === 'copy', en);
+  }
   var uid = String(p.uid || '');
   if (!/^[A-Za-z0-9]{20,64}$/.test(uid)) {
     return page_(en ? 'Open this from the app' : 'Відкрийте це з додатка',
@@ -58,14 +62,18 @@ function doGet(e) {
     { url: 'https://drive.google.com/drive/folders/' + section, label: en ? 'Open the folder' : 'Відкрити папку' });
 }
 
-function page_(title, text, link) {
+function page_(title, text, link, bodyHtml) {
   var html = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<style>body{font:16px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:40px 20px;background:#EEF2F7;color:#1C1C1E}' +
     'main{max-width:520px;margin:0 auto;background:#fff;border-radius:24px;padding:28px;box-shadow:0 1px 3px rgba(15,23,42,.08)}' +
     'small{display:block;color:#5B5F66;font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:12px;margin-bottom:6px}' +
-    'h1{font-size:24px;margin:0 0 10px}a{display:inline-block;margin-top:14px;padding:10px 18px;border-radius:999px;background:#000;color:#fff;text-decoration:none;font-weight:700}</style>' +
-    '<main><small>Монітор розрахунків</small><h1>' + esc_(title) + '</h1><p>' + esc_(text) + '</p>' +
-    (link ? '<a href="' + esc_(link.url) + '" target="_blank" rel="noopener">' + esc_(link.label) + '</a>' : '') + '</main>';
+    'h1{font-size:24px;margin:0 0 10px}h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#5B5F66;margin:22px 0 6px}' +
+    'a.btn,main>a{display:inline-block;margin-top:14px;padding:10px 18px;border-radius:999px;background:#000;color:#fff;text-decoration:none;font-weight:700}' +
+    '.sub{color:#5B5F66;margin:0}.ok{color:#0B6E62;font-weight:700}ul{list-style:none;padding:0;margin:0}' +
+    'li{display:flex;justify-content:space-between;gap:12px;padding:9px 12px;border-radius:12px;background:#F3F5F8;margin-bottom:6px}' +
+    'li a{color:#1C1C1E;font-weight:600;text-decoration:none;word-break:break-word}li span{color:#5B5F66;white-space:nowrap;font-size:13px}</style>' +
+    '<main><small>Монітор розрахунків</small><h1>' + esc_(title) + '</h1>' + (text ? '<p>' + esc_(text) + '</p>' : '') +
+    (link ? '<a href="' + esc_(link.url) + '" target="_blank" rel="noopener">' + esc_(link.label) + '</a>' : '') + (bodyHtml || '') + '</main>';
   return HtmlService.createHtmlOutput(html).setTitle('Монітор розрахунків — ' + title);
 }
 
@@ -95,59 +103,135 @@ function syncAll() {
   var props = PropertiesService.getUserProperties();
   var uid = props.getProperty('uid');
   if (!uid) { Logger.log('Не підключено: відкрийте веб-застосунок із додатка.'); return; }
-  var me = hash_(uid);
+  var ctx = { uid: uid, me: hash_(uid), props: props, started: started, section: sectionFolder_() };
   var index = getJson_(SITE + 'data/tracked/index.json?v=' + started);
-  var rows = (index.items || []).filter(function (r) { return (r.viewers || []).indexOf(me) >= 0; });
-  var section = sectionFolder_();
+  var rows = (index.items || []).filter(function (r) { return (r.viewers || []).indexOf(ctx.me) >= 0; });
   retype_(props);
   var copied = 0, pending = 0;
   rows.forEach(function (row) {
-    var own = !row.owners || row.owners.indexOf(me) >= 0;
-    row._section = own ? 'Мої' : SHARED;
-    var base = own ? section : folder_(section, SHARED);
-    var dir = folder_(folder_(base, orgFolderName_(row)), contractFolderName_(row));
-    row._folder = 'https://drive.google.com/drive/folders/' + dir;
-    // The site finds a contract's copies by these tags (drive.file: same Google project).
-    var tagged = props.getProperty('tag:' + row.key);
-    if (!tagged) tag_(dir, { monitorCid: row.key, monitorPart: 'folder' });
-    if (Date.now() - started > TIME_LIMIT_MS) { pending++; return; }
-    var snap;
-    try {
-      snap = getJson_(SITE + 'data/tracked/' + row.key + '.json?v=' + started);
-    } catch (e) {
-      Logger.log('Не прочитано ' + row.key + ': ' + e);
-      return;
-    }
-    var docs = ((snap.contract || {}).docs || []).map(function (d) { return [isChange_(d) ? 'changes' : 'contract', d]; })
-      .concat(((snap.tender || {}).docs || []).map(function (d) { return ['tender', d]; }));
-    var subs = {};
-    docs.forEach(function (x) {
-      var part = x[0], d = x[1];
-      if (Date.now() - started > TIME_LIMIT_MS) { pending++; return; }
-      var key = 'doc:' + uid.slice(0, 6) + ':' + (d.id || d.url) + ':' + (d.date || '');
-      var have = props.getProperty(key);
-      if (have) {
-        if (!tagged) tag_(have, { monitorCid: row.key, monitorPart: part });
-        return;
-      }
-      try {
-        var res = UrlFetchApp.fetch(d.url, { muteHttpExceptions: true, followRedirects: true });
-        if (res.getResponseCode() !== 200) { Logger.log('HTTP ' + res.getResponseCode() + ' ' + d.title); return; }
-        subs[part] = subs[part] || folder_(dir, PARTS[part]);
-        var id = upload_(res.getBlob(), fileName_(d), subs[part], 'Prozorro: ' + (d.id || '') + '\n' + d.url,
-          { monitorCid: row.key, monitorPart: part, monitorDoc: d.id || '' });
-        props.setProperty(key, id);
-        copied++;
-      } catch (e) {
-        Logger.log('Не скопійовано ' + d.title + ': ' + e);
-      }
-    });
-    if (!tagged) props.setProperty('tag:' + row.key, '1');
+    var r = copyRow_(row, ctx, true);
+    copied += r.copied;
+    pending += r.pending;
   });
-  writeRegister_(section, rows);
+  writeRegister_(ctx.section, rows);
   Logger.log('Договорів: ' + rows.length + '; скопійовано документів: ' + copied +
     (pending ? '; решту буде скопійовано наступного запуску' : ''));
   return copied;
+}
+
+// One contract: its folder, and (when copy) the documents not copied yet.
+function copyRow_(row, ctx, copy) {
+  var props = ctx.props, uid = ctx.uid;
+  var own = !row.owners || row.owners.indexOf(ctx.me) >= 0;
+  row._section = own ? 'Мої' : SHARED;
+  var base = own ? ctx.section : folder_(ctx.section, SHARED);
+  var dir = folder_(folder_(base, orgFolderName_(row)), contractFolderName_(row));
+  row._folder = 'https://drive.google.com/drive/folders/' + dir;
+  var out = { dir: dir, copied: 0, pending: 0 };
+  // The site finds a contract's copies by these tags.
+  var tagged = props.getProperty('tag:' + row.key);
+  if (!tagged) tag_(dir, { monitorCid: row.key, monitorPart: 'folder' });
+  if (!copy) return out;
+  if (Date.now() - ctx.started > TIME_LIMIT_MS) { out.pending++; return out; }
+  var snap;
+  try {
+    snap = getJson_(SITE + 'data/tracked/' + row.key + '.json?v=' + ctx.started);
+  } catch (e) {
+    Logger.log('Не прочитано ' + row.key + ': ' + e);
+    return out;
+  }
+  var docs = ((snap.contract || {}).docs || []).map(function (d) { return [isChange_(d) ? 'changes' : 'contract', d]; })
+    .concat(((snap.tender || {}).docs || []).map(function (d) { return ['tender', d]; }));
+  var subs = {};
+  docs.forEach(function (x) {
+    var part = x[0], d = x[1];
+    if (Date.now() - ctx.started > TIME_LIMIT_MS) { out.pending++; return; }
+    var key = 'doc:' + uid.slice(0, 6) + ':' + (d.id || d.url) + ':' + (d.date || '');
+    var have = props.getProperty(key);
+    if (have) {
+      if (!tagged) tag_(have, { monitorCid: row.key, monitorPart: part });
+      return;
+    }
+    try {
+      var res = UrlFetchApp.fetch(d.url, { muteHttpExceptions: true, followRedirects: true });
+      if (res.getResponseCode() !== 200) { Logger.log('HTTP ' + res.getResponseCode() + ' ' + d.title); return; }
+      subs[part] = subs[part] || folder_(dir, PARTS[part]);
+      var id = upload_(res.getBlob(), fileName_(d), subs[part], 'Prozorro: ' + (d.id || '') + '\n' + d.url,
+        { monitorCid: row.key, monitorPart: part, monitorDoc: d.id || '' });
+      props.setProperty(key, id);
+      out.copied++;
+    } catch (e) {
+      Logger.log('Не скопійовано ' + d.title + ': ' + e);
+    }
+  });
+  if (!tagged) props.setProperty('tag:' + row.key, '1');
+  return out;
+}
+
+// The page for one contract: copies what is missing (copy) and lists the folder.
+function contractPage_(cid, copy, en) {
+  var props = PropertiesService.getUserProperties();
+  var uid = props.getProperty('uid');
+  if (!uid) {
+    return page_(en ? 'Google Drive is not connected' : 'Google Диск не підключено',
+      en ? 'Connect it once in Settings of “Монітор розрахунків”.' : 'Підключіть його один раз у «Налаштуваннях» додатка «Монітор розрахунків».', null);
+  }
+  var ctx = { uid: uid, me: hash_(uid), props: props, started: Date.now(), section: sectionFolder_() };
+  var index = getJson_(SITE + 'data/tracked/index.json?v=' + ctx.started);
+  var row = (index.items || []).filter(function (r) { return r.key === cid && (r.viewers || []).indexOf(ctx.me) >= 0; })[0];
+  if (!row) {
+    return page_(en ? 'Not ready yet' : 'Ще не готово',
+      en ? 'The site has not read this contract yet. Try again within an hour.' : 'Сайт ще не прочитав цей договір. Спробуйте протягом години.', null);
+  }
+  var r = copyRow_(row, ctx, copy);
+  var tree = listTree_(r.dir);
+  var title = '№ ' + (row.number || '—') + (row.signed ? ' від ' + row.signed.split('-').reverse().join('.') : '');
+  var status = copy ? (en ? 'Copied now: ' : 'Скопійовано зараз: ') + r.copied + (r.pending ? (en ? '; the rest on the next run' : '; решту — наступного разу') : '') : '';
+  var body = '<p class="sub">' + esc_(join_([row.buyer_name, row.supplier_name], ' → ')) + '</p>' +
+    (status ? '<p class="ok">' + esc_(status) + '</p>' : '') +
+    '<a class="btn" href="https://drive.google.com/drive/folders/' + r.dir + '" target="_blank" rel="noopener">' + (en ? 'Open the contract folder' : 'Відкрити папку договору') + '</a>';
+  tree.forEach(function (g) {
+    body += '<h2>' + esc_(g.name) + '</h2><ul>' + g.files.map(function (f) {
+      return '<li><a href="' + esc_(f.webViewLink) + '" target="_blank" rel="noopener">' + esc_(f.name) + '</a><span>' +
+        esc_(size_(f.size)) + (f.tagged ? '' : ' · ?') + '</span></li>';
+    }).join('') + '</ul>';
+  });
+  if (!tree.length) body += '<p class="sub">' + (en ? 'No files yet.' : 'Файлів ще немає.') + '</p>';
+  return page_(title, '', null, body);
+}
+
+// The contract folder: files of each part folder, in the folders' order.
+function listTree_(dir) {
+  var items = children_(dir);
+  var groups = [];
+  var loose = items.filter(function (f) { return f.mimeType !== FOLDER_MIME; });
+  if (loose.length) groups.push({ name: '—', files: loose });
+  items.filter(function (f) { return f.mimeType === FOLDER_MIME; })
+    .sort(function (a, b) { return a.name < b.name ? -1 : 1; })
+    .forEach(function (f) {
+      var files = children_(f.id).filter(function (x) { return x.mimeType !== FOLDER_MIME; });
+      if (files.length) groups.push({ name: f.name, files: files });
+    });
+  return groups;
+}
+
+function children_(id) {
+  var q = "'" + id + "' in parents and trashed = false";
+  var res = drive_('get', 'https://www.googleapis.com/drive/v3/files?pageSize=300&orderBy=name&spaces=drive' +
+    '&fields=files(id,name,mimeType,webViewLink,size,appProperties)&q=' + encodeURIComponent(q));
+  var files = JSON.parse(res.getContentText()).files || [];
+  files.forEach(function (f) { f.tagged = !!(f.appProperties && f.appProperties.monitorCid); });
+  return files;
+}
+
+function size_(n) {
+  n = Number(n || 0);
+  if (!n) return '';
+  return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+}
+
+function join_(parts, sep) {
+  return parts.filter(function (x) { return x; }).join(sep);
 }
 
 // Annexes and additional agreements go to their own folder.
