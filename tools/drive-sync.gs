@@ -106,7 +106,7 @@ function syncAll() {
   var ctx = { uid: uid, me: hash_(uid), props: props, started: started, section: sectionFolder_() };
   var index = getJson_(SITE + 'data/tracked/index.json?v=' + started);
   var rows = (index.items || []).filter(function (r) { return (r.viewers || []).indexOf(ctx.me) >= 0; });
-  retype_(props);
+  retype_(props, started);
   var copied = 0, pending = 0;
   rows.forEach(function (row) {
     var r = copyRow_(row, ctx, true);
@@ -344,19 +344,21 @@ function mimeOf_(name, blob) {
 
 // Once per user: copies made before the fix were stored as "text/plain". Drive cannot
 // change a file's type in place, so they go to the bin and are copied again.
-function retype_(props) {
+function retype_(props, started) {
   if (props.getProperty('retyped')) return;
   var all = props.getProperties();
-  Object.keys(all).forEach(function (key) {
-    if (key.indexOf('doc:') !== 0) return;
+  var done = Object.keys(all).every(function (key) {
+    if (Date.now() - started > TIME_LIMIT_MS) return false;  // go on next run
+    if (key.indexOf('doc:') !== 0) return true;
     var res = drive_('get', 'https://www.googleapis.com/drive/v3/files/' + all[key] + '?fields=name,mimeType,trashed');
-    if (res.getResponseCode() !== 200) return;
+    if (res.getResponseCode() !== 200) return true;
     var f = JSON.parse(res.getContentText());
-    if (f.trashed || f.mimeType !== 'text/plain' || mimeOf_(f.name) === 'text/plain') return;
+    if (f.trashed || f.mimeType !== 'text/plain' || mimeOf_(f.name) === 'text/plain') return true;
     drive_('patch', 'https://www.googleapis.com/drive/v3/files/' + all[key], { trashed: true });
     props.deleteProperty(key);
+    return true;
   });
-  props.setProperty('retyped', '1');
+  if (done) props.setProperty('retyped', '1');
 }
 
 // A small CSV turned into a Google Sheet: conversion happens only in a one-request upload.

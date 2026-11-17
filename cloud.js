@@ -106,6 +106,10 @@ export async function saveReview(key, data) {
     updatedBy: current.uid, updatedByName: name, updatedAt: fb.serverTimestamp(),
   };
   const ref = fb.doc(db, 'reviews', key);
+  // Whoever opened a review keeps it; others (unless analysts) cannot overwrite it.
+  let prev = null;
+  try { const snap = await fb.getDoc(ref); prev = snap.exists() ? snap.data() : null; } catch (e) { /* treat as new */ }
+  doc.createdBy = prev ? (prev.createdBy || prev.updatedBy) : current.uid;
   const batch = fb.writeBatch(db);
   batch.set(ref, doc);
   batch.set(fb.doc(fb.collection(ref, 'history')), { status: doc.status, comment: doc.comment, by: current.uid, byName: name, at: fb.serverTimestamp() });
@@ -343,6 +347,14 @@ export async function uploadOrg(payload, onProgress) {
     manifests[name] = { ref: metaRef, h: fresh };
   }
 
+  // The organisation's own document goes first: the rules let only its uploader (or an
+  // analyst) write the records under it. The server timestamp is added after storable():
+  // copying it would turn the sentinel into a plain map, and the rules need the request time.
+  const orgDoc = () => Object.assign(storable(Object.assign({}, payload.org, {
+    records: total, uploadedBy: current.uid, uploadedByName: current.displayName || current.email || '',
+  })), { uploadedAt: fb.serverTimestamp() });
+  await fb.setDoc(orgRef, orgDoc());
+
   // Up to 400 writes per batch keeps each request well under Firestore's limits.
   let done = 0;
   onProgress && onProgress(0, plan.length);
@@ -356,11 +368,7 @@ export async function uploadOrg(payload, onProgress) {
   // Fingerprints are saved after the records, so an interrupted upload is redone next time.
   const batch = fb.writeBatch(db);
   for (const m of Object.values(manifests)) batch.set(m.ref, { h: m.h, at: fb.serverTimestamp() });
-  // The server timestamp is added after storable(): copying it would turn the
-  // sentinel into a plain map, and the rules require the real request time.
-  batch.set(orgRef, Object.assign(storable(Object.assign({}, payload.org, {
-    records: total, uploadedBy: current.uid, uploadedByName: current.displayName || current.email || '',
-  })), { uploadedAt: fb.serverTimestamp() }));
+  batch.set(orgRef, orgDoc());
   await batch.commit();
   return { written: plan.length, total };
 }

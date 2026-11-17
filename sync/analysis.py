@@ -26,6 +26,9 @@ CONCENTRATION_SHARE = 0.30
 PURCHASE_KEKV = re.compile(r"^(22[1-8]\d|2240|2250|2272|2273|2274|2275|2276|2282|31\d\d|3132|3142)$")
 
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+PZ_MISMATCH = 0.01  # Prozorro and Treasury prices of one contract may differ by 1%
+# A payment funded through the EIB (its sub-loans and the recovery programmes it finances).
+EIB_TX = re.compile(r"(ЄІБ|ЕІБ|\bEIB\b|НКПВУ|\bПВУ\b|європейськ\w*\s+інвестиційн\w*\s+банк)", re.IGNORECASE)
 
 # "дог.№127 від 16.06.2026", "договір №23/12-5 від 26.01.26", "дог №51/18 вiд 01.01.2026"
 CONTRACT_REF = re.compile(
@@ -92,6 +95,85 @@ def _money(x):
     return round(float(x or 0), 2)
 
 
+def apply_addendums(c):
+    """The contract value after its addendums (type 1 raises, 0 lowers the price).
+
+    An addendum's `amount` is normally the new full price. Some disposers put only
+    the change there: when `amount` equals the change and is under half the original
+    price, it is applied as a change, not as the new price.
+    """
+    c["value"], c["price_up"] = c["value0"], 0.0
+    for a in c["addendums"]:
+        delta = abs(a.get("delta") or 0)
+        if a.get("type") in (0, 1) and a.get("amount"):
+            if delta and abs(a["amount"] - delta) < 1.0 and a["amount"] < c["value0"] * 0.5:
+                c["value"] = _money(c["value"] + (delta if a["type"] == 1 else -delta))
+                a["as_delta"] = True
+            else:
+                c["value"] = a["amount"]  # an addendum restates the contract value
+        if a.get("type") == 1:
+            c["price_up"] += delta
+    return c
+
+
+def _signal(kind, severity, params, contract=None, amount=None, ext_ids=None):
+    # Signals carry numbers, not prose: the site words them in the reader's language.
+    return {
+        "type": kind, "severity": severity, "params": params,
+        "contract": contract["id"] if contract else None,
+        "date": (contract or {}).get("date"),
+        "party": (contract or {}).get("party_name"),
+        "amount": amount, "ext_ids": ext_ids or [],
+    }
+
+
+def contract_checks(c):
+    """Flags and signals of one Treasury contract (value, acts, payments, addendums)."""
+    flags, signals = [], []
+    value = c["value"]
+    tol = max(1.0, value * 0.001)
+    works = (c.get("cpv") or "").startswith("45")
+    threshold = WORKS_THRESHOLD if works else GOODS_THRESHOLD
+    if value and c["paid"] > value + tol:
+        flags.append("overpaid")
+        signals.append(_signal("overpaid", "high", {"paid": c["paid"], "value": value},
+                               c, _money(c["paid"] - value), [p.get("ext_id") for p in c["payments"]]))
+    if value and c["acts_sum"] > value + tol:
+        flags.append("acts_over")
+        signals.append(_signal("acts_over", "medium", {"acts": c["acts_sum"], "value": value}, c, _money(c["acts_sum"] - value)))
+    if c.get("price_up") and c.get("value0"):
+        share = c["price_up"] / c["value0"]
+        flags.append("price_up")
+        signals.append(_signal("price_up", "high" if share > PRICE_UP_LIMIT else "medium",
+                               {"delta": c["price_up"], "pct": round(share * 100, 1), "value0": c["value0"]},
+                               c, c["price_up"], [a.get("ext_id") for a in c["addendums"] if a.get("type") == 1]))
+    if c.get("role") == "disposer" and not c.get("tender") and not c.get("prozorro") and value >= threshold:
+        flags.append("no_tender")
+        signals.append(_signal("no_tender", "medium", {"value": value, "threshold": threshold, "works": works, "reason": c.get("reason") or ""}, c, value))
+    first_pay = c["payments"][0]["date"] if c["payments"] else None
+    if first_pay and c.get("date") and first_pay < c["date"]:
+        flags.append("paid_before")
+        signals.append(_signal("paid_before", "medium", {"first_pay": first_pay, "date": c["date"]}, c, None, [c["payments"][0].get("ext_id")]))
+    late = _workdays_between(_day(c.get("date")), _day(c.get("published")))
+    c["late_days"] = late
+    if c.get("role") == "disposer" and late > PUBLISH_WORKDAYS:
+        flags.append("late")  # in an organisation's report summarised as one line, not per contract
+    if c.get("role") == "disposer" and c["acts_sum"] and c["paid"] > c["acts_sum"] + max(1000, c["acts_sum"] * 0.05):
+        flags.append("paid_over_acts")
+        signals.append(_signal("paid_over_acts", "low", {"paid": c["paid"], "acts": c["acts_sum"]}, c, _money(c["paid"] - c["acts_sum"])))
+    return flags, signals
+
+
+def pz_mismatch(c, pz_value):
+    """Prozorro holds the current price; the Treasury's, after addendums, should agree within 1%."""
+    if not pz_value or not c.get("value"):
+        return None
+    if abs(pz_value - c["value"]) <= pz_value * PZ_MISMATCH:
+        return None
+    return _signal("pz_treasury_mismatch", "low", {"pz": _money(pz_value), "treasury": _money(c["value"])},
+                   c, _money(abs(pz_value - c["value"])))
+
+
 def analyze(items, org_edrpou):
     """Build {contracts, signals, totals} from an organisation's stored records."""
     by_kind = defaultdict(list)
@@ -150,11 +232,7 @@ def analyze(items, org_edrpou):
     for c in contracts.values():
         c["addendums"].sort(key=lambda a: a["date"] or "")
         c["acts"].sort(key=lambda a: a["date"] or "")
-        for a in c["addendums"]:
-            if a["type"] in (0, 1) and a["amount"]:
-                c["value"] = a["amount"]  # an addendum restates the contract value
-            if a["type"] == 1:
-                c["price_up"] += a["delta"]
+        apply_addendums(c)
 
     # Index contracts by normalised number for payment matching.
     by_number = defaultdict(list)
@@ -184,6 +262,8 @@ def analyze(items, org_edrpou):
         if hit:
             matched_count += 1
             hit["payments"].append({"ext_id": item["ext_id"], "date": item.get("date"), "amount": _money(item.get("amount"))})
+            if EIB_TX.search(d.get("payment_details") or ""):
+                hit["eib_tx"] = True
         elif outgoing and PURCHASE_KEKV.match(str(d.get("kekv") or "")):
             key = other_code if other_code and str(other_code).isdigit() else (other_name or "?")
             u = unmatched[key]
@@ -198,57 +278,16 @@ def analyze(items, org_edrpou):
 
     signals = []
 
-    # Signals carry numbers, not prose: the site words them in the reader's language.
     def signal(kind, severity, params, contract=None, amount=None, ext_ids=None):
-        signals.append({
-            "type": kind, "severity": severity, "params": params,
-            "contract": contract["id"] if contract else None,
-            "date": (contract or {}).get("date"),
-            "party": (contract or {}).get("party_name"),
-            "amount": amount, "ext_ids": ext_ids or [],
-        })
+        signals.append(_signal(kind, severity, params, contract, amount, ext_ids))
 
     for c in contracts.values():
         c["acts_sum"] = _money(sum(a["amount"] for a in c["acts"]))
         c["paid"] = _money(sum(p["amount"] for p in c["payments"]))
         c["payments"].sort(key=lambda p: p["date"] or "")
-        value, flags = c["value"], []
-        tol = max(1.0, value * 0.001)
-        works = c["cpv"].startswith("45")
-        threshold = WORKS_THRESHOLD if works else GOODS_THRESHOLD
-
-        if value and c["paid"] > value + tol:
-            flags.append("overpaid")
-            signal("overpaid", "high", {"paid": c["paid"], "value": value},
-                   c, _money(c["paid"] - value), [p["ext_id"] for p in c["payments"]])
-        if value and c["acts_sum"] > value + tol:
-            flags.append("acts_over")
-            signal("acts_over", "medium", {"acts": c["acts_sum"], "value": value},
-                   c, _money(c["acts_sum"] - value))
-        if c["price_up"] and c["value0"]:
-            share = c["price_up"] / c["value0"]
-            sev = "high" if share > PRICE_UP_LIMIT else "medium"
-            flags.append("price_up")
-            signal("price_up", sev, {"delta": c["price_up"], "pct": round(share * 100, 1), "value0": c["value0"]},
-                   c, c["price_up"], [a["ext_id"] for a in c["addendums"] if a["type"] == 1])
-        if c["role"] == "disposer" and not c["tender"] and not c["prozorro"] and value >= threshold:
-            flags.append("no_tender")
-            signal("no_tender", "medium", {"value": value, "threshold": threshold, "works": works, "reason": c["reason"]},
-                   c, value)
-        first_pay = c["payments"][0]["date"] if c["payments"] else None
-        if first_pay and c["date"] and first_pay < c["date"]:
-            flags.append("paid_before")
-            signal("paid_before", "medium", {"first_pay": first_pay, "date": c["date"]},
-                   c, None, [c["payments"][0]["ext_id"]])
-        late = _workdays_between(_day(c["date"]), _day(c["published"]))
-        if c["role"] == "disposer" and late > PUBLISH_WORKDAYS:
-            flags.append("late")  # summarised below: one line per organisation, not per contract
-        if c["role"] == "disposer" and c["acts_sum"] and c["paid"] > c["acts_sum"] + max(1000, c["acts_sum"] * 0.05):
-            flags.append("paid_over_acts")
-            signal("paid_over_acts", "low", {"paid": c["paid"], "acts": c["acts_sum"]},
-                   c, _money(c["paid"] - c["acts_sum"]))
+        flags, found = contract_checks(c)
+        signals.extend(found)
         c["flags"] = flags
-        c["late_days"] = late
 
     # Possible splitting: one supplier, one CPV group, 30 days, each below the threshold.
     groups = defaultdict(list)
@@ -353,4 +392,7 @@ def _row(c):
     keep = ("id", "ext_id", "role", "number", "date", "published", "from", "to", "party_code", "party_name",
             "party_type", "subject", "cpv", "currency", "value0", "value", "price_up", "tender", "reason",
             "prozorro", "acts_sum", "paid", "flags", "late_days", "addendums", "acts", "payments")
-    return {k: c[k] for k in keep}
+    row = {k: c[k] for k in keep}
+    if c.get("eib_tx"):
+        row["eib_tx"] = True
+    return row

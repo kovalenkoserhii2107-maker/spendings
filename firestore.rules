@@ -17,6 +17,8 @@ rules_version = '2';
 //   pub/{hash}                  what GitHub Actions has to sync: organisation codes and
 //                               contract ids under sha256("monitor:" + uid), no names,
 //                               e-mails or uids; public read, written only by its owner
+//   analysts/{uid}              verified analysts (added in the console only): may update
+//                               shared reviews and organisation uploads of others
 //   reviews/{id}                status of a signal or contract check
 //   reviews/{id}/history/{e}    append-only audit trail of those checks
 //   exports/{id}                append-only log of uploads to Google Drive
@@ -29,9 +31,17 @@ rules_version = '2';
 //                               is read once by whoever picked it, to move it over
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Only Google sign-in counts: other providers are not part of the app.
+    // Only Google sign-in with a verified e-mail counts: other providers are not part of the app.
     function signedIn() {
-      return request.auth != null && request.auth.token.firebase.sign_in_provider == 'google.com';
+      return request.auth != null && request.auth.token.firebase.sign_in_provider == 'google.com'
+        && request.auth.token.email_verified == true;
+    }
+    function isAnalyst() {
+      return signedIn() && exists(/databases/$(database)/documents/analysts/$(request.auth.uid));
+    }
+    // Who opened a shared record: createdBy, or the first editor of records made before it existed.
+    function opener(data) {
+      return data.get('createdBy', data.get('updatedBy', data.get('uploadedBy', '')));
     }
     function isSelf(uid) {
       return signedIn() && request.auth.uid == uid;
@@ -116,10 +126,18 @@ service cloud.firestore {
       allow create, delete: if false;
     }
 
+    match /analysts/{uid} {
+      allow read: if isSelf(uid);
+      allow write: if false;
+    }
+
     match /reviews/{id} {
       allow read: if signedIn();
       allow create, update: if signedIn()
-        && request.resource.data.keys().hasOnly(['org', 'contract', 'signalType', 'title', 'status', 'comment', 'updatedBy', 'updatedByName', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['org', 'contract', 'signalType', 'title', 'status', 'comment', 'updatedBy', 'updatedByName', 'updatedAt', 'createdBy'])
+        && (resource == null
+              ? request.resource.data.createdBy == request.auth.uid
+              : (opener(resource.data) == request.auth.uid || isAnalyst()) && request.resource.data.createdBy == opener(resource.data))
         && request.resource.data.status in ['new', 'in_progress', 'resolved', 'false_positive']
         && request.resource.data.comment is string
         && request.resource.data.comment.size() <= 4000
@@ -129,7 +147,9 @@ service cloud.firestore {
 
       match /history/{entry} {
         allow read: if signedIn();
+        // Written in one batch with the review: the review itself must be this user's write.
         allow create: if signedIn()
+          && getAfter(/databases/$(database)/documents/reviews/$(id)).data.updatedBy == request.auth.uid
           && request.resource.data.by == request.auth.uid
           && request.resource.data.at == request.time;
         allow update, delete: if false;
@@ -151,16 +171,19 @@ service cloud.firestore {
 
     match /orgs/{edrpou} {
       allow read: if signedIn();
+      // The first uploader owns an organisation's upload; analysts may refresh anyone's.
       allow create, update: if signedIn() && edrpou.matches('^[0-9]{8,10}$')
         && request.resource.data.edrpou == edrpou
         && request.resource.data.uploadedBy == request.auth.uid
-        && request.resource.data.uploadedAt == request.time;
+        && request.resource.data.uploadedAt == request.time
+        && (resource == null || resource.data.uploadedBy == request.auth.uid || isAnalyst());
       allow delete: if false;
 
       match /{collection}/{id} {
         allow read: if signedIn();
         allow create, update: if signedIn()
-          && collection in ['contracts', 'acts', 'addendums', 'penalties', 'payments', 'liabilities', 'reports', 'signals', 'meta'];
+          && collection in ['contracts', 'acts', 'addendums', 'penalties', 'payments', 'liabilities', 'reports', 'signals', 'meta']
+          && (get(/databases/$(database)/documents/orgs/$(edrpou)).data.uploadedBy == request.auth.uid || isAnalyst());
         allow delete: if false;
       }
     }

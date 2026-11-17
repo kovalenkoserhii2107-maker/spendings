@@ -169,7 +169,71 @@ def milestones(t):
     return out
 
 
-def compact_contract(c, lot):
+# "DREAM-UA-230125-E8BA4383", often typed with spaces around the dashes.
+DREAM_ID = re.compile(r"DREAM\s*[-‐‑–]\s*UA\s*[-‐‑–]\s*(\d{6})\s*[-‐‑–]\s*([0-9A-Za-z]{8})")
+OPEN_COMPLAINT = {"draft", "claim", "answered", "pending", "accepted"}
+
+
+def _items(items):
+    """A contract's specification: what, CPV, how many, unit and unit price."""
+    out = []
+    for it in items or []:
+        cls, unit = it.get("classification") or {}, it.get("unit") or {}
+        out.append({k: v for k, v in {
+            "name": it.get("description") or "",
+            "cpv": cls.get("id") or "",
+            "qty": it.get("quantity"),
+            "unit": unit.get("name") or unit.get("code") or "",
+            "price": (unit.get("value") or {}).get("amount"),
+        }.items() if v not in (None, "")})
+    return out
+
+
+def _awards(t):
+    """Every qualification decision, the rejected ones too (status "unsuccessful")."""
+    out = []
+    for a in t.get("awards") or []:
+        sup = _org((a.get("suppliers") or [{}])[0])
+        out.append({k: v for k, v in {
+            "id": a.get("id"), "status": a.get("status"), "date": _day(a.get("date")),
+            "amount": (a.get("value") or {}).get("amount"),
+            "supplier_code": sup.get("code"), "supplier_name": sup.get("name"),
+            "lot": a.get("lotID"), "title": a.get("title") or a.get("description") or "",
+        }.items() if v not in (None, "")})
+    return out
+
+
+def _complaints(t):
+    out = []
+    for c in (t.get("complaints") or []) + [c for a in t.get("awards") or [] for c in a.get("complaints") or []]:
+        out.append({k: v for k, v in {
+            "id": c.get("id"), "status": c.get("status"), "type": c.get("type"),
+            "title": c.get("title") or "", "date": _day(c.get("dateSubmitted") or c.get("date")),
+        }.items() if v not in (None, "")})
+    return out
+
+
+def _dream(t):
+    text = " ".join([t.get("title") or "", t.get("description") or ""]
+                    + [i.get("description") or "" for i in t.get("items") or []]
+                    + [str(p.get("id") or "") for p in t.get("plans") or []])
+    m = DREAM_ID.search(text)
+    return "DREAM-UA-%s-%s" % (m.group(1), m.group(2).upper()) if m else ""
+
+
+def _subcontracts(c, t):
+    """Subcontractors named in the contract or in the winning bid."""
+    found = [str(v) for k, v in c.items() if "subcontract" in k.lower() and v]
+    award = next((a for a in t.get("awards") or [] if a.get("id") == c.get("awardID")), {})
+    for b in t.get("bids") or []:
+        if b.get("id") and b.get("id") == award.get("bid_id"):
+            found += [str(lv.get("subcontractingDetails")) for lv in b.get("lotValues") or [] if lv.get("subcontractingDetails")]
+            if b.get("subcontractingDetails"):
+                found.append(str(b["subcontractingDetails"]))
+    return [x[:500] for x in dict.fromkeys(found)]
+
+
+def compact_contract(c, lot, t=None):
     changes = []
     for ch in c.get("changes") or []:
         changes.append({k: v for k, v in {
@@ -196,6 +260,8 @@ def compact_contract(c, lot):
         "lot": lot,
         "changes": changes,
         "docs": documents(c.get("documents")),
+        "items": _items(c.get("items")),
+        "subcontracts": _subcontracts(c, t or {}),
         "modified": c.get("dateModified"),
     }.items() if v not in (None, "", [])}
 
@@ -225,11 +291,18 @@ def compact_tender(t, contracts):
         "funders": [{"code": (f.get("identifier") or {}).get("id") or "", "name": f.get("name") or (f.get("identifier") or {}).get("legalName") or ""}
                     for f in t.get("funders") or []],
         "rationale": t.get("procurementMethodRationale") or "",
-        "bids": t.get("numberOfBids"),
+        "bids": t.get("numberOfBids") if t.get("numberOfBids") is not None else (len(t["bids"]) if t.get("bids") else None),
         "lots": lots or None,
         "cancel": cancel[0] if cancel else "",
         "milestones": milestones(t),
         "docs": documents(t.get("documents")),
+        "awards": _awards(t),
+        "complaints": _complaints(t),
+        "questions_count": len(t.get("questions") or []) or None,
+        "questions_unanswered": sum(1 for q in t.get("questions") or [] if not q.get("answer")) or None,
+        "guarantee": {"amount": (t.get("guarantee") or {}).get("amount"), "currency": (t.get("guarantee") or {}).get("currency")}
+        if (t.get("guarantee") or {}).get("amount") else None,
+        "dream_id": _dream(t),
         "contracts": contracts,
         "modified": t.get("dateModified"),
     }.items() if v not in (None, "", [])}
@@ -247,7 +320,7 @@ def load_tender(pid):
             full = fetch_contract(ref["id"])
         except ProzorroError:
             full = ref  # the tender's copy is shorter but still useful
-        contracts.append(compact_contract(full, lot_of_award.get(ref.get("awardID"))))
+        contracts.append(compact_contract(full, lot_of_award.get(ref.get("awardID")), t))
     return compact_tender(t, contracts)
 
 
@@ -263,6 +336,7 @@ def is_final(tender):
 
 # ---- one organisation -------------------------------------------------------------------------
 
+SCHEMA = 2  # 2: awards, complaints, questions, guarantee, DREAM id, contract items
 NEW_PER_RUN = 1000      # new procedures per organisation per run (~25 min at the site's rate)
 REFRESH_PER_RUN = 150   # open procedures re-read per organisation per run
 REFRESH_AFTER_H = 20
@@ -324,6 +398,7 @@ def sync(edrpou, tenders, pz_state, log=print, role="buyer"):
                 break
             continue
         rec["_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        rec["_v"] = SCHEMA
         tenders[tid] = rec
         queue.remove(tid)
         done += 1
@@ -331,7 +406,9 @@ def sync(edrpou, tenders, pz_state, log=print, role="buyer"):
 
     # 3. Re-read procedures that can still change, the longest unread first.
     cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - REFRESH_AFTER_H * 3600))
-    stale = sorted((r for r in tenders.values() if not is_final(r) and r.get("_at", "") < cutoff), key=lambda r: r.get("_at", ""))
+    # Records stored before the current schema (awards, complaints, ...) are re-read too, finished or not.
+    stale = sorted((r for r in tenders.values() if r.get("_v") != SCHEMA or (not is_final(r) and r.get("_at", "") < cutoff)),
+                   key=lambda r: (r.get("_v") == SCHEMA, r.get("_at", "")))
     refreshed = 0
     for rec in stale[:REFRESH_PER_RUN]:
         if time.time() - started > budget:
@@ -342,6 +419,7 @@ def sync(edrpou, tenders, pz_state, log=print, role="buyer"):
             errors.append("%s: %s" % (rec.get("tid"), e))
             continue
         fresh["_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        fresh["_v"] = SCHEMA
         tenders[rec["tid"]] = fresh
         refreshed += 1
     log("  prozorro: оновлено %d з %d відкритих" % (refreshed, len(stale)))

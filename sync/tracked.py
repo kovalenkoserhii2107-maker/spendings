@@ -21,7 +21,10 @@ import urllib.request
 from datetime import date, timedelta
 
 import analysis
+import compliance
+import eib
 import prozorro
+import sasu
 import spending
 
 PUB_URL = ("https://firestore.googleapis.com/v1/projects/spending-monitor-2122b/"
@@ -226,6 +229,58 @@ def _diff(old, new):
     return ev
 
 
+def treasury_contract(buyer, contract, tid, sp, log=print):
+    """The Treasury record of one Prozorro contract, with its acts and addendums, asked
+    from spending.gov.ua directly (for a buyer that is not monitored as a whole).
+
+    Paired as prozorro.link() does: the supplier always matches; then the record names
+    the tender (and the number matches), or the number matches within 31 days, or the
+    price does. Returns analysis' contract row or None.
+    """
+    signed = contract.get("signed")
+    if not buyer or not signed:
+        return None
+    start = date.fromisoformat(signed) - timedelta(days=30)
+    end = spending.today() + timedelta(days=1)
+    docs, _ = spending.fetch_documents("contract", buyer, "disposer", start, end)
+    rows = []
+    for d in docs:
+        first = (d.get("contractors") or [{}])[0]
+        rows.append({"id": str(d.get("id")), "number": d.get("documentNumber") or "", "date": (d.get("documentDate") or "")[:10],
+                     "party_code": first.get("identifier") if first.get("identifier") != "HIDDEN" else None,
+                     "party_name": first.get("name") or "", "prozorro": d.get("idTenderProzorro") or "",
+                     "value0": float(d.get("amount") or 0), "raw": d})
+    codes = {s.get("code") for s in contract.get("suppliers") or [] if s.get("code")}
+    names = [s.get("name") for s in contract.get("suppliers") or [] if len(s.get("code") or "") == 10]
+    num = prozorro._norm_number(contract.get("number"))
+    amount = (contract.get("value") or {}).get("amount")
+    hit = next((r for r in rows if sp and r["id"] == str(sp)), None)
+    for rule in (1, 2, 3, 4):
+        if hit:
+            break
+        for r in rows:
+            party = prozorro._same_supplier(r, codes, names)
+            near = prozorro._days_apart(r["date"], signed) <= 31
+            same_num = bool(num) and prozorro._norm_number(r["number"]) == num
+            if (rule == 1 and party and r["prozorro"] == tid and same_num
+                    or rule == 2 and party and r["prozorro"] == tid
+                    or rule == 3 and party and same_num and near
+                    or rule == 4 and party and near and amount is not None and abs(r["value0"] - amount) < 1):
+                hit = r
+                break
+    if not hit:
+        log("  Казначейство: договір № %s не знайдено серед %d договорів замовника" % (contract.get("number") or "—", len(rows)))
+        return None
+    items = [{"kind": "contract", "data": hit["raw"], "role": "disposer", "ext_id": hit["id"], "cp_name": None}]
+    for kind in ("act", "addendum"):
+        found, _ = spending.fetch_documents(kind, buyer, "disposer", start, end)
+        items += [{"kind": kind, "data": d, "role": "disposer", "ext_id": str(d.get("id"))}
+                  for d in found if str(d.get("parentId")) == hit["id"]]
+    row = next(c for c in analysis.analyze(items, buyer)["contracts"] if c["id"] == hit["id"])
+    log("  Казначейство: договір %s, актів %d, додаткових угод %d" % (hit["id"], len(row["acts"]), len(row["addendums"])))
+    return row
+
+
 def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     """Fresh snapshot of one contract on control (old = the previous one or None)."""
     key = req["key"]
@@ -269,26 +324,70 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
         payments[tid] = {"id": tid, "date": (tx.get("trans_date") or "")[:10], "amount": float(tx.get("amount") or 0),
                          "purpose": tx.get("payment_details") or "", "kekv": tx.get("kekv") or "", "sure": sure,
                          "tx": {k: tx.get(k) for k in TX_FIELDS if tx.get(k) not in (None, "")}}
+        if analysis.EIB_TX.search(tx.get("payment_details") or ""):
+            payments[tid]["eib_tx"] = True
 
-    # The Treasury side of the contract (acts, addendums), when it is linked.
-    sp = req.get("sp") or contract.get("sp") or ""
+    # The Treasury side of the contract (acts, addendums): from the organisation's own data when
+    # the buyer is monitored, otherwise asked from the Treasury for this one contract.
+    sp = req.get("sp") or contract.get("sp") or (old or {}).get("sp") or ""
     tc = (treasury_by_org.get(req["org"]) or {}).get(sp) if sp else None
+    if tc is None:
+        try:
+            tc = treasury_contract(buyer, contract, req["tid"], sp, log)
+        except spending.ApiError as e:
+            log("  ! Казначейство: %s" % e)
+    sp = (tc or {}).get("id") or sp
     acts = [{"date": a.get("date"), "amount": a.get("amount"), "number": a.get("number")} for a in (tc or {}).get("acts") or []]
+    addendums = [{k: a.get(k) for k in ("date", "number", "amount", "type", "delta", "as_delta") if a.get(k) not in (None, "")}
+                 for a in (tc or {}).get("addendums") or []]
 
     value = (contract.get("value") or {}).get("amount") or (tc or {}).get("value") or 0
     pays = sorted(payments.values(), key=lambda p: (p["date"], p["id"]))
     paid = round(sum(p["amount"] for p in pays if p["sure"]), 2)
     maybe = round(sum(p["amount"] for p in pays if not p["sure"]), 2)
+    acts_sum = round(sum(a.get("amount") or 0 for a in acts), 2)
     stages, due_now = schedule(value, signed, tender.get("milestones") or [], acts, today.isoformat())
+    overdue = round(max(0.0, due_now - paid), 2)
+
+    # Flags and signals: the Treasury checks with this contract's own payments, then the
+    # procurement checks (competition, documents, EIB covenants, complaints, State Audit).
+    chk = dict(tc or {"id": sp or key, "value0": value, "price_up": 0.0, "addendums": [], "role": "disposer",
+                      "tender": True, "prozorro": req["tid"], "date": signed, "published": None, "cpv": tender.get("cpv") or ""},
+               value=(tc or {}).get("value") or value, paid=paid, acts_sum=acts_sum,
+               payments=[{"ext_id": p["id"], "date": p["date"], "amount": p["amount"]} for p in pays if p["sure"]])
+    flags, signals = analysis.contract_checks(chk)
+    if "late" in flags:  # an organisation's report sums this up; here it is about this one contract
+        signals.append(analysis._signal("late", "low", {"n": 1, "total": 1, "median": chk.get("late_days") or 0}, chk))
+    if tc:
+        mm = analysis.pz_mismatch(chk, (contract.get("value") or {}).get("amount"))
+        if mm:
+            flags.append("pz_treasury_mismatch")
+            signals.append(mm)
+    try:
+        audit = sasu.monitorings(tender_id, req["tid"])
+    except prozorro.ProzorroError as e:
+        log("  ! Держаудитслужба: %s" % e)
+        audit = (old or {}).get("sasu") or []
+    eib_kind = eib.classify(dict(tender, contracts=[contract]))
+    review = compliance.evaluate(tender, contract, eib=bool(eib_kind), paid=paid, acts_sum=acts_sum,
+                                 treasury=dict(chk, flags=flags) if tc else None, overdue=overdue, sasu=audit)
+    signals += review["signals"]
+    flags += [x["type"] for x in review["signals"] if x["type"] not in flags]
+    signals.sort(key=lambda x: (analysis.SEVERITY_ORDER[x["severity"]], -(x.get("amount") or 0)))
+
     snap = {
         "key": key, "org": req["org"], "tid": req["tid"], "tender_id": tender_id, "sp": sp,
         "viewers": req.get("viewers") or [],  # sha256("monitor:" + uid) of owners and recipients
         "owners": req.get("owners") or [],    # of those, who has it on control (the rest got it shared)
-        "tender": tender, "contract": contract, "payments": pays, "acts": acts,
-        "acts_sum": round(sum(a.get("amount") or 0 for a in acts), 2),
+        "tender": tender, "contract": contract, "payments": pays, "acts": acts, "addendums": addendums,
+        "acts_sum": acts_sum,
+        "treasury": {k: (tc or {}).get(k) for k in ("id", "number", "date", "value0", "value", "price_up", "published", "late_days")} if tc else None,
         "totals": {"value": value, "paid": paid, "maybe": maybe, "left": round(value - paid, 2),
-                   "due_now": due_now, "overdue": round(max(0.0, due_now - paid), 2)},
+                   "due_now": due_now, "overdue": overdue},
         "stages": stages,
+        "flags": flags, "signals": signals, "checklist": review["checklist"],
+        "eib": eib_kind, "eib_tx": any(p.get("eib_tx") for p in pays),
+        "sasu": audit,
         "payments_checked": today.isoformat(),
     }
     events = _diff(old, snap)
@@ -309,7 +408,12 @@ def index_row(s):
         "method": t.get("method"), "totals": s["totals"], "changed_at": s.get("changed_at"),
         "last_event": (s.get("history") or [{}])[0], "docs": len(c.get("docs") or []) + len(t.get("docs") or []),
         "events": [e for e in s.get("history") or [] if e.get("type") != "tracked"][:EVENTS_IN_INDEX],
-        "eib": any(f.get("code") == "33000" for f in t.get("funders") or []),
+        "eib": s.get("eib") or ("funder" if any(f.get("code") == "33000" for f in t.get("funders") or []) else ""),
+        "eib_tx": bool(s.get("eib_tx")),
+        "flags": s.get("flags") or [],
+        "signals": [{k: x.get(k) for k in ("type", "severity", "params", "amount")} for x in s.get("signals") or []],
+        "sasu": sasu.summary(s.get("sasu")),
+        "checks": {x["key"]: x["status"] for x in s.get("checklist") or []},
         "viewers": s.get("viewers") or [],  # hashes; the Drive script copies the contracts it sees itself in
         "owners": s.get("owners") or [],
     }

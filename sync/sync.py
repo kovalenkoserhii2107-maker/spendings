@@ -30,6 +30,7 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import analysis  # noqa: E402
+import compliance  # noqa: E402
 import eib  # noqa: E402
 import prozorro  # noqa: E402
 import tracked  # noqa: E402
@@ -285,7 +286,28 @@ def sync_prozorro(edrpou, org_dir, org_state, report, role="buyer"):
     TREASURY[edrpou] = {c["id"]: c for c in report["contracts"]}
     for c in report["contracts"]:
         if c["id"] in links:
-            c["pz"] = links[c["id"]][0]
+            tid, pcid = links[c["id"]]
+            c["pz"] = tid
+            # Prozorro holds the current price: the Treasury's should agree with it.
+            pc = next((x for x in (tenders.get(tid) or {}).get("contracts") or [] if x.get("id") == pcid), {})
+            pz_value = (pc.get("value") or {}).get("amount") if (pc.get("value") or {}).get("currency", "UAH") == "UAH" else None
+            sig = analysis.pz_mismatch(c, pz_value)
+            if sig:
+                c["flags"].append("pz_treasury_mismatch")
+                report["signals"].append(sig)
+                report["counts"][sig["severity"]] = report["counts"].get(sig["severity"], 0) + 1
+    # Procurement checks of every contract (competition, documents, EIB covenants, complaints).
+    by_pz = {pcid: c for c in report["contracts"] if c["id"] in links for _, pcid in [links[c["id"]]]}
+    for t in tenders.values():
+        kind = eib.classify(t)
+        for pc in t.get("contracts") or []:
+            tc = by_pz.get(pc.get("id"))
+            res = compliance.evaluate(t, pc, eib=bool(kind), paid=(tc or {}).get("paid"), acts_sum=(tc or {}).get("acts_sum"), treasury=tc)
+            pc["checks"] = {"checklist": res["checklist"], "signals": [x["type"] for x in res["signals"]]}
+            for sig in res["signals"]:
+                sig.update(contract=(tc or {}).get("id"), tid=t["tid"])
+                report["signals"].append(sig)
+                report["counts"][sig["severity"]] = report["counts"].get(sig["severity"], 0) + 1
     years = save_prozorro(org_dir, tenders) if tenders else []
     contracts = [c for t in tenders.values() for c in t.get("contracts") or []]
     pz_state["errors"] = errors[:10]

@@ -10,11 +10,37 @@ app's page where contracts are found and taken on control.
 import re
 import time
 
+import compliance
 import prozorro
 
 EIB = "33000"
-TEXT_QUERIES = ("Європейський інвестиційний банк", "ЄІБ")
+SCHEMA = 2  # 2: program markers, awards, complaints, compliance signals
+TEXT_QUERIES = ("Європейський інвестиційний банк", "ЄІБ",
+                # EIB finance contracts with Ukraine and the recovery programmes they fund
+                "83.839", "84.165", "91.504", "Програма з відновлення України",
+                "Надзвичайна кредитна програма для відновлення України", "НКПВУ", "ПВУ", "UPBEE",
+                "Енергоефективність громадських будівель в Україні")
 MENTION = re.compile(r"(ЄІБ|ЕІБ|\bEIB\b|європейськ\w*\s+інвестиційн\w*\s+банк|european\s+investment\s+bank)", re.I)
+PROGRAM = re.compile(r"(програм\w*\s+з\s+відновлення\s+україни|надзвичайн\w*\s+кредитн\w*\s+програм\w*\s+для\s+відновлення"
+                     r"|НКПВУ|UPBEE|енергоефективн\w*\s+громадськ\w*\s+будів\w*\s+в\s+україні"
+                     r"|\bFI\s*№?\s*(83[.,]839|84[.,]165|91[.,]504)|\b(83\.839|84\.165|91\.504)\b)", re.I)
+# "ПВУ" is also a ventilation unit: it counts only next to the programme's words.
+PVU = re.compile(r"\bПВУ\b")
+PVU_CONTEXT = re.compile(r"(відновлен|ЄІБ|ЕІБ|\bEIB\b)", re.I)
+
+
+def classify(t, funded=False):
+    """"funder" (EIB is the donor), "program" (an EIB finance contract or programme named),
+    "text" (the bank named in the text) or "" for a compacted procedure."""
+    if funded or any(f.get("code") == EIB for f in t.get("funders") or []):
+        return "funder"
+    text = " ".join([t.get("title") or "", t.get("rationale") or ""] + [c.get("title") or "" for c in t.get("contracts") or []]
+                    + [d.get("title") or "" for d in t.get("docs") or []])
+    if PROGRAM.search(text) or (PVU.search(text) and PVU_CONTEXT.search(text)):
+        return "program"
+    if MENTION.search(text):
+        return "text"
+    return ""
 REFRESH_AFTER_H = 20
 BUDGET_S = 20 * 60
 
@@ -32,15 +58,12 @@ def _search(body):
     return out
 
 
-def _mentions(t):
-    text = " ".join([t.get("title") or "", t.get("rationale") or ""] + [c.get("title") or "" for c in t.get("contracts") or []])
-    return bool(MENTION.search(text))
-
-
 def _row(t, kind):
-    """What the page needs: no documents, only their number."""
+    """What the page needs: no documents, only their number; compliance signals per contract."""
     contracts = []
     for c in t.get("contracts") or []:
+        c = dict(c, signals=[{"type": x["type"], "severity": x["severity"], "params": x["params"]}
+                             for x in compliance.evaluate(t, c, eib=True)["signals"]])
         contracts.append({k: v for k, v in dict(c, docs=len(c.get("docs") or []), changes=len(c.get("changes") or [])).items()
                           if k not in ("termination",) and v not in (None, "", [], 0)})
     row = {k: v for k, v in t.items() if k not in ("docs", "milestones", "contracts", "rationale", "lots")}
@@ -52,8 +75,9 @@ def _row(t, kind):
 def sync(old, log=print):
     """Bring data/eib.json up to date; `old` is its previous content."""
     started = time.time()
+    fresh_schema = (old or {}).get("schema") == SCHEMA
     rows = {r["tid"]: r for r in (old or {}).get("items") or []}
-    skip = set((old or {}).get("skip") or [])
+    skip = set((old or {}).get("skip") or []) if fresh_schema else set()
     errors = []
     try:
         funded = _search({"funders[]": EIB})
@@ -70,7 +94,8 @@ def sync(old, log=print):
     wanted = list(dict.fromkeys(funded + [m for m in mentioned if m not in skip]))
     cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - REFRESH_AFTER_H * 3600))
     todo = [tid for tid in wanted if tid not in rows] + sorted(
-        (tid for tid in wanted if tid in rows and not prozorro.is_final(rows[tid]) and rows[tid].get("_at", "") < cutoff),
+        (tid for tid in wanted if tid in rows and (not fresh_schema or rows[tid].get("_v") != SCHEMA
+                                                   or not prozorro.is_final(rows[tid]) and rows[tid].get("_at", "") < cutoff)),
         key=lambda tid: rows[tid].get("_at", ""))
     done = tried = 0
     for tid in todo:
@@ -86,16 +111,17 @@ def sync(old, log=print):
             else:
                 errors.append("%s: %s" % (tid, e))
             continue
-        is_funder = tid in funded_set or any(f.get("code") == EIB for f in t.get("funders") or [])
-        if not is_funder and not _mentions(t):
+        kind = classify(t, tid in funded_set)
+        if not kind:
             skip.add(tid)  # the search matched something else
             rows.pop(tid, None)
             continue
-        row = _row(t, "funder" if is_funder else "text")
+        row = _row(t, kind)
         row["_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        row["_v"] = SCHEMA
         rows[tid] = row
         done += 1
     log("ЄІБ: процедур %d (донор %d), оновлено %d, лишилось %d%s" % (
         len(rows), len(funded_set), done, len(todo) - tried, "; помилки: " + "; ".join(errors[:3]) if errors else ""))
     items = sorted(rows.values(), key=lambda r: (r.get("date") or "", r["tid"]), reverse=True)
-    return {"generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "items": items, "skip": sorted(skip)}
+    return {"generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "schema": SCHEMA, "items": items, "skip": sorted(skip)}
