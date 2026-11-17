@@ -388,6 +388,9 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 .qs-org h3 { font-size: 19px; margin-top: 4px; line-height: 1.25; }
 .qs-org .ext-links { width: 100%; }
 .qs-list { display: grid; gap: 8px; }
+.audit { margin-top: 18px; }
+.audit .drive-part-title { margin-bottom: 8px; }
+.audit table td, .audit table th { padding-top: 8px; padding-bottom: 8px; }
 .qs-table { padding-bottom: 0; overflow: hidden; }
 .qs-table > .scroll, .qs-table > div > .scroll { margin: 0 -20px; }
 .qs-table .foot { margin: 0 -20px; }

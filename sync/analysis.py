@@ -222,7 +222,10 @@ def analyze(items, org_edrpou):
             c = contracts.get(str(d.get("parentId")))
             if not c:
                 continue
-            entry = {"ext_id": item["ext_id"], "date": (d.get("signDate") or d.get("documentDate") or "")[:10],
+            # documentDate is the act's (addendum's) own date; signDate is when it was signed for
+            # the portal, i.e. published.
+            entry = {"ext_id": item["ext_id"], "date": (d.get("documentDate") or d.get("signDate") or "")[:10],
+                     "published": (d.get("signDate") or "")[:10] or None,
                      "number": d.get("documentNumber") or "", "amount": _money(d.get("amount"))}
             if kind == "addendum":
                 entry["type"] = d.get("correctionType")

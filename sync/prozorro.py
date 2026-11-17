@@ -276,6 +276,66 @@ def _dream(t):
     return "DREAM-UA-%s-%s" % (m.group(1), m.group(2).upper()) if m else ""
 
 
+# EIB sub-project code: region letters, object number (+ letter), contract number, as in
+# "OD08_03", "ZK04A_01"; found in contract numbers, titles and file names.
+SUBPROJECT = re.compile(r"(?<![A-Z0-9])([A-Z]{2}\d{2}[A-Z]?)_(\d{2})(?![0-9])")
+_TO_LATIN = str.maketrans("АВСЕНІКМОРТХ", "ABCEHIKMOPTX")
+
+
+def subproject(t, contracts=None):
+    """{"code": "OD08_03", "object": "OD08"} or None."""
+    cs = contracts if contracts is not None else t.get("contracts") or []
+    texts = [c.get("number") for c in cs] + [t.get("title")] \
+        + [d.get("title") for c in cs for d in c.get("docs") or []] + [d.get("title") for d in t.get("docs") or []]
+    for x in texts:
+        m = SUBPROJECT.search(str(x or "").upper().translate(_TO_LATIN))
+        if m and not m.group(1).startswith("UA"):
+            return {"code": "%s_%s" % (m.group(1), m.group(2)), "object": m.group(1)}
+    return None
+
+
+# The object of a works procurement, as the related ones (design, technical and author's
+# supervision, expert review) name it: the title without the CPV prefix.
+_CPV_PREFIX = re.compile(r"^\s*(?:ДК\s*021[:\-]?\s*2015\s*\(?CPV\)?\s*)?\d{8}-\d\s*[-–—:]?\s*", re.I)
+RELATED_ROLES = (
+    ("supervision", re.compile(r"технічн\w*\s+нагляд", re.I)),
+    ("author", re.compile(r"авторськ\w*\s+нагляд", re.I)),
+    ("expertise", re.compile(r"експертиз", re.I)),
+    ("design", re.compile(r"проє?кт\w*\s*[-–]?\s*кошторисн|проє?ктуванн|розробленн\w*\s+проє?кт|\bпкд\b|робоч\w+\s+проє?кт", re.I)),
+    ("works", re.compile(r"будівництв|реконструкці|капітальн\w*\s+ремонт|ремонт|монтаж", re.I)),
+)
+
+
+def object_name(title):
+    words = _CPV_PREFIX.sub("", str(title or "")).replace("«", " ").replace("»", " ").replace('"', " ").split()
+    return " ".join(words[:14])
+
+
+def related_role(title):
+    for role, rx in RELATED_ROLES:
+        if rx.search(title or ""):
+            return role
+    return "other"
+
+
+def related(buyer, title, own_tid):
+    """The buyer's other procedures for the same object: [{tid, title, status, value, role}]."""
+    q = object_name(title)
+    if not buyer or len(q) < 12:
+        return []
+    body = urllib.parse.urlencode({"buyer[]": buyer, "text": q}).encode()
+    res = _get("%s/search/tenders?page=1" % SITE, data=body)
+    out = []
+    for r in res.get("data") or []:
+        if r.get("tenderID") == own_tid:
+            continue
+        v = r.get("value") or {}
+        out.append({"tid": r.get("tenderID"), "title": (r.get("title") or "")[:300], "status": r.get("status"),
+                    "value": {"amount": v.get("amount"), "currency": v.get("currency")} if v else None,
+                    "role": related_role(r.get("title"))})
+    return out
+
+
 def _subcontracts(c, t):
     """Subcontractors named in the contract or in the winning bid."""
     found = [str(v) for k, v in c.items() if "subcontract" in k.lower() and v]

@@ -302,9 +302,9 @@ const ROLES_FOR = {
 const roleOptions = (kind) => (ROLES_FOR[kind] || []).map((r) => [r, t('roleopt.' + r)]);
 // Three groups of compliance control; every signal type belongs to one.
 const SIG_GROUPS = {
-  fin: ['overpaid', 'paid_before', 'paid_over_acts', 'acts_over', 'no_contract', 'pz_treasury_mismatch'],
+  fin: ['overpaid', 'paid_before', 'paid_over_acts', 'acts_over', 'no_contract', 'pz_treasury_mismatch', 'advance_over_30', 'advance_not_closed'],
   proc: ['no_tender', 'split', 'single_bidder', 'disqualified_lower_bid', 'concentration', 'unanswered_questions', 'sasu_violation'],
-  contract: ['price_up', 'late', 'chain_extensions', 'missing_kb2v', 'missing_eib_covenants'],
+  contract: ['price_up', 'late', 'chain_extensions', 'missing_kb2v', 'missing_eib_covenants', 'doc_unpublished', 'doc_date_mismatch', 'doc_published_late'],
 };
 const sigGroup = (type) => Object.keys(SIG_GROUPS).find((g) => SIG_GROUPS[g].includes(type)) || 'fin';
 function groupPills(list, value, onpick) {
@@ -1923,6 +1923,7 @@ function trackedDossier(id) {
             t0.method ? h('span', { class: 'tag' }, label('pzt.', t0.method)) : h('span', { class: 'tag' }, t('dos.treasuryOnly')),
             isEib || s.eib ? h('span', { class: 'tag eib' }, s.eib ? t('eib.kind.' + s.eib) : t('eib.short')) : null,
             s.eib_tx ? h('span', { class: 'tag eib' }, t('eib.tx')) : null,
+            t0.subproject ? h('span', { class: 'tag eib', title: t('sub.title') }, t0.subproject.code) : null,
             tt.overdue > 1 ? h('span', { class: 'sev high' }, t('tr.overdueN', { sum: money(tt.overdue) })) : null,
             s.error ? h('span', { class: 'sev medium', title: s.error }, t('tr.error')) : null),
           h('p', { class: 'muted' }, c.title || t0.title),
@@ -1934,6 +1935,7 @@ function trackedDossier(id) {
           t0.dream_id ? ext(dreamUrl(t0.dream_id), 'DREAM', 'btn') : null),
           isTracked(id) ? off : null)),
       partiesCard(t0, c),
+      s.related ? relatedCard(s.related, t0) : null,
       s.from_tender ? h('p', { class: 'notice small section' }, t('tr.fromTender', { tid: s.tid })) : null,
       (t0.other_contracts || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('tr.otherContracts')),
         h('div', { class: 'qs-contracts' }, t0.other_contracts.map((oc) => h('div', { class: 'qs-contract' },
@@ -1944,7 +1946,7 @@ function trackedDossier(id) {
         h('div', { class: 'stat tint-violet' }, h('small', null, t('pz.contractValue')), h('b', { class: 'num' }, money(tt.value)), c.start || c.end ? h('span', { class: 'sub' }, `${fdate(c.start)} — ${fdate(c.end)}`) : null),
         h('div', { class: 'stat tint-blue' }, h('small', null, t('tr.paid')), h('b', { class: 'num' }, money(tt.paid)), h('span', { class: 'sub' }, tt.value ? t('bar.paidPct', { pct: Math.round((tt.paid / tt.value) * 100) }) : '')),
         h('div', { class: 'stat tint-yellow' }, h('small', null, tt.left < -1 ? t('dos.overpaid') : t('tr.left')), h('b', { class: 'num' }, money(Math.abs(tt.left))), tt.maybe ? h('span', { class: 'sub' }, t('tr.maybeSub', { sum: money(tt.maybe) })) : null),
-        h('div', { class: 'stat' + (tt.overdue > 1 ? ' bad' : '') }, h('small', null, t('tr.dueNow')), h('b', { class: 'num' }, money(tt.due_now)), h('span', { class: 'sub' }, tt.overdue > 1 ? t('tr.overdueN', { sum: money(tt.overdue) }) : t('tr.noOverdue')))),
+        h('div', { class: 'stat' + (tt.overdue > 1 ? ' bad' : '') }, h('small', null, t('tr.dueNow')), h('b', { class: 'num' }, money(tt.due_now)), h('span', { class: 'sub' }, tt.overdue > 1 ? t('tr.overdueN', { sum: money(tt.overdue) }) : tt.partial ? t('tr.partialPaid') : t('tr.noOverdue')))),
       h('div', { class: 'card pad section' }, trackedBar(tt, s.acts_sum), h('div', { class: 'bar-label' }, h('span', null, t('tr.paidOf', { paid: money(tt.paid), value: money(tt.value) })), h('span', null, s.acts_sum ? t('tr.actsSum', { sum: money(s.acts_sum) }) : ''))),
       complianceCard(s),
       h('div', { class: 'grid-2 section' },
@@ -1963,7 +1965,7 @@ function trackedDossier(id) {
           h('span', null, t('kind.addendum') + ' № ' + (a.number || '—') + (a.type === 1 ? ' · ' + t('dos.priceUp') : a.type === 0 ? ' · ' + t('dos.priceDown') : '')),
           h('span', { class: 'num' }, a.amount ? money(a.amount) : ''))))) : null,
       (s.acts || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('kinds.act')),
-        h('div', { class: 'timeline' }, s.acts.map((a) => h('div', { class: 'ev act' }, h('span', { class: 'd num' }, fdate(a.date)), h('span', null, t('kind.act') + ' № ' + (a.number || '—')), h('span', { class: 'num' }, money(a.amount)))))) : null,
+        h('div', { class: 'timeline' }, s.acts.map((a) => h('div', { class: 'ev act' }, h('span', { class: 'd num' }, fdate(a.date)), h('span', null, t('kind.act') + ' № ' + (a.number || '—'), a.published && a.published !== a.date ? h('span', { class: 'faint small' }, ' · ' + t('audit.publishedOn', { date: fdate(a.published) })) : null), h('span', { class: 'num' }, money(a.amount)))))) : null,
       t0.treasury_only ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('dos.docs')), h('p', { class: 'muted small' }, t('dos.noProzorro')))
         : docsCard(id, c, t0, freshDocs),
       isTracked(id) ? shareCard(id) : null,
@@ -2015,9 +2017,80 @@ function complianceCard(snap) {
   return h('div', { class: 'card pad section' },
     h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, t('chk.title')), snap.eib ? h('span', { class: 'tag eib' }, t('eib.kind.' + snap.eib)) : null),
     checklistBox(snap.checklist),
+    docAuditBlock(snap.doc_audit),
+    advanceBlock(snap.advance),
     audit.length ? h('div', { class: 'sasu' }, h('div', { class: 'drive-part-title' }, t('dos.sasu')), audit.map(monitoringBlock)) : null,
     h('div', { class: 'card-head', style: 'margin-top:16px' }, h('h3', { class: 'card-sub' }, t('dos.signals')), pillsBox),
     box);
+}
+
+// Payments against the acts and addendums on spending.gov.ua: what was paid but not published,
+// published late, or dated otherwise.
+function docAuditBlock(list) {
+  if (!(list || []).length) return null;
+  return h('div', { class: 'audit' }, h('div', { class: 'drive-part-title' }, t('audit.title')),
+    h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
+      h('thead', null, h('tr', null, h('th', null, t('audit.doc')), h('th', null, t('audit.issue')), h('th', null, t('audit.detail')))),
+      h('tbody', null, list.map((e) => h('tr', null,
+        td(t('audit.doc'), null, h('b', null, t('audit.kind.' + e.kind) + ' № ' + (e.number || '—')), h('div', { class: 'cell-sub num' }, fdate(e.date))),
+        td(t('audit.issue'), null, h('span', { class: 'sev ' + (e.issue === 'published_late' ? 'low' : 'medium') }, t('audit.' + e.issue, { days: e.days }))),
+        td(t('audit.detail'), { class: 'w-text' }, join([
+          e.issue === 'unpublished' ? t('audit.paid', { sum: money(e.paid), date: fdate(e.first_pay) }) : null,
+          e.issue === 'unpublished' && e.kind === 'addendum' ? (e.prozorro ? t('audit.prozorro', { date: fdate(e.prozorro) }) : t('audit.noProzorro')) : null,
+          e.issue === 'date_mismatch' ? t('audit.portalDate', { date: fdate(e.portal_date) }) : null,
+          e.issue === 'published_late' ? t('audit.publishedOn', { date: fdate(e.published) }) : null,
+          e.paid_first ? t('audit.paidFirst', { sum: money(e.paid_first) }) : null]))))))));
+}
+// Advance payments: their share of the price and whether acts closed them within 3 months.
+function advanceBlock(a) {
+  if (!a) return null;
+  const o = a.open;
+  return h('div', { class: 'audit' }, h('div', { class: 'drive-part-title' }, t('adv.title')),
+    h('p', { class: 'small' }, t('adv.sum', { sum: money(a.sum), pct: a.pct != null ? a.pct : '—' }), a.over ? h('span', { class: 'sev high', style: 'margin-left:8px' }, t('sigtype.advance_over_30')) : null),
+    h('div', { class: 'explain' }, a.advances.map((p) => h('div', null, h('span', { class: 'num' }, fdate(p.date) + ' · ' + money(p.amount)), p.likely ? h('span', { class: 'faint small' }, ' · ' + t('adv.likely')) : null))),
+    h('p', { class: 'small ' + (o ? '' : 'muted') }, o ? t('sig.advance_not_closed.text', o) : t('adv.closed')));
+}
+// The buyer's other procurements for the same object: design, technical and author's
+// supervision, expert review. Technical supervision missing is worth a question.
+const REL_ORDER = ['design', 'expertise', 'works', 'supervision', 'author', 'other'];
+function relatedRows(list) {
+  return h('div', { class: 'qs-contracts' }, list.slice().sort((a, b) => REL_ORDER.indexOf(a.role) - REL_ORDER.indexOf(b.role)).map((r) => h('div', { class: 'qs-contract' },
+    h('div', null, h('span', { class: 'tag' + (r.role === 'supervision' ? ' ok' : '') }, t('rel.role.' + r.role)), ' ', h('b', null, r.title || r.tid),
+      h('div', { class: 'cell-sub' }, join([r.tid, label('pzs.', r.status), r.value ? money(r.value.amount, r.value.currency) : null]))),
+    ext(pzUrl(r.tid), 'Prozorro'))));
+}
+function relatedCard(list, t0) {
+  const works = String(t0.cpv || '').startsWith('45') || t0.category === 'works';
+  if (!works && !list.length) return null;
+  const sup = list.some((r) => r.role === 'supervision');
+  return h('div', { class: 'card pad section' },
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, t('rel.title')), t0.subproject ? h('span', { class: 'tag eib', title: t('sub.title') }, t0.subproject.code) : null),
+    list.length ? relatedRows(list) : h('p', { class: 'muted small' }, t('rel.none')),
+    works && !sup ? h('p', { class: 'notice small', style: 'margin-top:10px' }, t('rel.noSupervision')) : null);
+}
+// The same, asked live (the EIB catalogue keeps no such list).
+const SUBPROJECT_RE = /(?<![A-Z0-9])([A-Z]{2}\d{2}[A-Z]?)_(\d{2})(?![0-9])/;
+const TO_LATIN = { А: 'A', В: 'B', С: 'C', Е: 'E', Н: 'H', І: 'I', К: 'K', М: 'M', О: 'O', Р: 'P', Т: 'T', Х: 'X' };
+function subprojectOf(t0) {
+  const texts = (t0.contracts || []).map((c) => c.number).concat([t0.title]);
+  for (const x of texts) {
+    const m = String(x || '').toUpperCase().replace(/[АВСЕНІКМОРТХ]/g, (ch) => TO_LATIN[ch]).match(SUBPROJECT_RE);
+    if (m && !m[1].startsWith('UA')) return { code: m[1] + '_' + m[2], object: m[1] };
+  }
+  return null;
+}
+const objectName = (title) => String(title || '').replace(/^\s*(?:ДК\s*021[:\-]?\s*2015\s*\(?CPV\)?\s*)?\d{8}-\d\s*[-–—:]?\s*/i, '').replace(/[«»"]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 14).join(' ');
+const REL_RX = [['supervision', /технічн\S*\s+нагляд/i], ['author', /авторськ\S*\s+нагляд/i], ['expertise', /експертиз/i],
+  ['design', /проє?кт\S*\s*[-–]?\s*кошторисн|проє?ктуванн|розробленн\S*\s+проє?кт|робоч\S+\s+проє?кт/i], ['works', /будівництв|реконструкці|капітальн\S*\s+ремонт|ремонт|монтаж/i]];
+function liveRelated(t0) {
+  const q = objectName(t0.title);
+  const box = h('div', null, h('p', { class: 'muted small' }, t('ui.loading')));
+  if (!t0.buyer || q.length < 12) return null;
+  pzProxy({ action: 'search', kind: 'tenders', buyer: t0.buyer, text: q }).then((d) => {
+    const list = (d.items || []).filter((r) => r.tid !== t0.tid).map((r) => Object.assign({}, r, { role: (REL_RX.find(([, rx]) => rx.test(r.title || '')) || ['other'])[0] }));
+    fill(box, relatedCard(list, t0) || '');
+  }).catch((e) => fill(box, h('p', { class: 'muted small' }, e.message)));
+  return box;
 }
 
 // Quick links to check a party: procurement, Treasury, registers and sanctions lists.
@@ -2206,7 +2279,7 @@ function openEibTender(t0) {
     h('div', { class: 'eyebrow' }, t0.tid),
     h('h2', null, t0.title || '—'),
     h('div', { class: 'chips' }, pzStatus(t0.status), h('span', { class: 'tag' }, label('pzt.', t0.method)),
-      h('span', { class: 'tag eib' }, t('eib.kind.' + t0.eib))),
+      h('span', { class: 'tag eib' }, t('eib.kind.' + t0.eib)), subprojectOf(t0) ? h('span', { class: 'tag eib', title: t('sub.title') }, subprojectOf(t0).code) : null),
     kv([[t('eib.buyer'), party(t0.buyer_name, t0.buyer)], [t('eib.region'), t0.region], [t('eib.funders'), funders.join(', ')],
       [t('pz.colValue'), t0.value ? money(t0.value.amount, t0.value.currency) : ''], [t('col.date'), fdate(t0.date)], ['CPV', t0.cpv]]),
     (t0.terms || []).length ? h('section', null, h('h3', null, t('tr.stages')), h('div', { class: 'explain' }, t0.terms.map((m) => h('div', { class: 'pay' }, h('span', null, milestoneText(m)))))) : null,
@@ -2223,6 +2296,7 @@ function openEibTender(t0) {
           h('div', null, h('small', null, t('eib.changes')), h('b', { class: 'num' }, ni.format(c.changes || 0)))),
         h('div', { class: 'row', style: 'margin-top:10px' }, trackButton(eibOrg(t0), t0, c)))))
         : h('p', { class: 'muted small' }, t('pz.noContractYet'))),
+    String(t0.cpv || '').startsWith('45') ? liveRelated(t0) : null,
     h('div', { class: 'row after' }, !hasSigned(t0) ? trackTenderButton(t0) : null, ext(pzUrl(t0.tid), t('pz.openOnProzorro')), t0.dream_id ? ext(dreamUrl(t0.dream_id), 'DREAM') : null));
 }
 

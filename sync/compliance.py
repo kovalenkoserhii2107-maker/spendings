@@ -12,6 +12,7 @@ Signals point at what to check, not at violations. Sources:
 contract's card and puts into the Google Drive report.
 """
 import re
+from datetime import date, timedelta
 
 COMPETITIVE = {"aboveThreshold", "aboveThresholdUA", "aboveThresholdEU", "competitiveDialogueUA",
                "competitiveDialogueEU", "esco", "closeFrameworkAgreementUA", "belowThreshold", "simple.defense", "priceQuotation"}
@@ -50,11 +51,12 @@ def _prepayment(t):
     return sum(m.get("pct") or 0 for m in t.get("milestones") or [] if m.get("type") == "financing" and m.get("code") == "prepayment")
 
 
-def evaluate(t, pc, eib=False, paid=None, acts_sum=None, treasury=None, overdue=None, sasu=None):
+def evaluate(t, pc, eib=False, paid=None, acts_sum=None, treasury=None, overdue=None, sasu=None, extra=None):
     """Signals and checklist of one contract `pc` of procedure `t` (both compacted).
 
     paid / acts_sum come from the Treasury (payments and acts under the contract);
-    treasury is its reconciled row (value0, price_up, flags) when one is linked.
+    treasury is its reconciled row (value0, price_up, flags) when one is linked; extra =
+    (signals, {checklist key: notes}) of the checks made elsewhere (payment_checks).
     """
     signals, notes = [], {k: [] for k in ("competition", "documents", "guarantees", "price", "reconciliation", "oversight")}
     value = (pc.get("value") or {}).get("amount") or 0
@@ -138,7 +140,12 @@ def evaluate(t, pc, eib=False, paid=None, acts_sum=None, treasury=None, overdue=
         if any(m.get("status") in ("draft", "active") for m in sasu or []):
             notes["oversight"].append(["sasu_active", {}])
 
-    bad = {"disqualified_lower_bid", "missing_kb2v", "price_up", "overpaid", "paid_over_acts", "sasu_violation"}
+    if extra:
+        signals += extra[0]
+        for key, items in extra[1].items():
+            notes[key] += items
+    bad = {"disqualified_lower_bid", "missing_kb2v", "price_up", "overpaid", "paid_over_acts", "sasu_violation",
+           "doc_unpublished", "advance_over_30", "advance_not_closed"}
     checklist = []
     for key, items in notes.items():
         codes = {c for c, _ in items}
@@ -147,3 +154,169 @@ def evaluate(t, pc, eib=False, paid=None, acts_sum=None, treasury=None, overdue=
             status = "na"
         checklist.append({"key": key, "status": status, "notes": items})
     return {"signals": signals, "checklist": checklist}
+
+
+# ---- payments against the documents on the portal ------------------------------------------------
+#
+# Law No. 183-VIII on the openness of public funds: contracts, addendums and acts are published on
+# spending.gov.ua within 5 working days of signing. A payment purpose names the addendum and the
+# act it pays ("Д/у№5від14.07.2026р., акт прийм.викон.буд.робіт№1від14.07.2026р."); the portal
+# record of each is compared with it.
+
+_NUM = r"(?:№|N)\s*([0-9A-Za-zА-Яа-яІіЇїЄє/\-_.]+?)\s*(?:від|вiд|от)\s*(\d{1,2})\.(\d{1,2})\.(\d{2,4})"
+ADDENDUM_REF = re.compile(r"(?<![а-яіїєґa-z])(?:д\s*/\s*у|д\.\s*у\.?|ду|дод(?:атков\w*|\.)?\s*угод\w*)\s*" + _NUM, re.I)
+ACT_REF = re.compile(r"(?<![а-яіїєґa-z])акт\w*[^№;,]{0,40}?" + _NUM, re.I)
+DATE_GAP_DAYS = 5
+PUBLISH_WORKDAYS = 5
+
+
+def _ref_date(m):
+    day, month, year = int(m.group(2)), int(m.group(3)), int(m.group(4))
+    if year < 100:
+        year += 2000
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return None
+
+
+def _num(x):
+    return re.sub(r"[\s.№#]+", "", str(x or "")).lower().rstrip("-/")
+
+
+def _workdays(start, end):
+    if not start or not end or end <= start:
+        return 0
+    a, b = date.fromisoformat(start), date.fromisoformat(end)
+    return sum(1 for i in range(1, (b - a).days + 1) if (a + timedelta(days=i)).weekday() < 5)
+
+
+def doc_audit(pays, acts, addendums, changes):
+    """Addendums and acts named in the payments, against their records on the portal.
+
+    Returns [{kind, number, date, issue, ...}]: issue "unpublished" (paid, not on the portal),
+    "date_mismatch" (the portal dates it otherwise), "published_late" (more than 5 working
+    days after signing, `paid_first` when money went before it was published).
+    """
+    out, refs = [], {}
+    for p in pays:
+        if not p.get("sure"):
+            continue
+        for kind, rx in (("addendum", ADDENDUM_REF), ("act", ACT_REF)):
+            for m in rx.finditer(p.get("purpose") or ""):
+                d = _ref_date(m)
+                if not d or not _num(m.group(1)):
+                    continue
+                r = refs.setdefault((kind, _num(m.group(1))), {"kind": kind, "number": m.group(1), "date": d, "pays": []})
+                if p["id"] not in [x["id"] for x in r["pays"]]:
+                    r["pays"].append({"id": p["id"], "date": p["date"], "amount": p["amount"]})
+    registered = {"act": {_num(a.get("number")): a for a in acts}, "addendum": {_num(a.get("number")): a for a in addendums}}
+    for (kind, num), r in sorted(refs.items(), key=lambda kv: (kv[1]["date"], kv[0])):
+        first_pay = min(x["date"] for x in r["pays"])
+        paid = round(sum(x["amount"] for x in r["pays"]), 2)
+        reg = registered[kind].get(num)
+        if not reg:
+            e = {"kind": kind, "number": r["number"], "date": r["date"], "issue": "unpublished", "paid": paid, "first_pay": first_pay}
+            if kind == "addendum":
+                # Prozorro may have it: a change of the contract on (about) that day.
+                near = [ch.get("date") for ch in changes or [] if ch.get("date") and abs((date.fromisoformat(ch["date"]) - date.fromisoformat(r["date"])).days) <= 3]
+                e["prozorro"] = near[0] if near else None
+            out.append(e)
+        elif reg.get("date") and abs((date.fromisoformat(reg["date"]) - date.fromisoformat(r["date"])).days) > DATE_GAP_DAYS:
+            out.append({"kind": kind, "number": r["number"], "date": r["date"], "issue": "date_mismatch", "portal_date": reg["date"], "paid": paid})
+    for kind, docs in (("addendum", addendums), ("act", acts)):
+        for a in docs:
+            late = _workdays(a.get("date"), a.get("published"))
+            if late > PUBLISH_WORKDAYS:
+                paid_first = [x for (k, n), r in refs.items() if k == kind and n == _num(a.get("number")) for x in r["pays"] if x["date"] < a["published"]]
+                out.append({"kind": kind, "number": a.get("number"), "date": a.get("date"), "issue": "published_late",
+                            "published": a.get("published"), "days": late, "amount": a.get("amount"),
+                            "paid_first": round(sum(x["amount"] for x in paid_first), 2) or None})
+    return out
+
+
+# ---- advance: at most 30% and used within three months (CMU Resolutions No. 1764 and No. 1070) ----
+#
+# Both allow an advance for works of up to 30% of the year's volume, to be used within three
+# months and the rest returned. The contract price is at least the year's volume, so more than 30%
+# of the price is surely over the limit. "Used" is read as covered by acts (КБ-2в) dated by then.
+
+ADVANCE = re.compile(r"аванс|попередн\w*\s+оплат|передоплат|предоплат", re.I)
+OFFSET = re.compile(r"погаш\w*\s+аванс|зарах\w*\s+аванс|з\s+урахуванням\s+аванс", re.I)
+WORK_REF = re.compile(r"(?<![а-яіїєґa-z])акт|кб\s*-?\s*[23]|виконан\w*\s+(?:робіт|роб)", re.I)
+ADVANCE_LIMIT = 0.30
+ADVANCE_MONTHS = 3
+
+
+def _add_months(day, n):
+    d = date.fromisoformat(day)
+    y, m = divmod(d.month - 1 + n, 12)
+    y, m = d.year + y, m + 1
+    last = (date(y + (m == 12), m % 12 + 1, 1) - timedelta(days=1)).day
+    return date(y, m, min(d.day, last)).isoformat()
+
+
+def advance_check(pays, acts, value, today):
+    """Advance payments of a contract: {advances, sum, pct, over, open} or None.
+
+    An advance is a payment that says so, or (`likely`) one before the first act that names
+    no act or КБ form. `open` is the worst one not covered by acts three months on.
+    """
+    sure = sorted((p for p in pays if p.get("sure")), key=lambda p: p["date"])
+    first_act = min((a["date"] for a in acts if a.get("date")), default=None)
+    adv = []
+    for p in sure:
+        text = p.get("purpose") or ""
+        if OFFSET.search(text):
+            continue
+        if ADVANCE.search(text) and not ACT_REF.search(text):
+            adv.append(dict(p, likely=False))
+        elif not WORK_REF.search(text) and (first_act is None or p["date"] < first_act):
+            adv.append(dict(p, likely=True))
+    if not adv:
+        return None
+    total = round(sum(p["amount"] for p in adv), 2)
+    res = {"advances": [{"id": p["id"], "date": p["date"], "amount": p["amount"], "likely": p["likely"]} for p in adv],
+           "sum": total, "pct": round(total / value * 100, 1) if value else None, "over": bool(value) and total > value * ADVANCE_LIMIT + 1}
+    worst = None
+    for p in adv:
+        deadline = _add_months(p["date"], ADVANCE_MONTHS)
+        if deadline >= today:
+            continue
+        paid_by = sum(x["amount"] for x in sure if x["date"] <= p["date"])
+        covered = sum(a.get("amount") or 0 for a in acts if a.get("date") and a["date"] <= deadline)
+        unclosed = round(paid_by - covered, 2)
+        if unclosed > 1 and (not worst or unclosed > worst["unclosed"]):
+            worst = {"date": p["date"], "amount": p["amount"], "deadline": deadline, "unclosed": min(unclosed, total),
+                     "days": (date.fromisoformat(today) - date.fromisoformat(deadline)).days, "likely": p["likely"]}
+    res["open"] = worst
+    return res
+
+
+def payment_checks(pays, acts, addendums, changes, value, today, pc, acts_known=True):
+    """Signals and checklist notes from the payments: documents and advance. Returns
+    (signals, notes {checklist key: [[code, params]]}, doc_audit, advance)."""
+    signals, notes = [], {"documents": [], "price": []}
+    audit = doc_audit(pays, acts, addendums, changes) if acts_known else []
+    for e in audit:
+        if e["issue"] == "unpublished":
+            signals.append(_sig("doc_unpublished", "medium", {k: e.get(k) for k in ("kind", "number", "date", "prozorro", "first_pay")}, pc, e["paid"]))
+        elif e["issue"] == "date_mismatch":
+            signals.append(_sig("doc_date_mismatch", "medium", {k: e.get(k) for k in ("kind", "number", "date", "portal_date")}, pc, e["paid"]))
+    late = [e for e in audit if e["issue"] == "published_late"]
+    if late:
+        signals.append(_sig("doc_published_late", "low", {"n": len(late), "max": max(e["days"] for e in late),
+                                                          "paid_first": sum(1 for e in late if e.get("paid_first"))}, pc))
+    for code in ("unpublished", "date_mismatch", "published_late"):
+        n = sum(1 for e in audit if e["issue"] == code)
+        if n:
+            notes["documents"].append(["doc_" + code, {"n": n}])
+    adv = advance_check(pays, acts, value, today) if acts_known else None
+    if adv and adv["over"]:
+        signals.append(_sig("advance_over_30", "high", {"sum": adv["sum"], "pct": adv["pct"], "value": value}, pc, adv["sum"]))
+        notes["price"].append(["advance_over_30", {"pct": adv["pct"]}])
+    if adv and adv.get("open"):
+        o = adv["open"]
+        signals.append(_sig("advance_not_closed", "high", o, pc, o["unclosed"]))
+        notes["price"].append(["advance_not_closed", {"sum": o["unclosed"], "days": o["days"]}])
+    return signals, notes, audit, adv

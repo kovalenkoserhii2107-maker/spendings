@@ -219,7 +219,7 @@ def _diff(old, new):
     for p in new.get("payments") or []:
         if p["id"] not in old_pay:
             ev.append(_event("payment", date=p["date"], amount=p["amount"], sure=p["sure"], purpose=(p.get("purpose") or "")[:160]))
-    act_key = lambda a: (a.get("number"), a.get("date"), a.get("amount"))
+    act_key = lambda a: (a.get("number"), a.get("amount"))  # its date was once the publication date
     old_acts = {act_key(a) for a in old.get("acts") or []}
     for a in new.get("acts") or []:
         if act_key(a) not in old_acts:
@@ -388,8 +388,8 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
         except spending.ApiError as e:
             log("  ! Казначейство: %s" % e)
     sp = (tc or {}).get("id") or sp
-    acts = [{"date": a.get("date"), "amount": a.get("amount"), "number": a.get("number")} for a in (tc or {}).get("acts") or []]
-    addendums = [{k: a.get(k) for k in ("date", "number", "amount", "type", "delta", "as_delta") if a.get(k) not in (None, "")}
+    acts = [{k: a.get(k) for k in ("date", "published", "amount", "number") if a.get(k) is not None} for a in (tc or {}).get("acts") or []]
+    addendums = [{k: a.get(k) for k in ("date", "published", "number", "amount", "type", "delta", "as_delta") if a.get(k) not in (None, "")}
                  for a in (tc or {}).get("addendums") or []]
 
     value = (contract.get("value") or {}).get("amount") or (tc or {}).get("value") or 0
@@ -420,8 +420,29 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
         log("  ! Держаудитслужба: %s" % e)
         audit = (old or {}).get("sasu") or []
     eib_kind = eib.classify(dict(tender, contracts=[contract]))
+    # An EIB loan is paid by another spending unit: the buyer's own Treasury payments are only its
+    # share (co-financing, VAT), so what is overdue cannot be told from them.
+    partial = bool(eib_kind)
+    if partial:
+        overdue = 0.0
+    # Payments against the portal's acts and addendums; the advance and its closing by acts.
+    pay_sig, pay_notes, doc_audit, advance = compliance.payment_checks(
+        pays, acts, addendums, contract.get("changes"), value, today.isoformat(), contract, acts_known=tc is not None)
+    # Works: the sub-project code and the buyer's other procurements for the same object
+    # (design, technical and author's supervision, expert review).
+    works = (tender.get("cpv") or "").startswith("45") or tender.get("category") == "works"
+    tender["subproject"] = prozorro.subproject(tender, [contract])
+    related = (old or {}).get("related")
+    if works and tender_id and not treasury_only:
+        try:
+            related = prozorro.related(tender.get("buyer") or buyer, tender.get("title"), req["tid"])
+        except prozorro.ProzorroError as e:
+            log("  ! пов'язані закупівлі: %s" % e)
+    pay_notes["oversight"] = [["no_supervision", {}]] if works and eib_kind and related is not None \
+        and not any(r.get("role") == "supervision" for r in related) else []
     review = compliance.evaluate(tender, contract, eib=bool(eib_kind), paid=paid, acts_sum=acts_sum,
-                                 treasury=dict(chk, flags=flags) if tc else None, overdue=overdue, sasu=audit)
+                                 treasury=dict(chk, flags=flags) if tc else None, overdue=overdue, sasu=audit,
+                                 extra=(pay_sig, pay_notes))
     if treasury_only:  # no procurement in Prozorro: nothing to say about it
         review["signals"] = [x for x in review["signals"] if x["type"] not in ("single_bidder", "unanswered_questions")]
         for item in review["checklist"]:
@@ -439,9 +460,10 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
         "acts_sum": acts_sum,
         "treasury": {k: (tc or {}).get(k) for k in ("id", "number", "date", "value0", "value", "price_up", "published", "late_days")} if tc else None,
         "totals": {"value": value, "paid": paid, "maybe": maybe, "left": round(value - paid, 2),
-                   "due_now": due_now, "overdue": overdue},
+                   "due_now": due_now, "overdue": overdue, "partial": partial},
         "stages": stages,
         "flags": flags, "signals": signals, "checklist": review["checklist"],
+        "doc_audit": doc_audit, "advance": advance, "related": related,
         "eib": eib_kind, "eib_tx": any(p.get("eib_tx") for p in pays),
         "sasu": audit,
         "payments_checked": today.isoformat(),
