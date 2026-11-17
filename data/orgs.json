@@ -4,5 +4,11 @@
     "note": "",
     "role": "buyer",
     "claimed": true
+  },
+  {
+    "edrpou": "21322127",
+    "note": "",
+    "role": "supplier",
+    "claimed": true
   }
 ]
