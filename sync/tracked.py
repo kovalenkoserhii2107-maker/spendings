@@ -30,6 +30,9 @@ KEY_RE = re.compile(r"^[0-9a-f]{32}$")
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 OVERLAP_DAYS = 7
 HISTORY_SIZE = 300
+# The Treasury record of a payment as the app's payment card shows it.
+TX_FIELDS = ("trans_date", "payer_name", "payer_edrpou", "payer_account", "recipt_name", "recipt_edrpou", "recipt_account",
+             "payment_details", "doc_number", "doc_date", "kekv", "kpk", "budgetCode", "source_name", "contractNumber", "currency")
 EVENTS_IN_INDEX = 15  # recent events per contract, for the app's feed of changes
 
 
@@ -246,6 +249,8 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     # Payments: the whole term on the first run, then a short overlapping window.
     payments = {p["id"]: p for p in (old or {}).get("payments") or []}
     last = (old or {}).get("payments_checked")
+    if any("tx" not in p for p in payments.values()):
+        last = None  # earlier snapshots kept no full payment record: read the whole term once
     start = (date.fromisoformat(last) - timedelta(days=OVERLAP_DAYS)) if last else (
         date.fromisoformat(signed) - timedelta(days=30) if signed else today - timedelta(days=365))
     for tx in fetch_payments(buyer, codes, start, today + timedelta(days=1)):
@@ -262,7 +267,8 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
             if (signed and day < signed) or (late_limit and day > late_limit):
                 continue  # outside the contract's time: not ours
         payments[tid] = {"id": tid, "date": (tx.get("trans_date") or "")[:10], "amount": float(tx.get("amount") or 0),
-                         "purpose": tx.get("payment_details") or "", "kekv": tx.get("kekv") or "", "sure": sure}
+                         "purpose": tx.get("payment_details") or "", "kekv": tx.get("kekv") or "", "sure": sure,
+                         "tx": {k: tx.get(k) for k in TX_FIELDS if tx.get(k) not in (None, "")}}
 
     # The Treasury side of the contract (acts, addendums), when it is linked.
     sp = req.get("sp") or contract.get("sp") or ""

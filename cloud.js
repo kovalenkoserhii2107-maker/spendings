@@ -381,16 +381,6 @@ export async function driveToken() {
   return token;
 }
 
-// The saved token only, without asking Google (for loading a page, not a click).
-function savedDriveToken() {
-  try {
-    const saved = JSON.parse(sessionStorage.getItem('driveToken') || 'null');
-    if (saved && saved.uid === current.uid && saved.until > Date.now()) return saved.token;
-  } catch (e) { /* ignore */ }
-  return null;
-}
-export const hasDriveToken = () => !!(current && savedDriveToken());
-
 async function drive(path, opts) {
   const token = await driveToken();
   const res = await fetch('https://www.googleapis.com' + path, Object.assign({}, opts, {
@@ -467,22 +457,4 @@ export async function exportFiles(orgFolderName, files, onProgress) {
     onProgress && onProgress(++done, files.length);
   }
   return { folderUrl: base.webViewLink, files: out };
-}
-
-// What the Drive script copied for one contract: its folder and the files in it.
-// The script tags them with appProperties (monitorCid, monitorPart); drive.file lets the
-// site see them because the script lives in the same Google project.
-export async function contractCopies(cid) {
-  if (!/^[0-9a-f]{32}$/.test(cid)) return { folder: null, files: [] };
-  const q = `appProperties has { key='monitorCid' and value='${cid}' } and trashed = false`;
-  const res = await drive('/drive/v3/files?' + new URLSearchParams({
-    q, spaces: 'drive', pageSize: '300', orderBy: 'createdTime',
-    fields: 'files(id,name,mimeType,webViewLink,createdTime,size,appProperties)',
-  }));
-  const all = res.files || [];
-  const part = (f) => (f.appProperties || {}).monitorPart || '';
-  return {
-    folder: all.find((f) => f.mimeType === FOLDER && part(f) === 'folder') || null,
-    files: all.filter((f) => f.mimeType !== FOLDER),
-  };
 }

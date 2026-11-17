@@ -1541,10 +1541,18 @@ async function loadDriveState() {
 }
 // With several Google accounts signed in, Google cannot pick one for a web app and shows
 // "Unable to open the file"; the /u/N/ form opens it under the N-th account of the browser.
-const driveAppUrl = (n) => (n == null ? DRIVE_APP : DRIVE_APP.replace('/macros/s/', `/macros/u/${n}/s/`)) + '?uid=' + encodeURIComponent(myUid()) + '&lang=' + LANG;
+// The account number picked once (several Google accounts in one browser) is reused.
+function driveAccount() { try { const v = localStorage.getItem('driveAcc'); return v == null || v === '' ? null : Number(v); } catch (e) { return null; } }
+const driveBase = (n) => (n == null ? DRIVE_APP : DRIVE_APP.replace('/macros/s/', `/macros/u/${n}/s/`));
+const driveAppUrl = (n) => driveBase(n) + '?uid=' + encodeURIComponent(myUid()) + '&lang=' + LANG;
+// The script's page for one contract: copy its documents now (copy) or list its folder (open).
+function driveAction(action, cid) {
+  window.open(driveBase(driveAccount()) + '?action=' + action + '&cid=' + encodeURIComponent(cid) + '&lang=' + LANG, '_blank', 'noopener');
+}
 function connectDrive(n) {
   if (!cloud || !state.user) { toast(t('auth.needed'), { bad: true }); return; }
-  window.open(driveAppUrl(typeof n === 'number' ? n : null), '_blank', 'noopener');
+  if (typeof n === 'number') { try { localStorage.setItem('driveAcc', String(n)); } catch (e) { /* not kept */ } }
+  window.open(driveAppUrl(typeof n === 'number' ? n : driveAccount()), '_blank', 'noopener');
   cloud.markDriveScript().then(() => { driveState.connected = true; driveState.at = new Date(); softRender(); }).catch(() => {});
 }
 const driveFolderLink = (label, cls) => ext('https://drive.google.com/drive/search?q=' + encodeURIComponent('"' + DRIVE_FOLDER + '"'), label, cls);
@@ -1555,51 +1563,18 @@ function driveBanner() {
     h('div', null, h('b', null, t('gs.bannerTitle')), h('div', { class: 'small' }, t('gs.bannerText'))),
     h('button', { class: 'btn btn-dark btn-sm', onclick: connectDrive }, t('gs.connect')));
 }
-// The Drive block. In a contract's dossier (cid) it lists what was copied and opens that
-// contract's own folder; in Settings it only connects the Drive.
-const DRIVE_PARTS = ['contract', 'changes', 'tender'];
-const fsize = (n) => (n == null ? '' : n > 1048576 ? nf1.format(n / 1048576) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
-function driveCard(cid) {
+// The Drive block in Settings: connect the Drive (and pick the account when several are signed in).
+function driveCard() {
   const on = driveState.connected;
-  const head = h('div', { class: 'row' });
-  const body = h('div');
-  const connectBtn = () => h('button', { class: 'btn btn-sm' + (on ? '' : ' btn-dark'), onclick: connectDrive }, icon('drive'), on ? t('gs.reconnect') : t('gs.connect'));
-  async function load(ask) {
-    if (!ask && !cloud.hasDriveToken()) {
-      fill(head, h('button', { class: 'btn btn-sm btn-dark', onclick: () => load(true) }, icon('drive'), t('drv.show')));
-      fill(body, h('p', { class: 'muted small' }, t('gs.onText')));
-      return;
-    }
-    fill(body, h('p', { class: 'muted small' }, t('ui.loading')));
-    let r;
-    try { r = await cloud.contractCopies(cid); } catch (e) {
-      fill(head, h('button', { class: 'btn btn-sm', onclick: () => load(true) }, icon('refresh'), t('drv.retry')), driveFolderLink(t('tr.openDrive'), 'btn btn-sm'));
-      fill(body, h('p', { class: 'muted small' }, e.message || String(e)));
-      return;
-    }
-    fill(head, r.folder ? ext(r.folder.webViewLink, t('drv.contractFolder'), 'btn btn-sm btn-dark') : driveFolderLink(t('tr.openDrive'), 'btn btn-sm'));
-    if (!r.files.length) { fill(body, h('p', { class: 'muted small' }, t('drv.none'))); return; }
-    const last = r.files.reduce((m, f) => (f.createdTime > m ? f.createdTime : m), '');
-    fill(body,
-      h('p', { class: 'faint small' }, t('drv.count', { n: r.files.length, at: ftime(last) })),
-      DRIVE_PARTS.concat(['']).map((part) => {
-        const list = r.files.filter((f) => ((f.appProperties || {}).monitorPart || '') === part || (part === '' && !DRIVE_PARTS.includes((f.appProperties || {}).monitorPart)));
-        if (!list.length) return null;
-        return h('div', { class: 'drive-part' }, h('div', { class: 'drive-part-title' }, part ? t('drv.part.' + part) : t('drv.part.other')),
-          h('div', { class: 'doc-list' }, list.map((f) => h('a', { class: 'doc', href: f.webViewLink, target: '_blank', rel: 'noopener noreferrer' },
-            icon('file'), h('span', null, h('b', null, f.name), h('small', null, join([fsize(f.size != null ? Number(f.size) : null), t('drv.copied', { at: fdate(f.createdTime) })]))), icon('ext')))));
-      }));
-  }
-  if (cid && on && cloud) load(false);
-  else {
-    fill(head, on ? driveFolderLink(t('tr.openDrive'), 'btn btn-sm') : null, connectBtn());
-    fill(body, h('p', { class: 'muted small' }, on ? t('gs.onText') : t('gs.lead')),
-      on && driveState.at ? h('p', { class: 'faint small' }, t('gs.connectedAt', { at: ftime(driveState.at) })) : null,
-      !cid ? h('details', { class: 'multi-acc' }, h('summary', null, t('gs.multiTitle')),
-        h('p', { class: 'muted small' }, t('gs.multiText')),
-        h('div', { class: 'row' }, [0, 1, 2, 3].map((n) => h('button', { class: 'btn btn-sm', onclick: () => connectDrive(n) }, t('gs.account', { n: n + 1 }))))) : null);
-  }
-  return h('div', { class: 'card pad section' }, h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, t('tr.drive')), head), body);
+  return h('div', { class: 'card pad section' },
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, t('tr.drive')),
+      h('div', { class: 'row' }, on ? driveFolderLink(t('tr.openDrive'), 'btn btn-sm') : null,
+        h('button', { class: 'btn btn-sm' + (on ? '' : ' btn-dark'), onclick: connectDrive }, icon('drive'), on ? t('gs.reconnect') : t('gs.connect')))),
+    h('p', { class: 'muted small' }, on ? t('gs.onText') : t('gs.lead')),
+    on && driveState.at ? h('p', { class: 'faint small' }, t('gs.connectedAt', { at: ftime(driveState.at) })) : null,
+    h('details', { class: 'multi-acc' }, h('summary', null, t('gs.multiTitle')),
+      h('p', { class: 'muted small' }, t('gs.multiText')),
+      h('div', { class: 'row' }, [0, 1, 2, 3].map((n) => h('button', { class: 'btn btn-sm', onclick: () => connectDrive(n) }, t('gs.account', { n: n + 1 }))))));
 }
 
 // "Take on control" for one Prozorro contract (c) of a procedure (t0) seen from an organisation.
@@ -1776,7 +1751,7 @@ function trackedDossier(id) {
     }, t('tr.off'));
     const payTable = (list) => h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
       h('thead', null, h('tr', null, h('th', null, t('col.date')), h('th', { class: 'r' }, t('col.amount')), h('th', null, t('f.purpose')))),
-      h('tbody', null, list.map((p) => h('tr', null,
+      h('tbody', null, list.map((p) => h('tr', { class: 'click', tabindex: 0, onclick: () => openPayment(p, org), onkeydown: (e) => { if (e.key === 'Enter') openPayment(p, org); } },
         td(t('col.date'), { class: 'num' }, fdate(p.date)),
         td(t('col.amount'), { class: 'r num' }, money(p.amount)),
         td(t('f.purpose'), { class: 'w-text' }, h('div', { class: 'clamp' }, p.purpose || '—'), p.kekv ? h('div', { class: 'cell-sub' }, t('f.kekv') + ' ' + p.kekv) : null))))));
@@ -1812,13 +1787,14 @@ function trackedDossier(id) {
             isEib ? h('span', { class: 'tag eib' }, t('eib.short')) : null,
             tt.overdue > 1 ? h('span', { class: 'sev high' }, t('tr.overdueN', { sum: money(tt.overdue) })) : null,
             s.error ? h('span', { class: 'sev medium', title: s.error }, t('tr.error')) : null),
-          h('p', { class: 'lead' }, join([t0.buyer_name, (c.suppliers || []).map((x) => party(x.name, x.code)).join(', ')], ' → ')),
           h('p', { class: 'muted' }, c.title || t0.title),
           funders.length ? h('p', { class: 'small' }, t('eib.funders') + ': ' + funders.join(', ')) : null),
         h('div', { class: 'org-actions' }, h('div', { class: 'row' },
           org && (org.files || {}).prozorro ? h('button', { class: 'btn', onclick: () => openTender(org, s.tid) }, t('pz.openProcedure')) : null,
           org && s.sp ? h('button', { class: 'btn', onclick: () => openContract(org, s.sp) }, t('pz.openDossier')) : null,
-          ext(pzUrl(s.tid), 'Prozorro', 'btn')))),
+          ext(pzUrl(s.tid), 'Prozorro', 'btn')),
+          isTracked(id) ? off : null)),
+      partiesCard(t0, c),
       h('div', { class: 'tiles section' },
         h('div', { class: 'stat tint-violet' }, h('small', null, t('pz.contractValue')), h('b', { class: 'num' }, money(tt.value)), c.start || c.end ? h('span', { class: 'sub' }, `${fdate(c.start)} — ${fdate(c.end)}`) : null),
         h('div', { class: 'stat tint-blue' }, h('small', null, t('tr.paid')), h('b', { class: 'num' }, money(tt.paid)), h('span', { class: 'sub' }, tt.value ? t('bar.paidPct', { pct: Math.round((tt.paid / tt.value) * 100) }) : '')),
@@ -1838,16 +1814,12 @@ function trackedDossier(id) {
         maybe.length ? [h('div', { class: 'table-tools' }, h('b', null, t('tr.maybe')), h('span', { class: 'faint small' }, t('tr.maybeHelp'))), payTable(maybe)] : null),
       (s.acts || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('kinds.act')),
         h('div', { class: 'timeline' }, s.acts.map((a) => h('div', { class: 'ev act' }, h('span', { class: 'd num' }, fdate(a.date)), h('span', null, t('kind.act') + ' № ' + (a.number || '—')), h('span', { class: 'num' }, money(a.amount)))))) : null,
-      h('div', { class: 'grid-2 section' },
-        h('div', { class: 'card pad' }, h('h2', { class: 'card-title' }, t('pz.contractDocs')), docList(c.docs, freshDocs)),
-        h('div', { class: 'card pad' }, h('h2', { class: 'card-title' }, t('pz.tenderDocs')), docList(t0.docs, freshDocs))),
+      docsCard(id, c, t0, freshDocs),
       isTracked(id) ? shareCard(id) : null,
-      driveCard(id),
       isTracked(id) ? h('div', { class: 'card pad section' },
         h('h2', { class: 'card-title' }, t('tr.note')),
         h('div', { class: 'review-form' }, h('label', { class: 'field grow' }, note), saveNote),
-        h('p', { class: 'muted small' }, join([pick && pick.addedAt ? t('tr.addedAt', { at: ftime(pick.addedAt) }) : null, s.payments_checked ? t('tr.checked', { at: fdate(s.payments_checked) }) : null])),
-        h('div', { class: 'row' }, off))
+        h('p', { class: 'muted small' }, join([pick && pick.addedAt ? t('tr.addedAt', { at: ftime(pick.addedAt) }) : null, s.payments_checked ? t('tr.checked', { at: fdate(s.payments_checked) }) : null])))
         : h('div', { class: 'card pad section' },
           h('h2', { class: 'card-title' }, t('tr.sharedTab')),
           h('p', { class: 'muted' }, sharedPick ? t('tr.sharedBy', { who: sharedPick.fromName || '—' }) + (sharedPick.at ? ' · ' + ftime(sharedPick.at) : '') : ''),
@@ -1859,6 +1831,61 @@ function trackedDossier(id) {
             } }, t('tr.removeShared')) : null)));
   })();
   return box;
+}
+
+// The two sides of a contract and whether each organisation is on monitoring (its own
+// contracts, payments and procurement in the app), apart from this one contract on control.
+function partiesCard(t0, c) {
+  const sup = (c.suppliers || [])[0] || {};
+  const side = (key, name, code, role) => {
+    const on = !!code && state.mine.orgs.has(code);
+    const add = h('button', { class: 'btn btn-sm', onclick: async () => {
+      add.disabled = true;
+      try { await cloud.addOrg(code, name, role); toast(t('addorg.addedNow', { name: name || code })); } catch (e) { add.disabled = false; toast(e.message, { bad: true }); }
+    } }, icon('building'), t('org.addMonitor'));
+    return h('div', { class: 'party' },
+      h('small', null, t(key)),
+      h('b', null, name || '—'),
+      code ? h('div', { class: 'cell-sub num' }, t('f.edrpou') + ' ' + code) : null,
+      h('div', { class: 'row' },
+        on ? h('span', { class: 'tag ok' }, t('org.monitoring')) : null,
+        on && orgByCode(code) ? h('a', { class: 'btn btn-sm', href: '#/org/' + code }, t('org.open'), icon('arrow')) : null,
+        !on && realCode(code) ? add : null));
+  };
+  return h('div', { class: 'card pad section parties' },
+    side('dos.buyer', t0.buyer_name, t0.buyer, 'buyer'),
+    side('dos.supplier', sup.name, sup.code, 'supplier'));
+}
+
+// Documents of the contract in the same three parts as its folder on Google Drive.
+const isChangeDoc = (d) => d.type === 'contractAnnexe' || /(^|[^а-яіїєґ])(ду(?=[\s\d№_.-])|д\/у|дод\.?\s*угод|додатков|змін)/i.test(d.title || '');
+function docsCard(id, c, t0, fresh) {
+  const parts = [
+    ['contract', (c.docs || []).filter((d) => !isChangeDoc(d))],
+    ['changes', (c.docs || []).filter(isChangeDoc)],
+    ['tender', t0.docs || []],
+  ];
+  const on = driveState.connected;
+  return h('div', { class: 'card pad section' },
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, t('dos.docs')),
+      h('div', { class: 'row' },
+        on ? [h('button', { class: 'btn btn-sm', onclick: () => driveAction('open', id) }, icon('drive'), t('drv.contractFolder')),
+          h('button', { class: 'btn btn-sm btn-dark', onclick: () => driveAction('copy', id) }, icon('refresh'), t('drv.copyNow'))]
+          : h('button', { class: 'btn btn-sm btn-dark', onclick: connectDrive }, icon('drive'), t('gs.connect')))),
+    h('p', { class: 'muted small' }, on ? t('drv.note') : t('gs.lead')),
+    h('div', { class: 'grid-3' }, parts.map(([k, list]) => h('div', { class: 'drive-part' },
+      h('div', { class: 'drive-part-title' }, t('drv.part.' + k), h('span', { class: 'count' }, list.length)),
+      docList(list, fresh)))));
+}
+
+// A payment's full Treasury record.
+async function openPayment(p, org) {
+  let data = p.tx;
+  if (!data && org) {
+    try { const [rec] = await findRecords(org, 'transaction', [p.id]); data = rec && rec.data; } catch (e) { /* not loaded */ }
+  }
+  openRecord({ kind: 'transaction', date: p.date, amount: p.amount, currency: 'UAH', cp_name: (data && data.recipt_name) || null,
+    data: data || { trans_date: p.date, payment_details: p.purpose, kekv: p.kekv } });
 }
 
 // Who else sees this contract: share it by e-mail with another registered user.
@@ -2154,7 +2181,7 @@ function orgPage(code, tab, preset) {
   const view = [
     h('div', { class: 'org-head' },
       h('div', null, h('div', { class: 'eyebrow' }, h('a', { href: '#/orgs', style: 'text-decoration:none' }, '← ' + t('nav.orgs'))), h('h1', { class: 'org-title' }, org.name),
-        h('div', { class: 'chips' }, h('span', { class: 'tag' + (org.role === 'supplier' ? ' pz' : '') }, t('role.' + (org.role || 'buyer'))), h('span', { class: 'chip' }, t('f.edrpou') + ' ' + org.edrpou), syncChip(org),
+        h('div', { class: 'chips' }, h('span', { class: 'tag ok' }, t('org.monitoring')), h('span', { class: 'tag' + (org.role === 'supplier' ? ' pz' : '') }, t('role.' + (org.role || 'buyer'))), h('span', { class: 'chip' }, t('f.edrpou') + ' ' + org.edrpou), syncChip(org),
           orgSignalCounts(org.edrpou).high ? h('span', { class: 'sev high' }, t('org.highRisk', { n: orgSignalCounts(org.edrpou).high })) : null)),
       h('div', { class: 'org-actions' }, h('div', { class: 'row' }, dbBtn, driveBtn),
         h('button', { class: 'btn btn-sm', onclick: async () => {
@@ -2162,6 +2189,7 @@ function orgPage(code, tab, preset) {
           try { await cloud.removeOrg(org.edrpou); toast(t('org.removed')); location.hash = '#/orgs'; } catch (e) { toast(e.message, { bad: true }); }
         } }, t('org.remove')))),
     org.status === 'error' && org.error ? h('div', { class: 'notice section' }, t('org.partial') + ' ' + org.error) : null,
+    orgTrackedCard(org),
     org.role === 'supplier' ? supplierTiles(org) : h('div', { class: 'tiles section' },
       h('div', { class: 'stat tint-violet' }, h('small', null, t('org.asBuyer')), h('b', { class: 'num' }, mshort(tt.value)), h('span', { class: 'sub' }, t('org.pcs', { n: ni.format(tt.contracts || 0) }))),
       h('div', { class: 'stat' }, h('small', null, t('org.byActs')), h('b', { class: 'num' }, mshort(tt.acts))),
@@ -2172,6 +2200,17 @@ function orgPage(code, tab, preset) {
   ];
   show(tab);
   return view;
+}
+
+// Contracts of this organisation that the user has on control (either side).
+function orgTrackedCard(org) {
+  const rows = (state.trackedIndex.items || []).filter((r) => (isTracked(r.key) || isSharedWithMe(r.key)) && [r.org, r.buyer, r.supplier].includes(org.edrpou));
+  if (!rows.length) return null;
+  return h('div', { class: 'card pad section' },
+    h('h2', { class: 'card-title' }, t('org.trackedHere'), h('span', { class: 'count', style: 'margin-left:8px' }, rows.length)),
+    h('div', { class: 'doc-list' }, rows.map((r) => h('a', { class: 'doc', href: '#/tracked/' + r.key },
+      icon('star'), h('span', null, h('b', null, t('dos.heading', { n: r.number || '—', date: fdate(r.signed) })),
+        h('small', null, join([r.supplier_name, t('tr.paidOf', { paid: mshort((r.totals || {}).paid), value: mshort((r.totals || {}).value) })]))), icon('arrow')))));
 }
 
 function supplierTiles(org) {
