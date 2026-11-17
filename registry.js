@@ -32,6 +32,8 @@ const RG = {
     h_funding: 'статус фінансування: {s}', h_disq: 'відхилено учасників: {n}', h_single: 'одна пропозиція', h_noContract: 'договору ще немає',
     h_paidGap: 'оплачено {paid}% при виконанні {pct}%',
     importFailed: 'не збережено: {list}',
+    trackAll: 'Відстежувати все з таблиці', trackConfirm: 'Поставити на відстеження договори й закупівлі {n} показаних субпроєктів? Діючі договори — на контроль, закупівлі без договору — до підписання.',
+    tracking: 'Відстеження: {n} з {total}, додано {added}…', trackDone: 'На відстеження додано {added}, уже було {already}, не вдалося {failed}',
     denied: 'Немає дозволу на запис у реєстр — перевірте, що ви увійшли акаунтом зі списку доступу.', refreshFailed: 'Не оновилось субпроєктів: {n}',
     xSheet: 'Монітор', xTenders: 'Закупівлі', paidShort: 'опл. {pct}%', subvention: 'Субвенція', subvPaid: 'сплачено {sum}', paidSheet: 'Оплачено (аркуш Payments)',
     comment: 'Коментар', next: 'Наступна дія', tableScore: 'оцінка з таблиці',
@@ -62,6 +64,8 @@ const RG = {
     h_funding: 'funding status: {s}', h_disq: 'bidders rejected: {n}', h_single: 'single bid', h_noContract: 'no contract yet',
     h_paidGap: '{paid}% paid at {pct}% done',
     importFailed: 'not saved: {list}',
+    trackAll: 'Track everything in the table', trackConfirm: 'Put the contracts and procurements of the {n} shown sub-projects on control? Contracts in force go on control, procurements without a contract until it is signed.',
+    tracking: 'Tracking: {n} of {total}, {added} added…', trackDone: '{added} added to tracking, {already} already there, {failed} failed',
     denied: 'No permission to write to the registry — check you are signed in with an account on the access list.', refreshFailed: 'Not refreshed: {n} sub-projects',
     xSheet: 'Monitor', xTenders: 'Procurements', paidShort: 'paid {pct}%', subvention: 'Subvention', subvPaid: 'paid {sum}', paidSheet: 'Paid (Payments sheet)',
     comment: 'Comment', next: 'Next action', tableScore: 'rating from the table',
@@ -275,6 +279,55 @@ async function refreshSp(r) {
   tenders.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const pz = { at: new Date().toISOString(), tenders };
   await cloud.updateRegistry(r.code, { pz, risk: riskHints(Object.assign({}, r, { pz })) });
+  return pz;
+}
+
+// What of a sub-project goes on control: its signed contracts in force, and procurements
+// still under way that have none yet (they turn into their contract when it is signed).
+function trackPicks(pz) {
+  const picks = [];
+  for (const t0 of (pz && pz.tenders) || []) {
+    if (t0.error || !/^\d{8,10}$/.test(t0.buyer || '')) continue;
+    const active = (t0.contracts || []).filter((c) => c.status === 'active');
+    const signed = (t0.contracts || []).some((c) => c.status === 'active' || c.status === 'terminated');
+    for (const c of active) {
+      const sup = (c.suppliers || [])[0] || {};
+      picks.push({ cid: c.id, info: { org: t0.buyer, tid: t0.tid, sp: '', signed: c.signed || '', title: c.title || t0.title || '', number: c.number || '', buyer: t0.buyer_name || '', supplier: sup.name || '' } });
+    }
+    if (!signed && t0.id && !['unsuccessful', 'cancelled', 'complete'].includes(t0.status)) {
+      picks.push({ cid: 'tn' + t0.id, info: { org: t0.buyer, tid: t0.tid, sp: '', title: t0.title || '', number: '', buyer: t0.buyer_name || '', supplier: '' } });
+    }
+  }
+  return picks;
+}
+
+// "Track everything of these": Prozorro is read again where it was not read this week.
+async function trackAll(rows) {
+  if (REG.busy) return;
+  REG.busy = 'track';
+  let n = 0, added = 0, already = 0, failed = 0;
+  try {
+    for (const r of rows) {
+      n++;
+      setStatus(rt('tracking', { n, total: rows.length, added }));
+      const tids = spTids(r);
+      if (!tids.length) continue;
+      let pz = r.pz;
+      const fresh = pz && pz.at && Date.now() - new Date(pz.at).getTime() < 7 * 864e5 && tids.every((x) => (pz.tenders || []).some((y) => y.tid === x));
+      if (!fresh) {
+        try { pz = await refreshSp(r); } catch (e) { failed++; continue; }
+      }
+      for (const p of trackPicks(pz)) {
+        if (isTracked(p.cid)) { already++; continue; }
+        try { await cloud.track(p.cid, p.info); added++; } catch (e) { failed++; console.error('registry track', r.code, p.cid, e); }
+      }
+    }
+  } finally {
+    REG.busy = null;
+  }
+  if (added) nudgeSync();
+  setStatus(rt('trackDone', { added, already, failed }), failed > 0);
+  toast(rt('trackDone', { added, already, failed }), { sticky: true });
 }
 
 async function refreshMany(rows) {
@@ -362,7 +415,8 @@ function registryPage() {
     meta ? rt('imported', { at: ftime(meta.at && meta.at.toDate ? meta.at.toDate().toISOString() : meta.at), by: meta.byName || '—', n: meta.rows }) : rt('noTable'),
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => file.click() }, icon('cloud'), rt('upload')), file,
       rows.length ? h('button', { class: 'btn', onclick: () => exportXlsx(filtered()) }, icon('download'), rt('export')) : null,
-      rows.length ? h('button', { class: 'btn btn-dark', onclick: () => refreshMany(filtered()) }, icon('refresh'), rt('refresh')) : null, status));
+      rows.length ? h('button', { class: 'btn', onclick: () => refreshMany(filtered()) }, icon('refresh'), rt('refresh')) : null,
+      rows.length ? h('button', { class: 'btn btn-dark', onclick: () => { const list = filtered(); if (confirm(rt('trackConfirm', { n: list.length }))) trackAll(list); } }, icon('star'), rt('trackAll')) : null, status));
   if (!rows.length) return [head];
   const experts = [...new Set(rows.map((r) => (r.t || {}).expert).filter(Boolean))].sort();
   const progs = [...new Set(rows.map((r) => (r.t || {}).programme).filter(Boolean))].sort();
@@ -421,7 +475,8 @@ function registryTable(rows) {
         td(L.c, { class: 'num' }, h('b', null, r.code), h('div', { class: 'cell-sub' }, join([tt.programme, tt.batch && 'B' + tt.batch]))),
         td(L.s, { class: 'w-text' }, h('div', { class: 'clamp' }, tt.name_uk || tt.name_en || '—'), h('div', { class: 'cell-sub clamp1' }, tt.beneficiary || '')),
         td(L.e, null, tt.expert || '—'),
-        td(L.p, null, tids.length ? [h('div', { class: 'cell-main num' }, tids.length > 1 ? `${tids.length} × UA-…` : tids[0]), last ? pzStatus(last.status) : h('span', { class: 'faint small' }, rt('never'))]
+        td(L.p, null, tids.length ? [h('div', { class: 'cell-main num' }, tids.length > 1 ? `${tids.length} × UA-…` : tids[0]), last ? pzStatus(last.status) : h('span', { class: 'faint small' }, rt('never')),
+          trackPicks(r.pz).some((p) => isTracked(p.cid)) ? h('span', { class: 'tag pz' }, t('tr.onControl')) : null]
           : h('span', { class: 'tag' }, rt('notLinked'))),
         td(L.k, { class: 'w-party' }, m ? [h('div', { class: 'cell-main' }, ((m.c.suppliers || [])[0] || {}).name || '—'), h('div', { class: 'cell-sub' }, join([m.c.number && '№ ' + m.c.number, m.c.value ? money(m.c.value.amount) : null]))]
           : tt.contractor ? tt.contractor : h('span', { class: 'faint' }, '—')),

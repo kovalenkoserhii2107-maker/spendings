@@ -20,6 +20,7 @@ Usage:  python3 sync/sync.py [--add EDRPOU [--note TEXT]] [--remove EDRPOU] [--c
 import argparse
 import json
 import os
+import time
 import re
 import shutil
 import sys
@@ -315,20 +316,37 @@ def sync_prozorro(edrpou, org_dir, org_state, report, role="buyer"):
     return years, summary
 
 
-def sync_tracked():
-    """Re-read every contract on control; returns the summary rows (or None when
-    the list in Firestore could not be read, so the old files stay)."""
+TRACKED_BUDGET_S = {"full": 20 * 60, "tracked": 30 * 60}  # the full run has the organisations too (120 min in all)
+
+
+def sync_tracked(mode="full"):
+    """Re-read the contracts on control; returns the summary rows (or None when the list in
+    Firestore could not be read, so the old files stay).
+
+    New picks go first, then the ones read longest ago, within a time budget: with hundreds
+    on control a run reads what it can, the rest keep their last snapshot until the next run.
+    """
     try:
         wanted = tracked.requests_from_app()
     except Exception as e:
         print("! договори на контролі недоступні: %s" % e)
         return None
-    rows, keep = [], set()
+    started, budget = time.time(), TRACKED_BUDGET_S.get(mode, TRACKED_BUDGET_S["full"])
+    olds = {req["key"]: read_json(os.path.join(TRACKED_DIR, req["key"] + ".json"), None) for req in wanted}
+    wanted.sort(key=lambda r: (olds[r["key"]] is not None, (olds[r["key"]] or {}).get("synced_at") or ""))
+    rows, keep, skipped = [], set(), 0
     print("Договори на контролі: %d" % len(wanted), flush=True)
     for req in wanted:
         path = os.path.join(TRACKED_DIR, req["key"] + ".json")
-        old = read_json(path, None)
+        old = olds[req["key"]]
         keep.add(req["key"] + ".json")
+        if time.time() - started > budget:
+            skipped += 1
+            if old:  # next run; who follows it may have changed meanwhile
+                old = dict(old, viewers=req.get("viewers") or [], owners=req.get("owners") or [])
+                write_json(path, old)
+                rows.append(dict(tracked.index_row(old), error=old.get("error")))
+            continue
         try:
             snap = tracked.sync_one(req, old, TENDERS, TREASURY, log=lambda m: print(m, flush=True))
         except Exception as e:  # keep the last good snapshot and say what failed
@@ -340,8 +358,11 @@ def sync_tracked():
             snap.pop("note", None)
         else:
             snap.pop("error", None)
+        snap["synced_at"] = now_iso()
         write_json(path, snap)
         rows.append(dict(tracked.index_row(snap), error=snap.get("error")))
+    if skipped:
+        print("Не встигли за цей запуск: %d (наступного разу — першими)" % skipped, flush=True)
     # Snapshots of contracts nobody follows stay on disk (out of the index): if the
     # contract is put on control again, its history goes on where it stopped.
     rows.sort(key=lambda r: (r.get("changed_at") or "", r["key"]), reverse=True)
@@ -511,7 +532,7 @@ def main():
                 f.write("mode=%s\n" % ("full" if pending else "tracked"))
         return
     if args.tracked_only:
-        rows = sync_tracked()
+        rows = sync_tracked("tracked")
         index = read_json(INDEX_FILE, {})
         if index and rows is not None:
             # A new data version, so browsers fetch the fresh files.
@@ -567,7 +588,7 @@ def main():
         new_total += new
         failed += 1 if error else 0
 
-    tracked_rows = sync_tracked()
+    tracked_rows = sync_tracked("full")
     if not SKIP_PROZORRO:
         try:
             found = eib.sync(read_json(EIB_FILE, None), log=lambda m: print(m, flush=True))
