@@ -1398,11 +1398,16 @@ function paidCell(c, link) {
 }
 
 function tendersTable(rows, opts) {
-  if (!rows.length) return h('div', { class: 'empty' }, h('b', null, t('pz.none')), t('sigs.changeFilter'));
+  const F = opts.filters;
+  if (!rows.length && !F) return h('div', { class: 'empty' }, h('b', null, t('pz.none')), t('sigs.changeFilter'));
   const L = { p: t('pz.colProc'), org: t('col.org'), subj: t('col.subject'), m: t('pz.colMethod'), v: t('pz.colValue'), c: t('pz.colContract'), paid: t('pz.colPaid') };
-  return h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
-    h('thead', null, h('tr', null, h('th', null, L.p), opts.showOrg && h('th', null, L.org), h('th', null, L.subj), h('th', null, L.m), h('th', { class: 'r' }, L.v), h('th', null, L.c), h('th', { class: 'r' }, L.paid))),
-    h('tbody', null, rows.map((r) => {
+  const cols = ['p', opts.showOrg && 'org', 'subj', 'm', 'v', 'c', 'paid'].filter(Boolean);
+  const right = { v: 1, paid: 1 };
+  return h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' + (F ? ' has-filters' : '') },
+    h('thead', null, h('tr', null, cols.map((k) => h('th', right[k] ? { class: 'r' } : null, L[k]))),
+      F ? h('tr', { class: 'col-filters' }, cols.map((k) => h('th', { 'data-label': L[k] }, F[k] || null))) : null),
+    h('tbody', null, !rows.length ? h('tr', { class: 'empty-row' }, h('td', { colspan: cols.length, 'data-label': '' }, h('div', { class: 'empty' }, h('b', null, t('pz.none')), t('sigs.changeFilter'))))
+      : rows.map((r) => {
       const t0 = r.t;
       const c = (t0.contracts || [])[0];
       const sup = c && (r.org.role === 'supplier' ? { name: t0.buyer_name } : (c.suppliers || [])[0]);
@@ -1437,9 +1442,11 @@ function tenderCsv(rows) {
 
 function tendersBrowser(orgs, preset) {
   const box = h('div', null, h('div', { class: 'empty' }, t('pz.loading')));
-  const f = { which: preset || '', method: '', org: '', q: '', page: 0 };
+  const f = { which: preset || '', q: '', page: 0 };
+  const cf = { id: '', org: '', subj: '', method: '', status: '', vmin: '', vmax: '', contract: '', party: '', paid: '' };
   const list = h('div');
   let all = [];
+  let resetBtn = null;
   const tests = {
     contract: (r) => (r.t.contracts || []).length > 0,
     linked: (r) => r.links.some(Boolean),
@@ -1448,14 +1455,50 @@ function tendersBrowser(orgs, preset) {
     terms: (r) => (r.t.milestones || []).some((m) => m.type === 'financing'),
     tracked: (r) => (r.t.contracts || []).some((c) => isTracked(c.id)),
   };
+  const has = (text, q) => !q || q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => text.toLowerCase().includes(w));
+  const num = (v) => { const x = parseFloat(String(v).replace(/\s/g, '').replace(',', '.')); return Number.isFinite(x) ? x : null; };
+  const paidTests = {
+    paid: (r) => r.links.some((l) => l && l.paid > 0),
+    linked: tests.linked,
+    unlinked: tests.unlinked,
+    none: (r) => !(r.t.contracts || []).length,
+  };
+  // Column filters: each test passes when its field is empty.
+  function colPass(r) {
+    const t0 = r.t;
+    const cs = t0.contracts || [];
+    const lo = num(cf.vmin), hi = num(cf.vmax), v = t0.value ? t0.value.amount : null;
+    return has([t0.tid, t0.date].join(' '), cf.id)
+      && (!cf.org || r.org.edrpou === cf.org)
+      && has([t0.title, t0.cpv].join(' '), cf.subj)
+      && (!cf.method || t0.method === cf.method)
+      && (!cf.status || t0.status === cf.status)
+      && (lo == null || (v != null && v >= lo)) && (hi == null || (v != null && v <= hi))
+      && (!cf.contract || (cf.contract === 'yes' ? cs.length > 0 : !cs.length))
+      && has(cs.flatMap((c) => [c.number, ...(c.suppliers || []).flatMap((x) => [x.name, x.code])]).concat(r.org.role === 'supplier' ? [t0.buyer_name] : []).join(' '), cf.party)
+      && (!cf.paid || paidTests[cf.paid](r));
+  }
+  const colActive = () => Object.values(cf).some(Boolean);
   function draw() {
     const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
-    const rows = all.filter((r) => (!f.which || tests[f.which](r)) && (!f.method || r.t.method === f.method) && (!f.org || r.org.edrpou === f.org)
+    const rows = all.filter((r) => (!f.which || tests[f.which](r)) && colPass(r)
       && (!words.length || words.every((w) => [r.t.tid, r.t.title, r.t.cpv, r.t.buyer_name, ...(r.t.contracts || []).flatMap((c) => [c.number, ...(c.suppliers || []).flatMap((s) => [s.name, s.code])])].join(' ').toLowerCase().includes(w))));
     const sum = rows.reduce((acc, r) => acc + (r.t.contracts || []).reduce((s, c) => s + (c.value && c.value.currency === 'UAH' ? c.value.amount : 0), 0), 0);
-    pagedList(list, rows, f.page, { showOrg: orgs.length > 1, sum, csv: 'prozorro-procedures', csvRows: (items, name) => csvDownload(tenderCsv(items), name) },
+    // The filter fields move into the new table: keep the cursor where it was.
+    const a = document.activeElement;
+    const caret = a && a.tagName === 'INPUT' && a.type !== 'number' ? [a.selectionStart, a.selectionEnd] : null;
+    pagedList(list, rows, f.page, { showOrg: orgs.length > 1, sum, filters: F, csv: 'prozorro-procedures', csvRows: (items, name) => csvDownload(tenderCsv(items), name) },
       (p) => { f.page = p; draw(); }, tendersTable);
+    if (a && a.isConnected && document.activeElement !== a) {
+      a.focus();
+      if (caret) try { a.setSelectionRange(caret[0], caret[1]); } catch (e) { /* not a text field */ }
+    }
+    if (resetBtn) resetBtn.hidden = !colActive();
   }
+  const set = (k) => (e) => { cf[k] = e.target.value; f.page = 0; draw(); };
+  const field = (k, ph, type) => h('input', { class: 'input input-sm', type: type || 'search', placeholder: ph, 'aria-label': ph, inputmode: type === 'number' ? 'decimal' : null, oninput: set(k) });
+  const pick = (k, opts, any) => { const el = select([['', any]].concat(opts), '', set(k), any); el.classList.add('select-sm'); return el; };
+  let F = null;
   (async () => {
     try {
       all = await tenderRows(orgs);
@@ -1465,16 +1508,30 @@ function tendersBrowser(orgs, preset) {
         return;
       }
       const methods = [...new Set(all.map((r) => r.t.method))].sort((a, b) => label('pzt.', a).localeCompare(label('pzt.', b)));
+      const statuses = [...new Set(all.map((r) => r.t.status))].sort((a, b) => label('pzs.', a).localeCompare(label('pzs.', b)));
+      F = {
+        p: field('id', t('cf.id')),
+        org: orgs.length > 1 ? pick('org', orgs.map((o) => [o.edrpou, o.name]), t('ui.allOrgs')) : null,
+        subj: field('subj', t('cf.text')),
+        m: h('div', { class: 'cf-stack' }, pick('method', methods.map((m) => [m, label('pzt.', m)]), t('pz.anyMethod')), pick('status', statuses.map((x) => [x, label('pzs.', x)]), t('cf.anyStatus'))),
+        v: h('div', { class: 'cf-range' }, field('vmin', t('cf.from'), 'number'), field('vmax', t('cf.to'), 'number')),
+        c: h('div', { class: 'cf-stack' }, pick('contract', [['yes', t('cf.withContract')], ['no', t('cf.noContract')]], t('ui.all')), field('party', t('cf.party'))),
+        paid: pick('paid', [['paid', t('cf.paid')], ['linked', t('pz.fLinked')], ['unlinked', t('pz.fUnlinked')], ['none', t('cf.noContract')]], t('ui.all')),
+      };
       const q = h('input', { class: 'input', type: 'search', placeholder: t('pz.searchHint'), 'aria-label': t('ui.search'), oninput: () => { f.q = q.value; f.page = 0; draw(); } });
+      resetBtn = h('button', { class: 'btn btn-sm', hidden: true, onclick: () => {
+        Object.keys(cf).forEach((k) => { cf[k] = ''; });
+        Object.values(F).filter(Boolean).forEach((el) => (el.matches('input, select') ? [el] : [...el.querySelectorAll('input, select')]).forEach((x) => { x.value = ''; }));
+        f.page = 0;
+        draw();
+      } }, icon('x'), t('cf.reset'));
       const n = (k) => all.filter(tests[k]).length;
       fill(box, h('div', { class: 'table-card' },
         h('div', { class: 'table-tools' },
           pills([['', t('ui.all'), all.length], ['contract', t('pz.fContract'), n('contract')], ['linked', t('pz.fLinked'), n('linked')],
             ['unlinked', t('pz.fUnlinked'), n('unlinked')], ['open', t('pz.fOpen'), n('open')], ['terms', t('pz.fTerms'), n('terms')], ['tracked', t('tr.onControl'), n('tracked')]].filter((p) => p[0] === '' || p[2]),
           f.which, (v) => { f.which = v; f.page = 0; draw(); }),
-          select([['', t('pz.anyMethod')]].concat(methods.map((m) => [m, label('pzt.', m)])), '', (e) => { f.method = e.target.value; f.page = 0; draw(); }, t('pz.colMethod')),
-          orgs.length > 1 ? select([['', t('ui.allOrgs')]].concat(orgs.map((o) => [o.edrpou, o.name])), '', (e) => { f.org = e.target.value; f.page = 0; draw(); }, t('ui.allOrgs')) : null,
-          q),
+          q, resetBtn),
         list));
       draw();
     } catch (e) {

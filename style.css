@@ -95,6 +95,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn-icon { width: 40px; padding: 0; }
 .input, .select { min-height: 40px; padding: 0 14px; border: 0; border-radius: 12px; background: var(--soft); color: var(--text); font-size: 14px; min-width: 0; }
 .input:focus, .select:focus { outline: 2px solid #000; outline-offset: 0; background: #fff; }
+/* Фільтри під заголовками колонок. */
+.input-sm, .select-sm { min-height: 32px; height: 32px; padding: 0 10px; border-radius: 9px; font-size: 13px; width: 100%; }
+tr.col-filters th { padding-top: 0; padding-bottom: 10px; vertical-align: top; font-weight: 400; text-transform: none; letter-spacing: 0; white-space: normal; }
+table.has-filters thead tr:first-child th { border-bottom: 0; }
+tr.col-filters th::before { content: none; }
+.cf-stack { display: grid; gap: 6px; }
+.cf-range { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; min-width: 150px; }
+.cf-range .input-sm { padding: 0 8px; }
+table.has-filters tr.empty-row td { padding: 0; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field > span { color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 
@@ -586,6 +595,14 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
   table.stack-mobile td[data-label=""]::before { content: none; }
   table.stack-mobile td[data-label=""] { grid-template-columns: minmax(0, 1fr); }
   table.stack-mobile td[data-label=""] > * { grid-column: 1; }
+  /* На телефоні фільтри колонок — окремий блок над картками. */
+  table.stack-mobile.has-filters thead { display: block; }
+  table.stack-mobile.has-filters thead tr:first-child { display: none; }
+  table.stack-mobile.has-filters tr.col-filters { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 10px 10px; padding: 12px 16px; border-bottom: .5px solid var(--line); background: #FBFCFD; }
+  table.stack-mobile.has-filters tr.col-filters th { display: grid; align-content: start; gap: 4px; padding: 0 !important; border: 0; min-width: 0; }
+  table.stack-mobile.has-filters tr.col-filters th::before { content: attr(data-label); color: var(--faint); font-size: 12px; font-weight: 700; }
+  table.stack-mobile.has-filters tr.col-filters th:empty { display: none; }
+  .cf-range { min-width: 0; }
   table.stack-mobile .clamp { max-width: none; }
   table.stack-mobile td > .tag, table.stack-mobile td > .rv { justify-self: start; }
   tr.new td:first-child { box-shadow: none; }
