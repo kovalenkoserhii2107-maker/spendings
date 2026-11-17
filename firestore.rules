@@ -45,7 +45,7 @@ service cloud.firestore {
     }
     // Listed in registryAccess by the e-mail of the Google account.
     function isRegistry() {
-      return signedIn() && exists(/databases/$(database)/documents/registryAccess/$(request.auth.token.email.lower()));
+      return signedIn() && exists(/databases/$(database)/documents/registryAccess/$(request.auth.token.email));
     }
     function isAnalyst() {
       return signedIn() && exists(/databases/$(database)/documents/analysts/$(request.auth.uid));

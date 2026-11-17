@@ -31,6 +31,8 @@ const RG = {
     h_failed: 'невдалих тендерів: {n}', h_overdue: 'строк завершення {date} минув, виконано {pct}%', h_stale: 'коментар не оновлювався {days} дн.',
     h_funding: 'статус фінансування: {s}', h_disq: 'відхилено учасників: {n}', h_single: 'одна пропозиція', h_noContract: 'договору ще немає',
     h_paidGap: 'оплачено {paid}% при виконанні {pct}%',
+    importFailed: 'не збережено: {list}',
+    denied: 'Немає дозволу на запис у реєстр — перевірте, що ви увійшли акаунтом зі списку доступу.', refreshFailed: 'Не оновилось субпроєктів: {n}',
     xSheet: 'Монітор', xTenders: 'Закупівлі', paidShort: 'опл. {pct}%', subvention: 'Субвенція', subvPaid: 'сплачено {sum}', paidSheet: 'Оплачено (аркуш Payments)',
     comment: 'Коментар', next: 'Наступна дія', tableScore: 'оцінка з таблиці',
   },
@@ -59,6 +61,8 @@ const RG = {
     h_failed: 'failed tenders: {n}', h_overdue: 'completion date {date} passed, {pct}% done', h_stale: 'comment not updated for {days} days',
     h_funding: 'funding status: {s}', h_disq: 'bidders rejected: {n}', h_single: 'single bid', h_noContract: 'no contract yet',
     h_paidGap: '{paid}% paid at {pct}% done',
+    importFailed: 'not saved: {list}',
+    denied: 'No permission to write to the registry — check you are signed in with an account on the access list.', refreshFailed: 'Not refreshed: {n} sub-projects',
     xSheet: 'Monitor', xTenders: 'Procurements', paidShort: 'paid {pct}%', subvention: 'Subvention', subvPaid: 'paid {sum}', paidSheet: 'Paid (Payments sheet)',
     comment: 'Comment', next: 'Next action', tableScore: 'rating from the table',
   },
@@ -222,17 +226,33 @@ function parseWorkbook(XLSX, wb) {
   return { rows: [...out.values()], tenders: tendersN };
 }
 
-async function importFile(file, status) {
+// The upload's progress lives in REG, not in the page: Firestore snapshots redraw the page
+// while it goes on.
+function setStatus(text, bad) {
+  REG.status = text ? { text, bad: !!bad } : null;
+  const el = document.getElementById('reg-status');
+  if (el) fill(el, text ? h('span', { class: bad ? 'bad' : '' }, text) : '');
+}
+async function importFile(file) {
+  if (REG.busy) return;
+  REG.busy = 'import';
   try {
-    fill(status, rt('importing'));
+    setStatus(rt('importing'));
     const XLSX = await loadXlsx();
     const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
     const { rows, tenders } = parseWorkbook(XLSX, wb);
-    await cloud.importRegistry(rows, { file: file.name.slice(0, 200), rows: rows.length, tenders }, (n, total) => fill(status, rt('saving', { n, total })));
-    fill(status, rt('importDone', { n: rows.length, t: tenders }));
-    toast(rt('importDone', { n: rows.length, t: tenders }));
+    const res = await cloud.importRegistry(rows, { file: file.name.slice(0, 200), rows: rows.length, tenders }, (n, total) => setStatus(rt('saving', { n, total })));
+    const failed = (res && res.failed) || [];
+    const msg = rt('importDone', { n: rows.length - failed.length, t: tenders }) + (failed.length ? ' · ' + rt('importFailed', { list: failed.slice(0, 10).join(', ') }) : '');
+    setStatus(msg, failed.length > 0);
+    toast(msg, failed.length ? { sticky: true } : undefined);
   } catch (e) {
-    fill(status, h('span', { class: 'bad' }, e.message));
+    console.error('registry import', e);
+    const msg = (e && e.code === 'permission-denied') ? rt('denied') : (e && e.message) || String(e);
+    setStatus(msg, true);
+    toast(msg, { bad: true, sticky: true });
+  } finally {
+    REG.busy = null;
   }
 }
 
@@ -257,18 +277,18 @@ async function refreshSp(r) {
   await cloud.updateRegistry(r.code, { pz, risk: riskHints(Object.assign({}, r, { pz })) });
 }
 
-async function refreshMany(rows, status) {
+async function refreshMany(rows) {
   if (REG.busy) return;
-  REG.busy = true;
-  let n = 0;
+  REG.busy = 'refresh';
+  let n = 0, failed = 0;
   for (const r of rows) {
     n++;
-    fill(status, rt('refreshing', { n, total: rows.length }));
+    setStatus(rt('refreshing', { n, total: rows.length }));
     if (!spTids(r).length) continue;
-    try { await refreshSp(r); } catch (e) { /* the next one */ }
+    try { await refreshSp(r); } catch (e) { failed++; console.error('registry refresh', r.code, e); }
   }
   REG.busy = null;
-  fill(status, '');
+  setStatus(failed ? rt('refreshFailed', { n: failed }) : '', !!failed);
 }
 
 // The works contract of a sub-project: the latest signed one of its linked procedures.
@@ -335,14 +355,14 @@ function registryPage() {
   if (!REG.access) return [h('div', { class: 'card empty section' }, rt('noAccess'))];
   if (REGF.expert == null) REGF.expert = REG.access.expert || '';
   const rows = [...REG.rows.values()];
-  const status = h('span', { class: 'muted small' });
-  const file = h('input', { type: 'file', accept: '.xlsx', hidden: true, onchange: () => file.files[0] && importFile(file.files[0], status) });
+  const status = h('span', { class: 'muted small', id: 'reg-status' }, REG.status ? h('span', { class: REG.status.bad ? 'bad' : '' }, REG.status.text) : null);
+  const file = h('input', { type: 'file', accept: '.xlsx', hidden: true, onchange: () => file.files[0] && importFile(file.files[0]) });
   const meta = REG.meta;
   const head = pageHead(rt('eyebrow'), titleGrad(rt('title1'), rt('title2')),
     meta ? rt('imported', { at: ftime(meta.at && meta.at.toDate ? meta.at.toDate().toISOString() : meta.at), by: meta.byName || '—', n: meta.rows }) : rt('noTable'),
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => file.click() }, icon('cloud'), rt('upload')), file,
       rows.length ? h('button', { class: 'btn', onclick: () => exportXlsx(filtered()) }, icon('download'), rt('export')) : null,
-      rows.length ? h('button', { class: 'btn btn-dark', onclick: () => refreshMany(filtered(), status) }, icon('refresh'), rt('refresh')) : null, status));
+      rows.length ? h('button', { class: 'btn btn-dark', onclick: () => refreshMany(filtered()) }, icon('refresh'), rt('refresh')) : null, status));
   if (!rows.length) return [head];
   const experts = [...new Set(rows.map((r) => (r.t || {}).expert).filter(Boolean))].sort();
   const progs = [...new Set(rows.map((r) => (r.t || {}).programme).filter(Boolean))].sort();

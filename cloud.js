@@ -508,23 +508,37 @@ export function watchRegistry(cb) {
   return unwatchRegistry;
 }
 
-const regId = (code) => String(code).replace(/[\/\s]+/g, '_').slice(0, 60);
+// Document ids keep to letters, digits, _ . - (the rules check it): "ZH08_04#LOT2" -> "ZH08_04_LOT2".
+export const regId = (code) => String(code).replace(/[^0-9A-Za-z_.-]+/g, '_').slice(0, 60);
 
 // The table's rows (table fields only: links, Prozorro data and notes stay as they are).
+// Batches of 50; when one is refused, its rows go one by one so a single odd row does not
+// stop the rest. Returns the codes that could not be saved.
+const REG_BATCH = 50;
 export async function importRegistry(rows, meta, onProgress) {
   let done = 0;
-  for (let i = 0; i < rows.length; i += 400) {
+  const failed = [];
+  const docOf = (r) => storable({ code: r.code, t: r.t, tenders: r.tenders || [], paid: r.paid || null });
+  for (let i = 0; i < rows.length; i += REG_BATCH) {
+    const part = rows.slice(i, i + REG_BATCH);
     const batch = fb.writeBatch(db);
-    for (const r of rows.slice(i, i + 400)) {
-      batch.set(fb.doc(db, 'registry', regId(r.code)), storable({ code: r.code, t: r.t, tenders: r.tenders || [], paid: r.paid || null }), { merge: true });
+    for (const r of part) batch.set(fb.doc(db, 'registry', regId(r.code)), docOf(r), { merge: true });
+    try {
+      await batch.commit();
+    } catch (e) {
+      if (e && e.code !== 'permission-denied' && e.code !== 'invalid-argument') throw e;
+      for (const r of part) {
+        try { await fb.setDoc(fb.doc(db, 'registry', regId(r.code)), docOf(r), { merge: true }); } catch (e2) { failed.push(r.code); }
+      }
+      if (failed.length === rows.length || (i === 0 && failed.length === part.length)) throw e;  // nothing goes through: no access
     }
-    await batch.commit();
-    done += Math.min(400, rows.length - i);
+    done += part.length;
     onProgress && onProgress(done, rows.length);
   }
   await fb.setDoc(fb.doc(db, 'registryMeta', 'import'), Object.assign(storable(meta), {
-    by: current.uid, byName: current.displayName || current.email || '', at: fb.serverTimestamp(),
+    by: current.uid, byName: current.displayName || current.email || '', at: fb.serverTimestamp(), failed: failed.slice(0, 50),
   }));
+  return { failed };
 }
 
 // Our side of one sub-project: confirmed links, Prozorro data, risk hints, a note.
