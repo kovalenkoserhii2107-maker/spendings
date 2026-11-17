@@ -4,6 +4,8 @@
 
 window.I18N = {
   uk: {
+    'qs.what': 'Що шукати',
+    'qs.period': 'Період',
     'qs.filters': 'Фільтри',
     'nav.tracking': 'Відстеження',
     'tr.scope.items': 'Договори й закупівлі',
@@ -14,7 +16,7 @@ window.I18N = {
     'qs.type.contracts': 'Договори',
     'qs.type.tenders': 'Закупівлі',
     'qs.type.payments': 'Платежі',
-    'qs.sources': 'Джерела:',
+    'qs.sources': 'Джерела',
     'qs.src.treasury': 'Казначейство',
     'qs.src.prozorro': 'Prozorro',
     'qs.src.eib': 'Лише фінансування ЄІБ',
@@ -1027,6 +1029,8 @@ window.I18N = {
   },
 
   en: {
+    'qs.what': 'Looking for',
+    'qs.period': 'Period',
     'qs.filters': 'Filters',
     'nav.tracking': 'Following',
     'tr.scope.items': 'Contracts and procurement',
@@ -1037,7 +1041,7 @@ window.I18N = {
     'qs.type.contracts': 'Contracts',
     'qs.type.tenders': 'Procurement',
     'qs.type.payments': 'Payments',
-    'qs.sources': 'Sources:',
+    'qs.sources': 'Sources',
     'qs.src.treasury': 'Treasury',
     'qs.src.prozorro': 'Prozorro',
     'qs.src.eib': 'EIB-financed only',

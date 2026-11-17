@@ -2607,19 +2607,25 @@ function searchPage(preset) {
   const typeBox = h('div');
   const drawTypes = () => fill(typeBox, pills(SEARCH_TYPES.map((k) => [k, t('qs.type.' + k)]), qs2.type, (v) => { qs2.type = v; run(); }));
   const chk = (key, labelKey) => h('label', { class: 'chk-opt' }, h('input', { type: 'checkbox', checked: qs2[key] || null, onchange: (e) => { qs2[key] = e.target.checked; drawFilters(); run(); } }), t(labelKey));
-  const filters = h('div', { class: 'qs-filters' });
+  // Filters as a grid of "label — choices", the same column on every row.
+  const filters = h('div', { class: 'qs-grid' });
   const drawFilters = () => fill(filters,
-    h('div', { class: 'row' }, h('span', { class: 'faint small' }, t('qs.sources')), chk('treasury', 'qs.src.treasury'), chk('prozorro', 'qs.src.prozorro'), chk('eib', 'qs.src.eib')),
-    !qs2.eib ? h('div', { class: 'row' },
-      h('label', { class: 'field' }, h('span', null, t('ui.from')), h('input', { class: 'input', type: 'date', value: qs2.from, onchange: (e) => { qs2.from = e.target.value; run(); } })),
-      h('label', { class: 'field' }, h('span', null, t('ui.to')), h('input', { class: 'input', type: 'date', value: qs2.to, onchange: (e) => { qs2.to = e.target.value; run(); } })),
-      h('label', { class: 'field' }, h('span', null, t('qs.role')), select([['any', t('qs.role.any')], ['buyer', t('qs.role.buyer')], ['supplier', t('qs.role.supplier')]], qs2.role, (e) => { qs2.role = e.target.value; run(); }, t('qs.role')))) : null);
+    h('div', { class: 'qs-lbl' }, t('qs.sources')),
+    h('div', { class: 'qs-opts' }, chk('treasury', 'qs.src.treasury'), chk('prozorro', 'qs.src.prozorro'), chk('eib', 'qs.src.eib')),
+    !qs2.eib ? [
+      h('div', { class: 'qs-lbl' }, t('qs.period')),
+      h('div', { class: 'qs-period' },
+        h('input', { class: 'input', type: 'date', value: qs2.from, 'aria-label': t('ui.from'), onchange: (e) => { qs2.from = e.target.value; run(); } }),
+        h('span', { class: 'qs-dash' }, '—'),
+        h('input', { class: 'input', type: 'date', value: qs2.to, 'aria-label': t('ui.to'), onchange: (e) => { qs2.to = e.target.value; run(); } })),
+      h('div', { class: 'qs-lbl' }, t('qs.role')),
+      h('div', { class: 'qs-opts' }, select([['any', t('qs.role.any')], ['buyer', t('qs.role.buyer')], ['supplier', t('qs.role.supplier')]], qs2.role, (e) => { qs2.role = e.target.value; run(); }, t('qs.role')))] : null);
   const want = (type) => qs2.type === 'all' || qs2.type === type;
   function run() {
     qs2.q = input.value.trim();
     const q = qs2.q;
     if (qs2.eib) { fill(out, eibBrowser(q)); return; }
-    if (!q) { fill(out, h('div', { class: 'empty' }, h('b', null, t('qs.emptyTitle')), t('qs.emptyText'))); return; }
+    if (!q) { fill(out, h('div', { class: 'card empty' }, h('b', null, t('qs.emptyTitle')), t('qs.emptyText'))); return; }
     const code = /^\d{8,10}$/.test(q) ? q : null;
     const tid = /^UA-\d{4}-\d{2}-\d{2}-\d{6}-[a-z]$/i.test(q) ? q.toUpperCase().replace(/-([A-Z])$/, (m, x) => '-' + x.toLowerCase()) : null;
     const blocks = [];
@@ -2636,7 +2642,7 @@ function searchPage(preset) {
     } else {
       if (want('orgs')) blocks.push(orgsByName(q));
       if ((want('tenders') || want('contracts')) && qs2.prozorro) blocks.push(pzList(t('qs.byText'), { action: 'search', kind: 'tenders', text: q }));
-      if (want('payments') || (want('contracts') && qs2.treasury)) blocks.push(h('p', { class: 'muted small qs-block' }, t('qs.needCode')));
+      if (want('payments') || (want('contracts') && qs2.treasury)) blocks.push(h('p', { class: 'muted small qs-note' }, t('qs.needCode')));
     }
     fill(out, blocks.length ? blocks : h('div', { class: 'empty' }, t('qs.nothingToSearch')));
   }
@@ -2645,10 +2651,11 @@ function searchPage(preset) {
   drawFilters();
   setTimeout(run);
   return [pageHead(t('srch.eyebrow'), titleGrad(t('srch.title1'), t('srch.title2')), null),
-    h('div', { class: 'card pad section qs' }, form, typeBox,
-      // On a phone the filters fold away under one line.
+    h('div', { class: 'card section qs' }, form,
+      h('div', { class: 'qs-grid qs-first' }, h('div', { class: 'qs-lbl' }, t('qs.what')), typeBox),
+      // On a phone the other filters fold away under one line.
       h('details', { class: 'qs-more', open: window.innerWidth > 760 || null }, h('summary', null, t('qs.filters')), filters)),
-    h('div', { class: 'section' }, out)];
+    h('div', { class: 'qs-results' }, out)];
 }
 
 // Organisations whose name contains the text: the ones the app has met (on monitoring,
@@ -2715,7 +2722,7 @@ function paymentsList(code, f, delay) {
       fill(list, h('div', { class: 'muted small' }, e.message));
     }
   })();
-  return h('div', { class: 'qs-block' }, h('div', { class: 'card-head' }, h('h3', { class: 'card-sub' }, t('qs.payments'))), h('div', { class: 'table-card' }, list));
+  return h('div', { class: 'qs-block qs-flush' }, h('div', { class: 'card-head' }, h('h3', { class: 'card-sub' }, t('qs.payments'))), list);
 }
 
 // The organisation behind a code: its Treasury card and whether it is on monitoring.
