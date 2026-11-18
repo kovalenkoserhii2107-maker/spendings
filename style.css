@@ -281,6 +281,7 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 .tag { padding: 2px 9px; border-radius: 999px; background: var(--soft); color: var(--muted); font-size: 11.5px; font-weight: 800; }
 .tag.ok { background: var(--green-bg); color: var(--green); }
 .tag.warn { background: #FFF4D6; color: #8A5A00; }
+.chk .score-pick { flex: none; width: 56px; min-height: 30px; height: 30px; padding: 0 8px; font-weight: 800; }
 .tag.nocontract { background: var(--yellow); color: var(--amber); white-space: nowrap; }
 
 /* Prozorro */
@@ -521,10 +522,13 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
 .section-tabs a:hover { background: var(--soft); }
 .section-tabs a.on { background: #000; color: #fff; }
 .section-tabs .count { height: 18px; min-width: 18px; font-size: 11px; }
+.section-tabs .t-short { display: none; }
 
 /* A card title with its actions on the same line. */
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; flex-wrap: wrap; margin-bottom: 12px; }
 .card-head .card-title { margin: 0; }
+/* Nothing in a card heading may push the page wider than the screen (long pill rows scroll inside). */
+.card-head > * { min-width: 0; max-width: 100%; }
 .drive-part { margin-top: 14px; }
 .drive-part-title { margin-bottom: 6px; color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 @media (max-width: 1180px) {
@@ -565,9 +569,11 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
   .nav { display: none; }
   .top-meta { margin-left: auto; gap: 8px; }
   .top-meta .lang { display: none; }
-  /* Вкладки розділу на телефоні: переносяться в рядки, без обрізаних пунктів. */
-  .section-tabs { width: 100%; max-width: 100%; flex-wrap: wrap; justify-content: center; gap: 4px; border-radius: 20px; overflow: visible; }
-  .section-tabs a { flex: 1 1 auto; justify-content: center; }
+  /* Вкладки розділу на телефоні: один рядок рівних частин із короткими назвами. */
+  .section-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); width: 100%; max-width: 100%; overflow: visible; }
+  .section-tabs a { justify-content: center; gap: 4px; padding: 7px 6px; font-size: 13px; min-width: 0; }
+  .section-tabs .t-full { display: none; }
+  .section-tabs .t-short { display: inline; overflow: hidden; text-overflow: ellipsis; }
   /* iOS наближає сторінку на полях із шрифтом менше 16px: на телефоні поля 16px. */
   input, select, textarea, .input, .select { font-size: 16px; }
   .foot-meta { padding-bottom: calc(var(--tabbar) + 24px + var(--safe-b)); }

@@ -320,3 +320,52 @@ def payment_checks(pays, acts, addendums, changes, value, today, pc, acts_known=
         signals.append(_sig("advance_not_closed", "high", o, pc, o["unclosed"]))
         notes["price"].append(["advance_not_closed", {"sum": o["unclosed"], "days": o["days"]}])
     return signals, notes, audit, adv
+
+
+# ---- the EIB part of the payments, from the VAT the buyer pays ----------------------------------
+#
+# The EIB loan pays the works net of VAT and outside the buyer's Treasury account; the buyer pays
+# its co-financing (with VAT) and the VAT on the loan's part, often as a payment that is all VAT
+# ("…в т.ч. ПДВ-394941,31." for 394 941,31). Per act: what the act is worth less what the buyer paid
+# for it is the loan's part; with no act at hand, a VAT-only payment × 5 (20% VAT).
+
+VAT = re.compile(r"(?:в\s*т\.?\s*ч\.?\s*)?пдв\s*(?:20\s*%\s*)?[-–—:=]?\s*(\d[\d  ]*[.,]\d{1,2})", re.I)
+
+
+def _vat(text):
+    m = VAT.search(text or "")
+    if not m:
+        return None
+    try:
+        return float(re.sub(r"[  ]", "", m.group(1)).replace(",", "."))
+    except ValueError:
+        return None
+
+
+def eib_from_vat(pays, acts):
+    """{"local", "eib", "total", "acts": [{number, date, amount, local, eib}]} or None when no
+    payment of the buyer is a VAT-only one (then nothing says the loan paid)."""
+    sure = [p for p in pays if p.get("sure")]
+    vat_only = [p for p in sure if (lambda v: v is not None and abs(p["amount"] - v) <= 1.0)(_vat(p.get("purpose")))]
+    if not vat_only:
+        return None
+    by_num = {_num(a.get("number")): a for a in acts}
+    local_by_act, vat_acts, loose = {}, set(), 0.0
+    for p in sure:
+        nums = [_num(m.group(1)) for m in ACT_REF.finditer(p.get("purpose") or "")]
+        known = [n for n in nums if n in by_num]
+        if known:
+            local_by_act[known[0]] = local_by_act.get(known[0], 0.0) + p["amount"]
+            if p in vat_only:
+                vat_acts.add(known[0])
+        elif p in vat_only:
+            loose += p["amount"] * 5.0
+    rows = []
+    for n in sorted(vat_acts, key=lambda n: by_num[n].get("date") or ""):
+        a = by_num[n]
+        eib = round((a.get("amount") or 0) - local_by_act.get(n, 0.0), 2)
+        if eib > 0:
+            rows.append({"number": a.get("number"), "date": a.get("date"), "amount": a.get("amount"), "local": round(local_by_act.get(n, 0.0), 2), "eib": eib})
+    local = round(sum(p["amount"] for p in sure), 2)
+    eib = round(sum(x["eib"] for x in rows) + loose, 2)
+    return {"local": local, "eib": eib, "total": round(local + eib, 2), "acts": rows, "estimated": round(loose, 2)}

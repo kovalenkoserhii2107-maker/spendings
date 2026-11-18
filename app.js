@@ -1755,10 +1755,12 @@ function trackedBar(tt, acts) {
 function trackingTabs(active) {
   const own = [...state.mine.tracked.keys()].length;
   const shared = [...state.mine.shared.keys()].filter((id) => !isTracked(id)).length;
-  const tabs = [['#/', 'mine', t('tr.scope.items'), own], ['#/tracked/orgs', 'orgs', t('tr.scope.orgs'), (state.index.orgs || []).length],
+  const tabs = [['#/', 'mine', t('tr.scope.items'), own, t('tr.scope.itemsShort')], ['#/tracked/orgs', 'orgs', t('tr.scope.orgs'), (state.index.orgs || []).length],
     ['#/tracked/signals', 'signals', t('tr.scope.signals'), riskCount()]].concat(shared ? [['#/tracked/shared', 'shared', t('tr.sharedTab'), shared]] : []);
-  return h('nav', { class: 'section-tabs pills', 'aria-label': t('nav.tracking') }, tabs.map(([href, key, text, n]) =>
-    h('a', { href, class: key === active ? 'on' : '' }, text, n ? h('em', { class: 'count' + (key === 'signals' ? ' red' : '') }, n) : null)));
+  // A shorter name for the phone, where the tabs share one row.
+  return h('nav', { class: 'section-tabs pills', 'aria-label': t('nav.tracking') }, tabs.map(([href, key, text, n, short]) =>
+    h('a', { href, class: key === active ? 'on' : '' }, h('span', { class: 't-full' }, text), h('span', { class: 't-short' }, short || text),
+      n ? h('em', { class: 'count' + (key === 'signals' ? ' red' : '') }, n) : null)));
 }
 const trackingHead = () => pageHead(t('tr.eyebrow'), titleGrad(t('tr.title1'), t('tr.title2')), null);
 
@@ -1947,7 +1949,10 @@ function trackedDossier(id) {
           oc.status !== 'cancelled' ? trackButton({ edrpou: t0.buyer, name: t0.buyer_name, role: 'buyer' }, Object.assign({}, t0, { tid: s.tid }), oc) : null)))) : null,
       h('div', { class: 'tiles section' },
         h('div', { class: 'stat tint-violet' }, h('small', null, t('pz.contractValue')), h('b', { class: 'num' }, money(tt.value)), c.start || c.end ? h('span', { class: 'sub' }, `${fdate(c.start)} — ${fdate(c.end)}`) : null),
-        h('div', { class: 'stat tint-blue' }, h('small', null, t('tr.paid')), h('b', { class: 'num' }, money(tt.paid)), h('span', { class: 'sub' }, tt.value ? t('bar.paidPct', { pct: Math.round((tt.paid / tt.value) * 100) }) : '')),
+        // With the loan's part read back from VAT: the whole paid, and how it splits.
+        tt.paid_total ? h('div', { class: 'stat tint-blue' }, h('small', null, t('tr.paid')), h('b', { class: 'num' }, money(tt.paid_total)),
+          h('span', { class: 'sub' }, t('tr.paidSplit', { eib: money(tt.paid_eib), local: money(tt.paid) })))
+          : h('div', { class: 'stat tint-blue' }, h('small', null, t('tr.paid')), h('b', { class: 'num' }, money(tt.paid)), h('span', { class: 'sub' }, tt.value ? t('bar.paidPct', { pct: Math.round((tt.paid / tt.value) * 100) }) : '')),
         h('div', { class: 'stat tint-yellow' }, h('small', null, tt.left < -1 ? t('dos.overpaid') : t('tr.left')), h('b', { class: 'num' }, money(Math.abs(tt.left))), tt.maybe ? h('span', { class: 'sub' }, t('tr.maybeSub', { sum: money(tt.maybe) })) : null),
         h('div', { class: 'stat' + (tt.overdue > 1 && !tt.partial ? ' bad' : '') }, h('small', null, t('tr.dueNow')), h('b', { class: 'num' }, money(tt.due_now)), h('span', { class: 'sub' }, tt.overdue > 1 ? (tt.partial ? t('tr.notSeen', { sum: money(tt.overdue) }) : t('tr.overdueN', { sum: money(tt.overdue) })) : t('tr.noOverdue')))),
       h('div', { class: 'card pad section' }, trackedBar(tt, s.acts_sum), h('div', { class: 'bar-label' }, h('span', null, t('tr.paidOf', { paid: money(tt.paid), value: money(tt.value) })), h('span', null, s.acts_sum ? t('tr.actsSum', { sum: money(s.acts_sum) }) : ''))),
@@ -2097,11 +2102,11 @@ function subprojectOf(t0) {
   }
   return null;
 }
-function objectName(title) {
+function objectName(title, n = 14) {
   const text = String(title || '');
   let rest = text.replace(/^\s*(?:ДК\s*021\s*[:\-]?\s*2015\s*[:\-]?\s*(?:\(?CPV\)?)?\s*[:\-]?\s*)?\d{8}-\d\s*[-–—:]?\s*/i, '');
   if (rest !== text && rest.includes('(') && rest.split('(')[0].trim().split(/\s+/).length <= 8) rest = rest.slice(rest.indexOf('(') + 1);
-  return rest.replace(/[«»")]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 14).join(' ');
+  return rest.replace(/[«»")]/g, ' ').split(/\s+/).filter(Boolean).slice(0, n).join(' ');
 }
 const REL_RX = [['supervision', /технічн\S*\s+нагляд/i], ['author', /авторськ\S*\s+нагляд/i], ['expertise', /експертиз|обстеженн|інвентаризац/i],
   ['design', /про[еє]кт\S*\s*[-–‑]?\s*кошторисн|про[еє]ктуванн|розробленн\S*\s+про[еє]кт|робоч\S+\s+про[еє]кт|коригуванн/i], ['works', /будівництв|реконструкці|капітальн\S*\s+ремонт|ремонт|монтаж/i]];

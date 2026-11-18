@@ -518,7 +518,7 @@ const REG_BATCH = 50;
 export async function importRegistry(rows, meta, onProgress) {
   let done = 0;
   const failed = [];
-  const docOf = (r) => storable({ code: r.code, t: r.t, tenders: r.tenders || [], paid: r.paid || null });
+  const docOf = (r) => storable({ code: r.code, t: r.t, tenders: r.tenders || [], paid: r.paid || null, paid_parts: r.paid_parts || null, paid_2026: r.paid_2026 || null });
   for (let i = 0; i < rows.length; i += REG_BATCH) {
     const part = rows.slice(i, i + REG_BATCH);
     const batch = fb.writeBatch(db);

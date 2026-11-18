@@ -423,6 +423,10 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     # EIB-financed: payments may also go by other routes than the buyer's Treasury account, so
     # what looks overdue is shown as "not seen" rather than as a debt.
     partial = bool(eib_kind)
+    # The loan's part, read back from the VAT the buyer paid on it (acts less the buyer's payments).
+    eib_paid = compliance.eib_from_vat(pays, acts) if tc is not None else None
+    if eib_paid:
+        overdue = round(max(0.0, due_now - eib_paid["total"]), 2)
     # Payments against the portal's acts and addendums; the advance and its closing by acts.
     pay_sig, pay_notes, doc_audit, advance = compliance.payment_checks(
         pays, acts, addendums, contract.get("changes"), value, today.isoformat(), contract, acts_known=tc is not None)
@@ -450,7 +454,7 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     pay_notes["oversight"] = [["no_supervision", {}]] if works and eib_kind and related is not None \
         and not any(r.get("role") == "supervision" for r in related) else []
     review = compliance.evaluate(tender, contract, eib=bool(eib_kind), paid=paid, acts_sum=acts_sum,
-                                 treasury=dict(chk, flags=flags) if tc else None, overdue=0 if partial else overdue, sasu=audit,
+                                 treasury=dict(chk, flags=flags) if tc else None, overdue=0 if (partial and not eib_paid) else overdue, sasu=audit,
                                  extra=(pay_sig, pay_notes))
     if treasury_only:  # no procurement in Prozorro: nothing to say about it
         review["signals"] = [x for x in review["signals"] if x["type"] not in ("single_bidder", "unanswered_questions")]
@@ -468,8 +472,10 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
         "tender": tender, "contract": contract, "payments": pays, "acts": acts, "addendums": addendums,
         "acts_sum": acts_sum,
         "treasury": {k: (tc or {}).get(k) for k in ("id", "number", "date", "value0", "value", "price_up", "published", "late_days")} if tc else None,
-        "totals": {"value": value, "paid": paid, "maybe": maybe, "left": round(value - paid, 2),
-                   "due_now": due_now, "overdue": overdue, "partial": partial},
+        "totals": {"value": value, "paid": paid, "maybe": maybe, "left": round(value - (eib_paid["total"] if eib_paid else paid), 2),
+                   "due_now": due_now, "overdue": overdue, "partial": partial and not eib_paid,
+                   "paid_eib": eib_paid["eib"] if eib_paid else None, "paid_total": eib_paid["total"] if eib_paid else None},
+        "eib_paid": eib_paid,
         "stages": stages,
         "flags": flags, "signals": signals, "checklist": review["checklist"],
         "doc_audit": doc_audit, "advance": advance, "related": related,
