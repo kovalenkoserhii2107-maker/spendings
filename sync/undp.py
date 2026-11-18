@@ -207,6 +207,48 @@ def subvention(t):
     }.items() if v not in (None, "")}
 
 
+# ---- is the year's subvention enough ----------------------------------------------------------
+
+def funding(subv, value, paid_total, acts, eib_paid, start, today):
+    """The table's Funding Adequacy Status and Additional Funding Needs, estimated: the year's
+    subvention in force less the loan's part paid this year, against the works expected by the year's
+    end (this year's pace of acts, capped by what is left of the price) times the loan's share of
+    payments. Only for a subvention set for the project itself."""
+    if not subv or subv.get("level") != "project" or not value:
+        return None
+    year = today[:4]
+    now = subv.get("now")
+    year_subv = round((now or 0) * 1000, 2)
+    remaining = round(max(0.0, value - (paid_total or 0)), 2)
+    known = bool(eib_paid and eib_paid.get("total") and eib_paid.get("eib"))
+    # The loan's part paid this year is known only when the Treasury shows the tranches.
+    eib_year = round(sum(a["eib"] for a in eib_paid.get("acts") or [] if str(a.get("date") or "").startswith(year)), 2) if known else None
+    # Unless the payments show it, the loan is taken to pay the price without VAT (5/6).
+    share = (eib_paid["eib"] / eib_paid["total"]) if known else 5 / 6
+    left = round(year_subv - (eib_year or 0), 2)
+    acts_year = sum(a.get("amount") or 0 for a in acts or [] if str(a.get("date") or "").startswith(year))
+    first = max(_d(year + "-01-01"), _d(start) or _d(year + "-01-01"))
+    months_gone = max(1.0, (_d(today) - first).days / 30.44)
+    months_left = max(0.0, (_d(year + "-12-31") - _d(today)).days / 30.44)
+    forecast = round(min(remaining, acts_year / months_gone * months_left), 2) if acts_year else 0.0
+    need = round(forecast * share, 2) if share is not None else None
+    if (now is None or now <= 1) and remaining > 1:
+        status = "suspended"
+    elif need is not None and need > left + 1:
+        status = "insufficient"
+    elif share is not None and left > remaining * share + 1:
+        status = "excess"
+    else:
+        status = "adequate"
+    return {k: v for k, v in {
+        "status": status, "year_subvention": year_subv, "eib_paid_year": eib_year, "left": left,
+        "util_pct": round(eib_year / year_subv * 100, 1) if year_subv and eib_year is not None else None, "remaining": remaining,
+        "forecast": forecast, "share_pct": round(share * 100, 1) if share is not None else None,
+        "need": need, "gap": round(need - left, 2) if need is not None and need > left else 0.0,
+        "share_est": not known or None, "programme": subv.get("programme"), "nreg": subv.get("nreg"),
+    }.items() if v is not None}
+
+
 # ---- the contractor elsewhere ----------------------------------------------------------------
 
 _OTHERS = [None]
@@ -267,7 +309,7 @@ def overall(sc):
     return 1
 
 
-def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contract_stage):
+def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contract_stage, fund=None):
     """Ratings 1–3 with the reasons, where there is something to judge by; 6 (the contractor's
     legal status) stays with the expert."""
     types = {x["type"] for x in signals or []}
@@ -296,10 +338,13 @@ def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contr
         put("r2", 1)
     if subv:
         now, top = subv.get("now"), subv.get("max") or 0
+        st = (fund or {}).get("status")
         if now is None or (now <= 1 and top > 1):
             put("r3", 3, "subvention_dropped" if now is None else "subvention_token")
-        elif now < top - 0.5:
-            put("r3", 2, "subvention_cut")
+        elif st == "insufficient" and (fund.get("gap") or 0) > (fund.get("year_subvention") or 0) * 0.25:
+            put("r3", 3, "funding_gap")
+        elif now < top - 0.5 or st == "insufficient":
+            put("r3", 2, "subvention_cut" if now < top - 0.5 else "funding_gap")
         else:
             put("r3", 1)
     if contract_stage:
@@ -333,18 +378,20 @@ def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contr
     return {"scores": sc, "why": why, "overall": overall(sc)}
 
 
-def card(t, c, tc, signals, totals, acts_sum, paid, audit, advance, own_key, today, contract_stage=True):
+def card(t, c, tc, signals, totals, acts_sum, paid, audit, advance, own_key, today, contract_stage=True, acts=None, eib_paid=None):
     tl = timeline(t, c)
     pr = price(t, c, tc) if contract_stage else price(t, None, None)
     comp = complaints(t)
     subv = subvention(t)
     record = contractor_record(((c or {}).get("suppliers") or [{}])[0].get("code"), own_key) if contract_stage else None
     value = ((c or {}).get("value") or {}).get("amount") or (t.get("value") or {}).get("amount")
+    fund = funding(subv, value, paid, acts, eib_paid, (c or {}).get("start") or (c or {}).get("signed"), today) if contract_stage else None
     return {k: v for k, v in {
         "timeline": tl, "bidders": bidders(t, c), "complaints": comp, "price": pr,
         "progress": progress(value, acts_sum, paid, (c or {}).get("end"), today, (c or {}).get("status")) if contract_stage else None,
         "subvention": subv, "contractor": record,
-        "matrix": matrix(c, signals, totals, pr, subv, record, audit, comp, advance, contract_stage),
+        "funding": fund,
+        "matrix": matrix(c, signals, totals, pr, subv, record, audit, comp, advance, contract_stage, fund),
     }.items() if v is not None}
 
 
@@ -374,6 +421,9 @@ def events(old, new, event):
     os_, ns = old.get("subvention") or {}, new.get("subvention") or {}
     if ns and (ns.get("now") != os_.get("now") or len(ns.get("editions") or []) != len(os_.get("editions") or [])):
         out.append(event("subvention", old=os_.get("now"), new=ns.get("now"), edition=(ns.get("editions") or [""])[-1], nreg=ns.get("nreg")))
+    of_, nf = (old.get("funding") or {}).get("status"), (new.get("funding") or {}).get("status")
+    if nf and of_ and nf != of_:
+        out.append(event("funding", old=of_, new=nf, gap=(new.get("funding") or {}).get("gap")))
     oo, no = (old.get("matrix") or {}).get("overall"), (new.get("matrix") or {}).get("overall")
     if no and no != oo:
         out.append(event("matrix", old=oo, new=no))

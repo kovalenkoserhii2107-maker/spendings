@@ -152,6 +152,7 @@ table.has-filters tr.empty-row td { padding: 0; }
 .sev.high { background: var(--red-bg); color: var(--red); }
 .sev.medium { background: var(--yellow); color: var(--amber); }
 .sev.low { background: var(--soft); color: var(--muted); }
+.sev.ok { background: var(--green-bg); color: var(--green); }
 .sig-list { display: grid; gap: 10px; }
 .sig { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; padding: 16px 18px 16px 22px; border-radius: var(--r); background: #fff; box-shadow: var(--shadow);
   cursor: pointer; transition: box-shadow .3s var(--ease), transform .3s var(--ease); }
@@ -720,3 +721,16 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
   .tiles > * { min-width: 0; }
   .tiles .stat b { overflow-wrap: anywhere; }
 }
+/* The expert's work: tasks and the activity log */
+.work-list { display: grid; gap: 6px; margin: 8px 0 12px; }
+.work-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 8px 10px; border-radius: 10px; background: var(--soft); }
+.work-item.done { opacity: .6; }
+.work-item.done > div > div:first-child { text-decoration: line-through; }
+.work-week { font-size: 12px; color: var(--muted); white-space: nowrap; padding-top: 2px; }
+.work-form { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 6px; align-items: center; }
+.work-form .input, .work-form .select { min-height: 34px; }
+.work-form.j { grid-template-columns: auto auto minmax(0, 1fr) auto auto; }
+.work-form.g { grid-template-columns: auto minmax(0, 1.4fr) minmax(0, .8fr) minmax(0, .8fr) auto auto; margin-top: 10px; }
+.tag.mark { border: 0; cursor: pointer; font: inherit; font-size: 12px; }
+.bad { color: var(--red); }
+@media (max-width: 760px) { .work-form { grid-template-columns: 1fr 1fr; } .work-form > :nth-child(3) { grid-column: 1 / -1; } }
