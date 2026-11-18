@@ -707,3 +707,16 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
   .tl-end small { display: inline; }
   .tl-progress:empty, .tl-end:empty { display: none; }
 }
+.progress-facts { margin-top: 12px; }
+.progress-facts .bad b { color: var(--red); }
+.timeline .ev.bad .d, .timeline .ev.bad span { color: var(--red); }
+/* Grid columns never wider than their share (long payment terms wrap instead). */
+.grid-2 > * { min-width: 0; }
+.explain { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  /* Phone cards of tables: long tags and words wrap inside the cell. */
+  table.stack-mobile td { overflow-wrap: anywhere; }
+  table.stack-mobile td .sev, table.stack-mobile td .tag { white-space: normal; }
+  .tiles > * { min-width: 0; }
+  .tiles .stat b { overflow-wrap: anywhere; }
+}

@@ -1982,6 +1982,7 @@ function trackedDossier(id) {
             isEib || s.eib ? h('span', { class: 'tag eib' }, s.eib ? t('eib.kind.' + s.eib) : t('eib.short')) : null,
             s.eib_tx ? h('span', { class: 'tag eib' }, t('eib.tx')) : null,
             t0.subproject ? h('span', { class: 'tag eib', title: t('sub.title') }, t0.subproject.code) : null,
+            riskChip(s),
             tt.overdue > 1 && !tt.partial ? h('span', { class: 'sev high' }, t('tr.overdueN', { sum: money(tt.overdue) })) : null,
             s.error ? h('span', { class: 'sev medium', title: s.error }, t('tr.error')) : null),
           h('p', { class: 'muted' }, c.title || t0.title),
@@ -1992,15 +1993,7 @@ function trackedDossier(id) {
           s.tid ? ext(pzUrl(s.tid), 'Prozorro', 'btn') : null,
           t0.dream_id ? ext(dreamUrl(t0.dream_id), 'DREAM', 'btn') : null),
           isTracked(id) ? off : null)),
-      partiesCard(t0, c),
-      s.related ? relatedCard(s.related, t0) : null,
-      (t0.plan_info || []).length ? planCard(t0.plan_info) : null,
       s.from_tender ? h('p', { class: 'notice small section' }, t('tr.fromTender', { tid: s.tid })) : null,
-      (t0.other_contracts || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('tr.otherContracts')),
-        h('div', { class: 'qs-contracts' }, t0.other_contracts.map((oc) => h('div', { class: 'qs-contract' },
-          h('div', null, h('b', null, t('dos.heading', { n: oc.number || '—', date: fdate(oc.signed) })),
-            h('div', { class: 'cell-sub' }, join([(oc.suppliers || []).map((x) => x.name).join(', '), oc.value ? money(oc.value.amount, oc.value.currency) : null, label('pzc.', oc.status)]))),
-          oc.status !== 'cancelled' ? trackButton({ edrpou: t0.buyer, name: t0.buyer_name, role: 'buyer' }, Object.assign({}, t0, { tid: s.tid }), oc) : null)))) : null,
       h('div', { class: 'tiles section' },
         h('div', { class: 'stat tint-violet' }, h('small', null, t('pz.contractValue')), h('b', { class: 'num' }, money(tt.value)), c.start || c.end ? h('span', { class: 'sub' }, `${fdate(c.start)} — ${fdate(c.end)}`) : null),
         // With the loan's part read back from VAT: the whole paid, and how it splits.
@@ -2009,10 +2002,20 @@ function trackedDossier(id) {
           : h('div', { class: 'stat tint-blue' }, h('small', null, t('tr.paid')), h('b', { class: 'num' }, money(tt.paid)), h('span', { class: 'sub' }, tt.value ? t('bar.paidPct', { pct: Math.round((tt.paid / tt.value) * 100) }) : '')),
         h('div', { class: 'stat tint-yellow' }, h('small', null, tt.left < -1 ? t('dos.overpaid') : t('tr.left')), h('b', { class: 'num' }, money(Math.abs(tt.left))), tt.maybe ? h('span', { class: 'sub' }, t('tr.maybeSub', { sum: money(tt.maybe) })) : null),
         h('div', { class: 'stat' + (tt.overdue > 1 && !tt.partial ? ' bad' : '') }, h('small', null, t('tr.dueNow')), h('b', { class: 'num' }, money(tt.due_now)), h('span', { class: 'sub' }, tt.overdue > 1 ? (tt.partial ? t('tr.notSeen', { sum: money(tt.overdue) }) : t('tr.overdueN', { sum: money(tt.overdue) })) : t('tr.noOverdue')))),
-      h('div', { class: 'card pad section' }, trackedBar(tt, s.acts_sum), h('div', { class: 'bar-label' }, h('span', null, t('tr.paidOf', { paid: money(tt.paid), value: money(tt.value) })), h('span', null, s.acts_sum ? t('tr.actsSum', { sum: money(s.acts_sum) }) : ''))),
+      // Done and paid against the price, and the completion date.
+      h('div', { class: 'card pad section' }, trackedBar(tt, s.acts_sum),
+        h('div', { class: 'bar-label' }, h('span', null, t('tr.paidOf', { paid: money(tt.paid_total || tt.paid), value: money(tt.value) })), h('span', null, s.acts_sum ? t('tr.actsSum', { sum: money(s.acts_sum) }) : '')),
+        progressLine(s)),
+      partiesCard(t0, c),
+      procurementCard(s, c),
+      s.related ? relatedCard(s.related, t0) : null,
+      (t0.other_contracts || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('tr.otherContracts')),
+        h('div', { class: 'qs-contracts' }, t0.other_contracts.map((oc) => h('div', { class: 'qs-contract' },
+          h('div', null, h('b', null, t('dos.heading', { n: oc.number || '—', date: fdate(oc.signed) })),
+            h('div', { class: 'cell-sub' }, join([(oc.suppliers || []).map((x) => x.name).join(', '), oc.value ? money(oc.value.amount, oc.value.currency) : null, label('pzc.', oc.status)]))),
+          oc.status !== 'cancelled' ? trackButton({ edrpou: t0.buyer, name: t0.buyer_name, role: 'buyer' }, Object.assign({}, t0, { tid: s.tid }), oc) : null)))) : null,
+      fundingCard(s, t0),
       complianceCard(s),
-    undpCard(s),
-      undpCard(s),
       h('div', { class: 'grid-2 section' },
         h('div', { class: 'card pad' },
           h('h2', { class: 'card-title' }, t('tr.stages')),
@@ -2079,7 +2082,9 @@ function complianceCard(snap) {
   draw('');
   const audit = snap.sasu || [];
   return h('div', { class: 'card pad section' },
-    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, t('chk.title')), snap.eib ? h('span', { class: 'tag eib' }, t('eib.kind.' + snap.eib)) : null),
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, t('chk.title')), h('div', { class: 'row' }, riskChip(snap), snap.eib ? h('span', { class: 'tag eib' }, t('eib.kind.' + snap.eib)) : null)),
+    matrixBlock(snap),
+    h('div', { class: 'drive-part-title', style: 'margin-top:16px' }, t('ud.checklist')),
     checklistBox(snap.checklist),
     docAuditBlock(snap.doc_audit),
     advanceBlock(snap.advance),
@@ -2134,8 +2139,10 @@ function relatedCard(list, t0) {
 }
 // The procurement plan: the year, the amount and where the money comes from.
 function planCard(plans) {
-  return h('div', { class: 'card pad section' },
-    h('h2', { class: 'card-title' }, t('plan.title')),
+  return h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('plan.title')), planRows(plans));
+}
+function planRows(plans) {
+  return h('div', null,
     plans.map((p) => h('div', { class: 'plan' },
       kv([
         [t('plan.id'), h('a', { href: 'https://prozorro.gov.ua/plan/' + encodeURIComponent(p.pid || ''), target: '_blank', rel: 'noopener noreferrer' }, p.pid || '—')],
@@ -2184,52 +2191,80 @@ function liveRelated(t0) {
   return box;
 }
 
-// What the UNDP working table keeps for this procurement and contract (snap.undp, from the sync):
-// course, bidders, AMCU, price, progress, subvention and the risk matrix with its Overall Rating.
+// The parts of the card built from what the sync collects for the UNDP working table (snap.undp).
 const UD_KEYS = ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8'];
-function udWhy(x) {
-  const [code, n] = String(x).split(':');
-  return t('ud.why.' + code, { n });
-}
-function undpCard(s) {
-  const u = s.undp;
-  if (!u) return null;
-  const tl = u.timeline || {}, pr = u.price || {}, pg = u.progress || {}, sv = u.subvention, mx = u.matrix || {}, bd = u.bidders || {}, cp = u.complaints || {};
-  const pct = (x) => (x != null ? ni.format(x) + '%' : null);
+const udWhy = (x) => { const [code, n] = String(x).split(':'); return t('ud.why.' + code, { n }); };
+const edFmt = (e) => fdate(String(e).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'));
+function riskChip(s) {
+  const n = ((s.undp || {}).matrix || {}).overall;
   const sp = typeof hasRegistry === 'function' && hasRegistry() ? [...REG.rows.values()].find((r) => spTids(r).includes(s.tid)) : null;
+  return [n ? h('span', { class: 'sev ' + ['', 'low', 'medium', 'high'][n], title: t('ud.overallHint') }, t('ud.overall', { n })) : null,
+    sp ? h('a', { class: 'tag eib', href: '#/registry/' + encodeURIComponent(sp.code) }, t('ud.inRegistry', { code: sp.code })) : null];
+}
+// Acts and payments as a share of the price, and the completion date (late when past it).
+function progressLine(s) {
+  const pg = (s.undp || {}).progress;
+  if (!pg) return null;
+  return h('div', { class: 'facts progress-facts' },
+    h('div', null, h('small', null, t('ud.acts')), h('b', { class: 'num' }, pg.acts_pct != null ? ni.format(pg.acts_pct) + '%' : '—')),
+    h('div', null, h('small', null, t('ud.paid')), h('b', { class: 'num' }, pg.paid_pct != null ? ni.format(pg.paid_pct) + '%' : '—')),
+    h('div', { class: pg.overdue_days ? 'bad' : '' }, h('small', null, t('ud.end')), h('b', { class: 'num' }, pg.end ? fdate(pg.end) : '—'),
+      pg.overdue_days ? h('span', { class: 'sub' }, t('ud.overdue', { n: pg.overdue_days })) : null));
+}
+// The procurement behind the contract, in order: its course by date, the price from expected to
+// now, everyone who bid and what was decided, complaints to the AMCU.
+function procurementCard(s, c) {
+  const u = s.undp || {}, t0 = s.tender || {};
+  const tl = u.timeline || {}, pr = u.price || {}, cp = u.complaints || {};
+  const steps = [['announced', tl.announced, null], ['opening', tl.opening, tl.length_days != null ? t('ud.days', { n: tl.length_days }) : null],
+    ['auction', tl.auction, null], ['award', tl.award, null], ['signed', tl.signed, tl.duration_months != null ? t('ud.monthsTerm', { n: ni.format(tl.duration_months) }) : null],
+    ['end', tl.end, null]].filter((x) => x[1]);
+  const lot = c && c.lot;
+  const awards = (t0.awards || []).filter((a) => !lot || !a.lot || a.lot === lot);
   const amcu = (of) => { const x = cp[of] || {}; return x.n ? t('ud.amcuLine', { n: x.n, open: x.open || 0, upheld: x.upheld || 0 }) : (x.claims ? t('ud.claimsOnly', { n: x.claims }) : t('ud.none')); };
-  const eds = (sv && sv.editions) || [];
+  if (!steps.length && !awards.length && pr.expected == null) return null;
   return h('div', { class: 'card pad section' },
-    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, t('ud.title')),
-      h('div', { class: 'row' }, mx.overall ? h('span', { class: 'sev ' + ['', 'low', 'medium', 'high'][mx.overall], title: t('ud.overallHint') }, t('ud.overall', { n: mx.overall })) : null,
-        sp ? h('a', { class: 'btn btn-sm', href: '#/registry/' + encodeURIComponent(sp.code) }, icon('building'), sp.code) : null)),
+    h('h2', { class: 'card-title' }, t('ud.procurement')),
     h('div', { class: 'grid-2' },
-      h('div', null, h('h3', { class: 'card-sub' }, t('ud.procurement')), kv([
-        [t('ud.tl.announced'), tl.announced ? fdate(tl.announced) : null],
-        [t('ud.tl.opening'), tl.opening ? join([fdate(tl.opening), tl.length_days != null ? t('ud.days', { n: tl.length_days }) : null]) : null],
-        [t('ud.tl.auction'), tl.auction ? fdate(tl.auction) : null],
-        [t('ud.tl.award'), tl.award ? fdate(tl.award) : null],
-        [t('ud.tl.signed'), tl.signed ? join([fdate(tl.signed), tl.duration_months != null ? t('ud.months', { n: ni.format(tl.duration_months) }) : null]) : null],
-        [t('ud.bidders'), bd.bids != null ? String(bd.bids) : null],
-        [t('ud.amcuTd'), amcu('tender')],
-        [t('ud.amcuEval'), amcu('award')],
-      ]),
-      (bd.list || []).length ? h('div', { class: 'explain', style: 'margin-top:8px' }, bd.list.map((b) => h('div', null,
-        h('span', { class: 'tag' + (b.status === 'active' ? ' ok' : b.status === 'unsuccessful' ? ' warn' : '') }, label('ud.aw.', b.status) || b.status || ''), ' ',
-        h('span', null, party(b.name, b.code)), b.amount != null ? h('span', { class: 'num faint' }, ' · ' + money(b.amount)) : null))) : null),
-      h('div', null, h('h3', { class: 'card-sub' }, t('ud.money')), kv([
+      steps.length ? h('div', { class: 'timeline' }, steps.map(([k, d, extra]) => h('div', { class: 'ev' + (k === 'end' && (u.progress || {}).overdue_days ? ' bad' : '') },
+        h('span', { class: 'd num' }, fdate(d)), h('span', null, t('ud.tl.' + k), extra ? h('span', { class: 'faint' }, ' · ' + extra) : null), h('span')))) : h('div'),
+      kv([
         [t('ud.expected'), pr.expected != null ? money(pr.expected) : null],
         [t('ud.won'), pr.won != null ? join([money(pr.won), pr.below_expected_pct ? t('ud.belowExpected', { n: pr.below_expected_pct }) : null]) : null],
         [t('ud.now'), pr.now != null ? join([money(pr.now), pr.change ? t('ud.changed', { sum: money(pr.change), n: pr.change_pct }) : null]) : null],
-        [t('ud.acts'), pct(pg.acts_pct)],
-        [t('ud.paid'), pct(pg.paid_pct)],
-        [t('ud.end'), pg.end ? join([fdate(pg.end), pg.overdue_days ? t('ud.overdue', { n: pg.overdue_days }) : null]) : null],
-        [sv ? (sv.level === 'budget' ? t('ud.subvBudget') : t('ud.subv')) : t('ud.subv'), sv ? h('div', null,
-          h('div', null, eds.map((e, i) => { const v = (sv.amounts || {})[e]; return (i ? ' → ' : '') + (v != null ? ni.format(v) : '—'); }).join(''), ' ', t('ud.thousand')),
-          h('div', { class: 'cell-sub' }, join([sv.programme, sv.level === 'budget' ? sv.budget : null, eds.length ? t('ud.editions', { list: eds.map((e) => fdate(e.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))).join(', ') }) : null])),
-          sv.url ? h('a', { href: sv.url, target: '_blank', rel: 'noopener noreferrer', class: 'small' }, sv.nreg) : null) : t('ud.subvNone')],
-      ]))),
-    h('h3', { class: 'card-sub', style: 'margin-top:14px' }, t('ud.matrix')),
+        [t('ud.bidders'), (u.bidders || {}).bids != null ? String(u.bidders.bids) : t0.bids != null ? String(t0.bids) : null],
+        [t('ud.amcuTd'), amcu('tender')],
+        [t('ud.amcuEval'), amcu('award')],
+      ])),
+    awards.length ? [h('h3', { class: 'card-sub', style: 'margin-top:14px' }, t('dos.awards')), awardsTable(awards)] : null);
+}
+// Where the money comes from: the Cabinet's subvention for the project (or its community) by
+// edition, and the procurement plan's sources.
+function fundingCard(s, t0) {
+  const sv = (s.undp || {}).subvention;
+  const plans = t0.plan_info || [];
+  if (!sv && !plans.length) return null;
+  const eds = (sv && sv.editions) || [];
+  return h('div', { class: 'card pad section' },
+    h('h2', { class: 'card-title' }, t('ud.funding')),
+    sv ? h('div', null,
+      h('h3', { class: 'card-sub' }, sv.level === 'budget' ? t('ud.subvBudget') : t('ud.subv')),
+      h('p', { class: 'small muted' }, join([sv.programme, sv.level === 'budget' ? sv.budget : sv.name])),
+      h('div', { class: 'scroll' }, h('table', null,
+        h('thead', null, h('tr', null, eds.map((e, i) => h('th', { class: 'r' }, (i ? t('ud.edition') : t('ud.original')) + ' ' + edFmt(e))))),
+        h('tbody', null, h('tr', null, eds.map((e, i) => {
+          const v = (sv.amounts || {})[e], prev = i ? (sv.amounts || {})[eds[i - 1]] : null;
+          return h('td', { class: 'r num ' + (v == null ? 'faint' : prev != null && v < prev - 0.5 ? 'bad' : '') }, v == null ? '—' : ni.format(v) + ' ' + t('ud.thousand'));
+        }))))),
+      sv.url ? h('p', { class: 'small' }, h('a', { href: sv.url, target: '_blank', rel: 'noopener noreferrer' }, sv.nreg)) : null) : null,
+    plans.length ? [h('h3', { class: 'card-sub', style: 'margin-top:12px' }, t('plan.title')), planRows(plans)] : null);
+}
+// The UNDP risk matrix: a rating per criterion with its reasons.
+function matrixBlock(s) {
+  const mx = (s.undp || {}).matrix;
+  if (!mx) return null;
+  return h('div', null,
+    h('div', { class: 'drive-part-title' }, t('ud.matrix')),
     h('div', { class: 'checklist' }, UD_KEYS.map((k) => {
       const v = (mx.scores || {})[k];
       return h('div', { class: 'chk ' + (v === 3 ? 'bad' : v === 2 ? 'warn' : v === 1 ? 'ok' : 'na') },
@@ -2304,7 +2339,7 @@ function tenderDossier(id, s, pick) {
         h('div', { class: 'eyebrow' }, h('a', { href: '#/tracked', style: 'text-decoration:none' }, '← ' + t('nav.tracked'))),
         h('h1', { class: 'org-title' }, t('tr.tenderHeading', { tid: s.tid })),
         h('div', { class: 'chips' }, pzStatus(t0.status), t0.method ? h('span', { class: 'tag' }, label('pzt.', t0.method)) : null,
-          s.eib ? h('span', { class: 'tag eib' }, t('eib.kind.' + s.eib)) : null),
+          s.eib ? h('span', { class: 'tag eib' }, t('eib.kind.' + s.eib)) : null, riskChip(s)),
         h('p', { class: 'muted' }, t0.title)),
       h('div', { class: 'org-actions' }, h('div', { class: 'row' }, ext(pzUrl(s.tid), 'Prozorro', 'btn'), t0.dream_id ? ext(dreamUrl(t0.dream_id), 'DREAM', 'btn') : null), off)),
     h('div', { class: 'card pad section parties' },
@@ -2316,8 +2351,9 @@ function tenderDossier(id, s, pick) {
         h('div', null, h('b', null, t('dos.heading', { n: c.number || '—', date: fdate(c.signed) })),
           h('div', { class: 'cell-sub' }, join([(c.suppliers || []).map((x) => x.name).join(', '), c.value ? money(c.value.amount, c.value.currency) : null, label('pzc.', c.status)]))),
         h('span', { class: 'small muted' }, c.status === 'pending' ? t('tr.autoContract') : label('pzc.', c.status))))) : h('p', { class: 'muted small' }, t('tr.noContractsYet'))),
+    procurementCard(s, null),
+    fundingCard(s, t0),
     complianceCard(s),
-    (t0.awards || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('dos.awards')), awardsTable(t0.awards)) : null,
     h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('tr.history')),
       events.length ? h('div', { class: 'timeline' }, events.map((e) => h('div', { class: 'ev ' + eventClass(e) + (e.at > seen ? ' new' : '') },
         h('span', { class: 'd num' }, fdate(e.at)), h('span', null, eventText(e)), h('span')))) : h('p', { class: 'muted small' }, t('dos.noEvents'))),
