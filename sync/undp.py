@@ -16,6 +16,8 @@ import os
 import re
 from datetime import date
 
+import contractor
+
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 OPEN_COMPLAINT = {"draft", "claim", "answered", "pending", "accepted"}
 UPHELD = {"satisfied", "resolved"}
@@ -288,7 +290,9 @@ def contractor_record(code, own_key):
             continue
         seen.add(r["key"])
         out.append({k: v for k, v in {"tid": r["tid"], "number": r["number"], "bad": sorted(set(r["bad"]))}.items() if v})
-    return {"contracts": len(out), "troubled": [x for x in out if x.get("bad")][:10]}
+    prof = contractor.load(code, DATA)
+    return {k: v for k, v in {"contracts": len(out), "troubled": [x for x in out if x.get("bad")][:10],
+            "flags": (prof or {}).get("flags") or None, "load": (prof or {}).get("load")}.items() if v is not None}
 
 
 # ---- the risk matrix --------------------------------------------------------------------------
@@ -357,7 +361,9 @@ def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contr
             put("r4", 1)
     if record is not None:
         n = len(record.get("troubled") or [])
-        put("r5", 3 if n >= 2 else 2 if n else 1, "troubled:%d" % n if n else None)
+        fl = {f["kind"]: f["level"] for f in (record.get("flags") or [])}
+        lvl = 3 if n >= 2 or fl.get("overloaded") == "high" else 2 if n or fl else 1
+        put("r5", lvl, "troubled:%d" % n if n else None, "overloaded" if "overloaded" in fl else None, "newcomer" if "newcomer" in fl else None)
     if audit is not None:
         if any(m.get("violation") for m in audit):
             put("r7", 3, "sasu_violation")

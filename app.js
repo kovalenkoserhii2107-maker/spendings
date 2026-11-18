@@ -2008,6 +2008,7 @@ function trackedDossier(id) {
         h('div', { class: 'bar-label' }, h('span', null, t('tr.paidOf', { paid: money(tt.paid_total || tt.paid), value: money(tt.value) })), h('span', null, s.acts_sum ? t('tr.actsSum', { sum: money(s.acts_sum) }) : '')),
         progressLine(s)),
       partiesCard(t0, c),
+      contractorCard(s, c),
       procurementCard(s, c),
       s.related ? relatedCard(s.related, t0) : null,
       (t0.other_contracts || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('tr.otherContracts')),
@@ -2424,6 +2425,52 @@ function partiesCard(t0, c) {
   return h('div', { class: 'card pad section parties' },
     side('dos.buyer', t0.buyer_name, t0.buyer, 'buyer'),
     side('dos.supplier', sup.name, sup.code, 'supplier'));
+}
+
+// Who is building: the contractor across Prozorro (volume by year, what it has on its hands, whom it
+// works for), its other EIB contracts and contracts on control, with what went wrong there.
+function contractorCard(s, c) {
+  const code = ((c.suppliers || [])[0] || {}).code;
+  if (!code || !/^\d{8}$/.test(code)) return null;
+  const box = h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('cp.title')), h('p', { class: 'muted small' }, t('ui.loading')));
+  (async () => {
+    let p = null;
+    try { p = await getJSON('data/contractors/' + code + '.json', ver()); } catch (e) { /* not built yet */ }
+    if (!p) { fill(box, h('h2', { class: 'card-title' }, t('cp.title')), h('p', { class: 'muted small' }, t('cp.none'))); return; }
+    // Its other contracts with a serious signal, without the one at hand; one line per contract.
+    const seen = new Set(), others = [];
+    for (const x of [...(p.tracked || []).filter((x) => x.key !== s.key), ...(p.eib || []).filter((x) => x.tid !== s.tid)]) {
+      const k = x.number || x.tid || x.key;
+      if (seen.has(k)) continue;
+      seen.add(k); others.push(x);
+    }
+    const bad = others.filter((x) => (x.bad || []).length);
+    const fl = Object.fromEntries((p.flags || []).map((f) => [f.kind, f.level]));
+    const maxY = Math.max(1, ...(p.years || []).map((y) => y.value));
+    fill(box,
+      h('h2', { class: 'card-title' }, t('cp.title')), h('p', { class: 'small' }, h('b', null, p.name || ((c.suppliers || [])[0] || {}).name || code), h('span', { class: 'muted' }, ' · ' + code)),
+      h('div', { class: 'chips' },
+        fl.overloaded ? h('span', { class: 'sev ' + fl.overloaded }, t('cp.overloaded', { x: p.load })) : null,
+        fl.newcomer ? h('span', { class: 'sev medium' }, t('cp.newcomer', { y: p.first_year })) : null,
+        bad.length ? h('span', { class: 'sev ' + (bad.length >= 2 ? 'high' : 'medium') }, t('cp.troubled', { n: bad.length })) : null),
+      kv([
+        [t('cp.total'), t('cp.totalV', { n: p.total, sum: money(p.value), y: p.first_year || '—' }) + (p.truncated ? ' ' + t('cp.truncated', { n: p.read }) : '')],
+        [t('cp.active'), h('span', null, t('cp.activeV', { n: p.active.n, sum: money(p.active.value), y: p.active.since }),
+          p.load != null ? h('span', { class: 'muted' }, ' · ' + t('cp.load', { x: p.load, avg: money(p.avg_year) })) : null)],
+        [t('cp.buyers'), h('span', null, t('cp.buyersN', { n: p.buyers_n }),
+          (p.buyers || []).slice(0, 3).map((b) => h('div', { class: 'small' }, b.name, h('span', { class: 'muted' }, ' — ' + b.n + ' · ' + money(b.value)))))],
+      ]),
+      (p.years || []).length ? h('div', { class: 'cp-years' }, p.years.slice().reverse().map((y) => h('div', { class: 'cp-year', title: money(y.value) },
+        h('i', { style: 'height:' + Math.max(3, Math.round(y.value / maxY * 56)) + 'px' }), h('b', null, y.y), h('small', null, y.n)))) : null,
+      others.length ? [h('h3', { class: 'card-sub', style: 'margin-top:12px' }, t('cp.others', { n: others.length })),
+        h('div', { class: 'ev-feed' }, others.slice(0, 10).map((x) => h(x.key ? 'a' : 'div', Object.assign({ class: 'ev-row' + ((x.bad || []).length ? ' bad' : '') }, x.key ? { href: '#/tracked/' + x.key } : {}),
+          h('span', { class: 'd num' }, x.number || '—'),
+          h('span', null, x.buyer || x.tid || '', x.value ? h('span', { class: 'faint small' }, ' · ' + money(x.value)) : null,
+            (x.bad || []).length ? h('div', { class: 'small bad' }, x.bad.map((b) => (t('sigtype.' + b) !== 'sigtype.' + b ? t('sigtype.' + b) : udWhy(b))).join(' · ')) : null),
+          h('span'))))] : h('p', { class: 'muted small' }, t('cp.noOthers')),
+      h('p', { class: 'muted small' }, t('cp.hint', { at: fdate(String(p.built_at || '').slice(0, 10)) })));
+  })();
+  return box;
 }
 
 // Documents of the contract in the same three parts as its folder on Google Drive.

@@ -31,6 +31,7 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import analysis  # noqa: E402
+import contractor  # noqa: E402
 import eib  # noqa: E402
 import prozorro  # noqa: E402
 import tracked  # noqa: E402
@@ -366,6 +367,12 @@ def sync_tracked(mode="full"):
         print("Не встигли за цей запуск: %d (наступного разу — першими)" % skipped, flush=True)
     # Snapshots of contracts nobody follows stay on disk (out of the index): if the
     # contract is put on control again, its history goes on where it stopped.
+    # The contractors' profiles (each read again after a week).
+    try:
+        contractor.sync([r.get("supplier") for r in rows], DATA, spending.today().isoformat(),
+                        budget_s=240 if mode == "full" else 90, log=lambda m: print(m, flush=True))
+    except Exception:  # noqa: BLE001 - profiles are extra, the snapshots stand
+        traceback.print_exc()
     rows.sort(key=lambda r: (r.get("changed_at") or "", r["key"]), reverse=True)
     write_json(os.path.join(TRACKED_DIR, "index.json"), {"generated_at": now_iso(), "items": rows})
     return rows
