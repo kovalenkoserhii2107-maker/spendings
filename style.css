@@ -235,7 +235,8 @@ td.w-text { min-width: 200px; }
 .tabs button.on { background: #000; color: #fff; }
 .tabs .n { color: var(--faint); font-size: 12px; font-weight: 700; }
 .tabs button.on .n { color: rgba(255, 255, 255, .6); }
-.kv { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 9px 18px; }
+.kv { display: grid; grid-template-columns: minmax(90px, min(200px, 34%)) minmax(0, 1fr); gap: 9px 18px; }
+.kv dt { overflow-wrap: break-word; hyphens: auto; }
 .kv dt { color: var(--muted); font-size: 13.5px; }
 .kv dd { margin: 0; overflow-wrap: anywhere; }
 .links { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -448,6 +449,7 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
 .foot-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 0 0 28px; color: var(--faint); font-size: 12.5px; }
 .foot-meta a { color: var(--muted); font-weight: 700; text-decoration: none; }
 .org-title { margin-top: 8px; font-size: clamp(26px, 3vw, 38px); font-weight: 800; line-height: 1.08; letter-spacing: -.035em; }
+.org-title.long { font-size: clamp(20px, 2.2vw, 28px); line-height: 1.18; letter-spacing: -.02em; }
 .org-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
 .card-title { margin-bottom: 12px; font-size: 18px; font-weight: 800; }
 
@@ -727,10 +729,31 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
 .work-item.done { opacity: .6; }
 .work-item.done > div > div:first-child { text-decoration: line-through; }
 .work-week { font-size: 12px; color: var(--muted); white-space: nowrap; padding-top: 2px; }
-.work-form { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 6px; align-items: center; }
+.work-form { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "t t t" "d w b"; gap: 6px; align-items: center; }
+.work-form:not(.j):not(.g) > :nth-child(1) { grid-area: t; } .work-form:not(.j):not(.g) > :nth-child(2) { grid-area: d; }
+.work-form:not(.j):not(.g) > :nth-child(3) { grid-area: w; } .work-form:not(.j):not(.g) > :nth-child(4) { grid-area: b; }
 .work-form .input, .work-form .select { min-height: 34px; }
-.work-form.j { grid-template-columns: auto auto minmax(0, 1fr) auto auto; }
-.work-form.g { grid-template-columns: auto minmax(0, 1.4fr) minmax(0, .8fr) minmax(0, .8fr) auto auto; margin-top: 10px; }
+.work-form.j { grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "d k k k" "t t o b"; }
+.work-form.j > :nth-child(1) { grid-area: d; } .work-form.j > :nth-child(2) { grid-area: k; } .work-form.j > :nth-child(3) { grid-area: t; }
+.work-form.j > :nth-child(4) { grid-area: o; } .work-form.j > :nth-child(5) { grid-area: b; }
+.work-form.g { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "k b n" "a u x"; margin-top: 10px; }
+.work-form.g > :nth-child(1) { grid-area: k; } .work-form.g > :nth-child(2) { grid-area: b; } .work-form.g > :nth-child(3) { grid-area: n; }
+.work-form.g > :nth-child(4) { grid-area: a; } .work-form.g > :nth-child(5) { grid-area: u; } .work-form.g > :nth-child(6) { grid-area: x; justify-self: start; }
 .tag.mark { border: 0; cursor: pointer; font: inherit; font-size: 12px; }
 .bad { color: var(--red); }
-@media (max-width: 760px) { .work-form { grid-template-columns: 1fr 1fr; } .work-form > :nth-child(3) { grid-column: 1 / -1; } }
+/* iOS draws an empty date field with no width: give every field the cell's width. */
+.work-form > .input, .work-form > .select, .wf-field > .input { width: 100%; }
+.wf-field { display: grid; gap: 2px; min-width: 0; font-size: 11px; font-weight: 700; color: var(--muted); }
+.work-form.g { align-items: end; }
+.work-form input[type="date"] { -webkit-appearance: none; appearance: none; display: block; min-width: 0; line-height: 34px; }
+@media (max-width: 760px) {
+  .work-form, .work-form.j, .work-form.g { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .work-form:not(.j):not(.g) { grid-template-areas: "t t" "d w" "b b"; }
+  .work-form.g { grid-template-areas: "k k" "b b" "n a" "u x"; }
+  .work-form.g > :nth-child(6) { justify-self: stretch; }
+  .work-form .input, .work-form .select { min-height: 40px; font-size: 16px; }
+  .work-form input[type="date"] { line-height: 40px; }
+  .work-form > .btn { width: 100%; min-height: 40px; justify-content: center; }
+  /* journal: date, kind | text | done, button */
+  .work-form.j { grid-template-areas: "d k" "t t" "o b"; }
+}

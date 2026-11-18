@@ -2924,7 +2924,7 @@ function feedPage(preset) {
   }
   const show = () => fill(box, tab.which === 'portal' ? drawPortal() : tab.which === 'tasks' ? drawTasks() : drawTracked());
   const nTracked = evs.filter(({ e }) => e.at > seen).length;
-  const tabs = pills([['tracked', t('ntf.tracked'), nTracked || null]].concat(typeof hasRegistry === 'function' && hasRegistry() ? [['tasks', t('ntf.tasks'), myDueTasks().length || null]] : []).concat([['portal', t('ntf.portal'), unreadCount() || null]]), tab.which, (v) => { tab.which = v; show(); });
+  const tabs = pills([['tracked', t('ntf.tracked'), nTracked || null]].concat(typeof hasRegistry === 'function' && hasRegistry() ? [['tasks', t('ntf.tasks'), dueTasks(7).length || null]] : []).concat([['portal', t('ntf.portal'), unreadCount() || null]]), tab.which, (v) => { tab.which = v; show(); });
   show();
   return [
     pageHead(t('ntf.eyebrow'), titleGrad(t('ntf.title1'), t('ntf.title2')), null,
