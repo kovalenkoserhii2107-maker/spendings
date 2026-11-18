@@ -31,7 +31,14 @@ const RG = {
     h_failed: 'невдалих тендерів: {n}', h_overdue: 'строк завершення {date} минув, виконано {pct}%', h_stale: 'коментар не оновлювався {days} дн.',
     h_funding: 'статус фінансування: {s}', h_disq: 'відхилено учасників: {n}', h_single: 'одна пропозиція', h_noContract: 'договору ще немає',
     h_paidGap: 'оплачено {paid}% при виконанні {pct}%',
-    importFailed: 'не збережено: {list}', overall: 'Загальна оцінка: {n}', overallHint: 'За формулою робочої таблиці (стовпець M)', acceptHints: 'Прийняти підказки ({n})', from_own: 'оцінка експерта', from_table: 'з таблиці', from_hint: 'підказка — не прийнята', from_none: 'немає даних', orphans: 'Виплати в Payments без рядка в SPs: {list}', thousand: 'тис. грн', subvTitle: 'Субвенція за розпорядженням КМУ', subvBudgetTitle: 'Субвенція громаді за програмою {prog}', subvBudgetNote: 'Цю програму КМУ розподіляє лише по громадах: сума — на всі її проєкти в громаді.', subvOrder: 'Розпорядження № {n}', subvResolution: 'Постанова № {n}', subvOriginal: 'Початково, {date}', subvEdition: 'Ред. {date}',
+    importFailed: 'не збережено: {list}', gTitle: 'Банківські гарантії', gHint: 'Гарантії договору: строк і сума; за 30 днів до кінця строку — нагадування експерту.', gKind: 'Вид', gBank: 'Банк', gNumber: 'Номер', gAmount: 'Сума', gUntil: 'Діє до',
+    g_performance: 'Виконання договору', g_advance: 'Повернення авансу', g_bid: 'Тендерна пропозиція', g_warranty: 'Гарантійний період', gNone: 'Гарантій ще не внесено.', gClose: 'Закрито', gReopen: 'Відкрити',
+    gSt_expired: 'строк минув', gSt_soon: 'спливає за 30 днів', gSt_closed: 'закрито', gExpiring: 'Гарантія «{kind}» {bank} спливає {date}', gExpired: 'Гарантія «{kind}» {bank} спливла {date}', workTitle: 'Робота експерта', tasks: 'Завдання', journal: 'Журнал дій', taskWhat: 'Що зробити', taskDue: 'До якої дати', taskWho: 'Хто', taskDone: 'Виконано',
+    noTasks: 'Завдань немає.', noLog: 'Записів ще немає.', add: 'Додати', remove: 'Прибрати', logDate: 'Дата', logKind: 'Дія', logWhat: 'Що зроблено', logDone: 'виконано', fromSheet: 'з таблиці',
+    kind_td: 'Перевірка ТД', kind_assist: 'Супровід тендеру', kind_monitor: 'Моніторинг', kind_visit: 'Виїзд на об’єкт', kind_request: 'Запит замовнику', kind_meeting: 'Зустріч', kind_report: 'Звіт', kind_other: 'Інше',
+    mark_td: 'ТД перевірено', mark_assist: 'Супровід', mark_monitor: 'Моніторинг', markHint: 'Відмітка команди (стовпці TD Checking / Tender Assistance / Tender Monitoring)', xJournal: 'Журнал', xTasks: 'Завдання', overall: 'Загальна оцінка: {n}', overallHint: 'За формулою робочої таблиці (стовпець M)', acceptHints: 'Прийняти підказки ({n})', from_own: 'оцінка експерта', from_table: 'з таблиці', from_hint: 'підказка — не прийнята', from_none: 'немає даних', orphans: 'Виплати в Payments без рядка в SPs: {list}', thousand: 'тис. грн', subvTitle: 'Субвенція за розпорядженням КМУ', subvBudgetTitle: 'Субвенція громаді за програмою {prog}', subvBudgetNote: 'Цю програму КМУ розподіляє лише по громадах: сума — на всі її проєкти в громаді.', subvOrder: 'Розпорядження № {n}', subvResolution: 'Постанова № {n}', subvOriginal: 'Початково, {date}', subvEdition: 'Ред. {date}',
+    adeqTitle: 'Достатність субвенції цього року', adeqTable: 'у таблиці: {s}', adeqTableNeed: 'Додаткова потреба за таблицею', adeqNoTracked: 'У таблиці: {s}. Щоб монітор оцінив сам, відстежуйте договори субпроєкту.',
+    adeqDiff: 'Таблиця каже «{table}», за даними монітора — «{ours}». Варто перевірити.', adeqHint: 'Сума за відстежуваними договорами субпроєкту ({n}): прогноз робіт до 31 грудня на частку кредиту проти залишку субвенції.',
     subvTableDiff: 'У таблиці субвенція на рік {table}, у чинній редакції розпорядження — {order}.', h_subvDropped: 'проєкт вилучено з розподілу субвенції (ред. {date})', h_subvToken: 'субвенцію зменшено з {from} до символічної 1 тис. (ред. {date})', h_subvTokenOnly: 'у розподілі лише символічна 1 тис. (ред. {date})', h_subvCut: 'субвенцію зменшено з {from} до {to} (ред. {date})', autoLinked: 'прив’язано автоматично', candTitle: 'Можливі закупівлі за назвою', candHint: 'Знайдено за назвою субпроєкту; прив’яжіть ті, що стосуються його.',
     refreshDone: 'Оновлено: з ID у таблиці {linked}, знайдено за назвою {auto}, є варіанти для підтвердження {cand}, не знайдено {none}, лише англ. назва {noName}', refreshN: 'Оновити з Prozorro ({n})', pickExpert: 'Оберіть експерта: оновлюються лише його субпроєкти',
     trackAll: 'Відстежувати мої з таблиці ({n})', trackConfirm: 'Поставити на відстеження договори й закупівлі ваших {n} субпроєктів? Діючі договори — на контроль, закупівлі без договору — до підписання.',
@@ -65,7 +72,14 @@ const RG = {
     h_failed: 'failed tenders: {n}', h_overdue: 'completion date {date} passed, {pct}% done', h_stale: 'comment not updated for {days} days',
     h_funding: 'funding status: {s}', h_disq: 'bidders rejected: {n}', h_single: 'single bid', h_noContract: 'no contract yet',
     h_paidGap: '{paid}% paid at {pct}% done',
-    importFailed: 'not saved: {list}', overall: 'Overall rating: {n}', overallHint: 'By the working table formula (column M)', acceptHints: 'Accept hints ({n})', from_own: "expert's rating", from_table: 'from the table', from_hint: 'hint — not accepted', from_none: 'no data', orphans: 'Payments with no row in SPs: {list}', thousand: 'thousand UAH', subvTitle: 'Subvention by the CMU order', subvBudgetTitle: 'Subvention to the community under {prog}', subvBudgetNote: 'The CMU spreads this programme by community only: the amount covers all its projects there.', subvOrder: 'Order No. {n}', subvResolution: 'Resolution No. {n}', subvOriginal: 'Original, {date}', subvEdition: 'Ed. {date}',
+    importFailed: 'not saved: {list}', gTitle: 'Bank guarantees', gHint: "The contract's guarantees: term and amount; the expert is reminded 30 days before the end.", gKind: 'Kind', gBank: 'Bank', gNumber: 'Number', gAmount: 'Amount', gUntil: 'Valid until',
+    g_performance: 'Performance', g_advance: 'Advance repayment', g_bid: 'Bid security', g_warranty: 'Warranty period', gNone: 'No guarantees entered yet.', gClose: 'Closed', gReopen: 'Reopen',
+    gSt_expired: 'expired', gSt_soon: 'ends within 30 days', gSt_closed: 'closed', gExpiring: '{kind} guarantee {bank} ends {date}', gExpired: '{kind} guarantee {bank} ended {date}', workTitle: "Expert's work", tasks: 'Tasks', journal: 'Activity log', taskWhat: 'What to do', taskDue: 'Due', taskWho: 'Who', taskDone: 'Done',
+    noTasks: 'No tasks.', noLog: 'No entries yet.', add: 'Add', remove: 'Remove', logDate: 'Date', logKind: 'Action', logWhat: 'What was done', logDone: 'done', fromSheet: 'from the table',
+    kind_td: 'TD check', kind_assist: 'Tender assistance', kind_monitor: 'Monitoring', kind_visit: 'Site visit', kind_request: 'Request to the beneficiary', kind_meeting: 'Meeting', kind_report: 'Report', kind_other: 'Other',
+    mark_td: 'TD checked', mark_assist: 'Assistance', mark_monitor: 'Monitoring', markHint: "The team's mark (TD Checking / Tender Assistance / Tender Monitoring columns)", xJournal: 'Journal', xTasks: 'Tasks', overall: 'Overall rating: {n}', overallHint: 'By the working table formula (column M)', acceptHints: 'Accept hints ({n})', from_own: "expert's rating", from_table: 'from the table', from_hint: 'hint — not accepted', from_none: 'no data', orphans: 'Payments with no row in SPs: {list}', thousand: 'thousand UAH', subvTitle: 'Subvention by the CMU order', subvBudgetTitle: 'Subvention to the community under {prog}', subvBudgetNote: 'The CMU spreads this programme by community only: the amount covers all its projects there.', subvOrder: 'Order No. {n}', subvResolution: 'Resolution No. {n}', subvOriginal: 'Original, {date}', subvEdition: 'Ed. {date}',
+    adeqTitle: "This year's subvention adequacy", adeqTable: 'table: {s}', adeqTableNeed: 'Additional needs per the table', adeqNoTracked: 'Table: {s}. Track the sub-project\'s contracts for the monitor to estimate it.',
+    adeqDiff: 'The table says “{table}”, the monitor\'s data say “{ours}”. Worth checking.', adeqHint: "Sum over the sub-project's tracked contracts ({n}): works forecast to 31 December times the loan share, against the subvention left.",
     subvTableDiff: 'The table has {table} of subvention for the year; the order in force has {order}.', h_subvDropped: 'project dropped from the subvention (ed. {date})', h_subvToken: 'subvention cut from {from} to a token 1 thousand (ed. {date})', h_subvTokenOnly: 'only a token 1 thousand in the order (ed. {date})', h_subvCut: 'subvention cut from {from} to {to} (ed. {date})', autoLinked: 'linked automatically', candTitle: 'Possible procurements by name', candHint: 'Found by the sub-project name; link the ones that belong to it.',
     refreshDone: 'Refreshed: with ids in the table {linked}, found by name {auto}, candidates to confirm {cand}, not found {none}, English name only {noName}', refreshN: 'Refresh from Prozorro ({n})', pickExpert: 'Choose an expert: only their sub-projects are refreshed',
     trackAll: 'Track mine from the table ({n})', trackConfirm: 'Put the contracts and procurements of your {n} sub-projects on control? Contracts in force go on control, procurements without a contract until it is signed.',
@@ -660,7 +674,31 @@ function subventionCard(r) {
         return h('td', { class: 'r num ' + cls }, v == null ? '—' : fmtK(v));
       }))))),
     tt.subv_year != null && last != null && Math.abs(tt.subv_year - last * 1000) > 1000
-      ? h('p', { class: 'notice small', style: 'margin-top:10px' }, rt('subvTableDiff', { table: money(tt.subv_year), order: money(last * 1000) })) : null);
+      ? h('p', { class: 'notice small', style: 'margin-top:10px' }, rt('subvTableDiff', { table: money(tt.subv_year), order: money(last * 1000) })) : null,
+    p.name ? adequacyOfSp(r, last) : null);
+}
+// The sub-project's funding for the year: the subvention in force against what its tracked contracts
+// will still need from the loan by 31 December, beside what the table says.
+const ADEQ_RX = { adequate: /^adequ/i, insufficient: /^insuff/i, suspended: /^susp/i, excess: /^excess/i };
+function adequacyOfSp(r, last) {
+  const tids = new Set(spTids(r));
+  const rows = (state.trackedIndex.items || []).filter((x) => tids.has(x.tid) && x.funding);
+  const tt = r.t || {};
+  if (!rows.length) return tt.funding ? h('p', { class: 'small muted', style: 'margin-top:10px' }, rt('adeqNoTracked', { s: tt.funding })) : null;
+  const year = (last || 0) * 1000;
+  const need = rows.reduce((x, f) => x + (f.funding.need || 0), 0);
+  const left = year - rows.reduce((x, f) => x + (f.funding.eib_paid_year || 0), 0);
+  const status = rows.some((f) => f.funding.status === 'suspended') ? 'suspended' : need > left + 1 ? 'insufficient'
+    : rows.every((f) => f.funding.status === 'excess') ? 'excess' : 'adequate';
+  const table = Object.keys(ADEQ_RX).find((k) => ADEQ_RX[k].test(String(tt.funding || '').trim()));
+  const cls = { insufficient: 'high', suspended: 'high', excess: 'low', adequate: 'ok' }[status];
+  return h('div', { style: 'margin-top:12px' },
+    h('div', { class: 'row' }, h('b', null, rt('adeqTitle')), h('span', { class: 'sev ' + cls }, t('fa.st.' + status)),
+      tt.funding ? h('span', { class: 'tag' }, rt('adeqTable', { s: tt.funding })) : null),
+    kv([[t('fa.left'), money(left)], [t('fa.need'), money(need)], [t('fa.gap'), need > left ? h('b', { class: 'bad' }, money(need - left)) : null],
+      [rt('adeqTableNeed'), tt.extra_need != null && tt.extra_need !== '' ? money(+tt.extra_need || 0) : null]]),
+    table && table !== status ? h('p', { class: 'notice small' }, rt('adeqDiff', { table: t('fa.st.' + table), ours: t('fa.st.' + status) })) : null,
+    h('p', { class: 'muted small' }, rt('adeqHint', { n: rows.length })));
 }
 
 // ---- list ------------------------------------------------------------------------------------
@@ -780,6 +818,8 @@ function registryCard(code) {
     h('div', { class: 'org-actions' }, h('div', { class: 'row' }, back, tt.dream ? ext(/^http/.test(tt.dream) ? tt.dream : dreamUrl(tt.dream.match(/DREAM-UA-\S+/) ? tt.dream.match(/DREAM-UA-\S+/)[0] : tt.dream), 'DREAM', 'btn') : null)));
   return [head,
     h('div', { class: 'grid-2 section' }, tableCard(r), risksCard(r)),
+    workCard(r),
+    guaranteesCard(r),
     subventionCard(r),
     pzCard(r),
     (r.tenders || []).length ? sheetTendersCard(r) : null,
@@ -852,6 +892,7 @@ function pzCard(r) {
           t0.sasu && t0.sasu.n ? h('span', { class: 'sev ' + (t0.sasu.violation ? 'high' : 'medium') }, 'ДАСУ ' + (t0.sasu.violation ? '⚠' : '…')) : null,
           t0.complaints && t0.complaints.n ? h('span', { class: 'sev medium' }, 'АМКУ ' + t0.complaints.n) : null,
           t0.dream_id ? ext(dreamUrl(t0.dream_id), 'DREAM') : null) : null,
+        marksRow(r, tid),
         t0 && (t0.contracts || []).length ? h('div', { class: 'qs-contracts' }, t0.contracts.map((c) => h('div', { class: 'qs-contract' },
           h('div', null, h('b', null, t('dos.heading', { n: c.number || '—', date: fdate(c.signed) })),
             h('div', { class: 'cell-sub' }, join([(c.suppliers || []).map((x) => party(x.name, x.code)).join(', '), c.value ? money(c.value.amount, c.value.currency) : null, label('pzc.', c.status),
@@ -897,6 +938,135 @@ function pzCard(r) {
       } }, rt('addId'))),
     find);
 }
+
+// ---- the expert's work: tasks, weekly journal, marks on procurements --------------------------
+//
+// Kept in registry/{code}.work for the team: {tasks: [{id, text, due, who, done}], log: [{id, date,
+// kind, text, who, done}], marks: {tid: {td, assist, monitor}}}.
+
+const WORK_KINDS = ['td', 'assist', 'monitor', 'visit', 'request', 'meeting', 'report', 'other'];
+const myExpert = () => (REG.access && REG.access.expert) || (state.user && (state.user.displayName || state.user.email)) || '';
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+function saveWork(r, change) {
+  const w = JSON.parse(JSON.stringify(r.work || {}));
+  w.tasks = w.tasks || []; w.log = w.log || []; w.marks = w.marks || {}; w.guarantees = w.guarantees || [];
+  change(w);
+  return cloud.updateRegistry(r.code, { work: w });
+}
+// ISO week and its days, written as the table's weekly columns are ("Week 47 (16.11-22.11)").
+function weekOf(day) {
+  const d = new Date(day + 'T12:00:00Z');
+  const dow = (d.getUTCDay() + 6) % 7;
+  const mon = new Date(d); mon.setUTCDate(d.getUTCDate() - dow);
+  const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
+  const thu = new Date(mon); thu.setUTCDate(mon.getUTCDate() + 3);
+  const jan1 = new Date(Date.UTC(thu.getUTCFullYear(), 0, 1));
+  const n = Math.ceil(((thu - jan1) / 864e5 + 1) / 7);
+  const f = (x) => String(x.getUTCDate()).padStart(2, '0') + '.' + String(x.getUTCMonth() + 1).padStart(2, '0');
+  return { n, label: `Week ${n} (${f(mon)}-${f(sun)})` };
+}
+function marksRow(r, tid) {
+  const m = (((r.work || {}).marks || {})[tid]) || {};
+  return h('div', { class: 'chips', style: 'margin:6px 0 0' }, ['td', 'assist', 'monitor'].map((k) => h('button', {
+    class: 'tag mark' + (m[k] ? ' ok' : ''), type: 'button', title: rt('markHint'),
+    onclick: () => saveWork(r, (w) => { w.marks[tid] = Object.assign({}, w.marks[tid], { [k]: !m[k] }); }),
+  }, (m[k] ? '✓ ' : '') + rt('mark_' + k))));
+}
+// Tasks due for me (mine or nobody's) by today: for the bell.
+function dueTasks(within = 0) {
+  if (!REG.access) return [];
+  const me = myExpert(), until = addDays(today(), within), out = [];
+  for (const r of REG.rows.values()) {
+    for (const x of ((r.work || {}).tasks || [])) {
+      if (!x.done && x.due && x.due <= until && (!x.who || x.who === me)) out.push(Object.assign({ code: r.code, name: (r.t || {}).name_uk || (r.t || {}).name_en || '' }, x));
+    }
+    // A guarantee ending within 30 days (or already ended and not closed) is a task of the sub-project's expert.
+    if ((r.t || {}).expert && (r.t || {}).expert !== me && me) continue;
+    for (const g of ((r.work || {}).guarantees || [])) {
+      if (!g.closed && g.until && g.until <= addDays(until, 30)) {
+        out.push({ code: r.code, name: (r.t || {}).name_uk || (r.t || {}).name_en || '', due: addDays(g.until, -30) < today() ? g.until : addDays(g.until, -30),
+          text: rt(g.until < today() ? 'gExpired' : 'gExpiring', { kind: rt('g_' + g.kind), date: fdate(g.until), bank: g.bank || '' }), guarantee: true });
+      }
+    }
+  }
+  return out.sort((a, b) => a.due.localeCompare(b.due));
+}
+function workCard(r) {
+  const w = r.work || {}, tt = r.t || {};
+  const experts = [...new Set([...REG.rows.values()].map((x) => (x.t || {}).expert).filter(Boolean).concat([myExpert()]))].sort();
+  // Tasks
+  const tText = h('input', { class: 'input', placeholder: rt('taskWhat'), 'aria-label': rt('taskWhat') });
+  const tDue = h('input', { class: 'input', type: 'date', value: addDays(today(), 7), 'aria-label': rt('taskDue') });
+  const tWho = select(experts.map((x) => [x, x]), tt.expert || myExpert(), () => {}, rt('taskWho'));
+  const tasks = (w.tasks || []).slice().sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0) || String(a.due || '9').localeCompare(String(b.due || '9')));
+  // Journal
+  const jDate = h('input', { class: 'input', type: 'date', value: today(), 'aria-label': rt('logDate') });
+  const jKind = select(WORK_KINDS.map((k) => [k, rt('kind_' + k)]), 'monitor', () => {}, rt('logKind'));
+  const jText = h('input', { class: 'input', placeholder: rt('logWhat'), 'aria-label': rt('logWhat') });
+  const jDone = h('input', { type: 'checkbox', checked: true });
+  const entries = (w.log || []).map((x) => Object.assign({ mine: true }, x))
+    .concat((tt.log || []).map((x) => ({ date: null, week: x.week, who: x.who, text: x.what, done: x.done, table: true })))
+    .sort((a, b) => String(b.date || b.week || '').localeCompare(String(a.date || a.week || '')));
+  return h('div', { class: 'card pad section' },
+    h('h2', { class: 'card-title' }, rt('workTitle')),
+    h('div', { class: 'grid-2' },
+      h('div', null,
+        h('h3', { class: 'card-sub' }, rt('tasks')),
+        tasks.length ? h('div', { class: 'work-list' }, tasks.map((x) => h('div', { class: 'work-item' + (x.done ? ' done' : '') },
+          h('input', { type: 'checkbox', checked: x.done || null, 'aria-label': rt('taskDone'), onchange: (e) => saveWork(r, (ww) => { const it = ww.tasks.find((y) => y.id === x.id); if (it) Object.assign(it, { done: e.target.checked, doneAt: today() }); }) }),
+          h('div', null, h('div', null, x.text), h('div', { class: 'cell-sub' }, x.due ? h('span', { class: !x.done && x.due < today() ? 'bad' : '' }, fdate(x.due)) : null, x.who ? (x.due ? ' · ' : '') + x.who : null)),
+          h('button', { class: 'btn btn-icon btn-sm', 'aria-label': rt('remove'), onclick: () => saveWork(r, (ww) => { ww.tasks = ww.tasks.filter((y) => y.id !== x.id); }) }, icon('x'))))) : h('p', { class: 'muted small' }, rt('noTasks')),
+        h('div', { class: 'work-form' }, tText, tDue, tWho, h('button', { class: 'btn btn-sm btn-dark', onclick: () => {
+          if (!tText.value.trim()) return;
+          saveWork(r, (ww) => ww.tasks.push({ id: uid(), text: tText.value.trim().slice(0, 500), due: tDue.value || null, who: tWho.value || '', done: false, by: myExpert(), at: today() }));
+        } }, rt('add')))),
+      h('div', null,
+        h('h3', { class: 'card-sub' }, rt('journal')),
+        h('div', { class: 'work-form j' }, jDate, jKind, jText, h('label', { class: 'chk-opt' }, jDone, rt('logDone')), h('button', { class: 'btn btn-sm btn-dark', onclick: () => {
+          if (!jText.value.trim()) return;
+          saveWork(r, (ww) => ww.log.push({ id: uid(), date: jDate.value || today(), kind: jKind.value, text: jText.value.trim().slice(0, 1000), who: myExpert(), done: jDone.checked }));
+        } }, rt('add'))),
+        entries.length ? h('div', { class: 'work-list' }, entries.slice(0, 40).map((x) => h('div', { class: 'work-item' },
+          h('span', { class: 'work-week num' }, x.date ? fdate(x.date) : (x.week || '').replace(/\s*\(.*/, '')),
+          h('div', null, h('div', null, x.kind ? h('b', null, rt('kind_' + x.kind) + ' · ') : null, x.text || '—', x.done ? ' ✓' : ''),
+            h('div', { class: 'cell-sub' }, join([x.date ? weekOf(x.date).label : x.week, x.who, x.table ? rt('fromSheet') : null]))),
+          x.mine ? h('button', { class: 'btn btn-icon btn-sm', 'aria-label': rt('remove'), onclick: () => saveWork(r, (ww) => { ww.log = ww.log.filter((y) => y.id !== x.id); }) }, icon('x')) : h('span')))) : h('p', { class: 'muted small' }, rt('noLog')))));
+}
+
+// Bank guarantees the team keeps for a sub-project: bid, performance, advance repayment, warranty.
+const G_KINDS = ['performance', 'advance', 'bid', 'warranty'];
+function guaranteesCard(r) {
+  const list = (((r.work || {}).guarantees) || []).slice().sort((a, b) => String(a.until || '9').localeCompare(String(b.until || '9')));
+  const kind = select(G_KINDS.map((k) => [k, rt('g_' + k)]), 'performance', () => {}, rt('gKind'));
+  const bank = h('input', { class: 'input', placeholder: rt('gBank'), 'aria-label': rt('gBank') });
+  const number = h('input', { class: 'input', placeholder: rt('gNumber'), 'aria-label': rt('gNumber') });
+  const amount = h('input', { class: 'input', type: 'number', min: 0, step: 'any', inputmode: 'decimal', placeholder: rt('gAmount'), 'aria-label': rt('gAmount') });
+  const until = h('input', { class: 'input', type: 'date', 'aria-label': rt('gUntil') });
+  const state_ = (g) => (g.closed ? 'closed' : !g.until ? '' : g.until < today() ? 'expired' : g.until <= addDays(today(), 30) ? 'soon' : 'ok');
+  return h('div', { class: 'card pad section' },
+    h('h2', { class: 'card-title' }, rt('gTitle')), h('p', { class: 'muted small' }, rt('gHint')),
+    list.length ? h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
+      h('thead', null, h('tr', null, [rt('gKind'), rt('gBank'), rt('gAmount'), rt('gUntil'), ''].map((x) => h('th', null, x)))),
+      h('tbody', null, list.map((g) => {
+        const st = state_(g);
+        return h('tr', null,
+          td(rt('gKind'), null, h('b', null, rt('g_' + g.kind)), g.number ? h('div', { class: 'cell-sub' }, '№ ' + g.number) : null),
+          td(rt('gBank'), { class: 'w-party' }, g.bank || '—'),
+          td(rt('gAmount'), { class: 'num' }, g.amount != null ? money(g.amount) : '—'),
+          td(rt('gUntil'), null, g.until ? h('span', { class: st === 'expired' ? 'bad' : '' }, fdate(g.until)) : '—',
+            st && st !== 'ok' ? h('div', null, h('span', { class: 'sev ' + (st === 'expired' ? 'high' : st === 'soon' ? 'medium' : 'low') }, rt('gSt_' + st))) : null),
+          td('', { class: 'r' }, h('div', { class: 'row', style: 'justify-content:flex-end' },
+            h('button', { class: 'btn btn-sm', onclick: () => saveWork(r, (w) => { const x = w.guarantees.find((y) => y.id === g.id); if (x) x.closed = !x.closed; }) }, g.closed ? rt('gReopen') : rt('gClose')),
+            h('button', { class: 'btn btn-icon btn-sm', 'aria-label': rt('remove'), onclick: () => saveWork(r, (w) => { w.guarantees = w.guarantees.filter((y) => y.id !== g.id); }) }, icon('x')))));
+      })))) : h('p', { class: 'muted small' }, rt('gNone')),
+    h('div', { class: 'work-form g' }, kind, bank, number, amount, until, h('button', { class: 'btn btn-sm btn-dark', onclick: () => {
+      if (!until.value && !amount.value) return;
+      saveWork(r, (w) => w.guarantees.push({ id: uid(), kind: kind.value, bank: bank.value.trim().slice(0, 200), number: number.value.trim().slice(0, 60),
+        amount: amount.value ? Number(amount.value) : null, until: until.value || null, by: myExpert(), at: today() }));
+    } }, rt('add'))));
+}
+// Guarantees of the sub-project a contract on control belongs to (for its card).
+const guaranteesOfTid = (tid) => { const r = REG.access ? [...REG.rows.values()].find((x) => spTids(x).includes(tid)) : null; return r ? ((r.work || {}).guarantees || []) : null; };
 
 function sheetTendersCard(r) {
   return h('div', { class: 'table-card section' },
@@ -984,5 +1154,14 @@ async function exportXlsx(rows) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), rt('xSheet'));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(tn), rt('xTenders'));
+  const jr = [['SP ID', 'Week', 'Date', 'EXPERT', 'Kind', 'Activity', '☑']];
+  rows.forEach((r) => ((r.work || {}).log || []).slice().sort((a, b) => a.date.localeCompare(b.date)).forEach((x) => jr.push([r.code, weekOf(x.date).label, x.date, x.who || '', rt('kind_' + x.kind), x.text, x.done ? 'TRUE' : 'FALSE'])));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(jr), rt('xJournal'));
+  const tk = [['SP ID', 'Task', 'Due', 'Who', 'Done', 'TD Checking', 'Tender Assistance', 'Tender Monitoring']];
+  rows.forEach((r) => {
+    ((r.work || {}).tasks || []).forEach((x) => tk.push([r.code, x.text, x.due || '', x.who || '', x.done ? 'TRUE' : 'FALSE', '', '', '']));
+    Object.entries((r.work || {}).marks || {}).forEach(([tid, m]) => tk.push([r.code, tid, '', '', '', m.td ? 'TRUE' : 'FALSE', m.assist ? 'TRUE' : 'FALSE', m.monitor ? 'TRUE' : 'FALSE']));
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(tk), rt('xTasks'));
   XLSX.writeFile(wb, 'registry-' + today() + '.xlsx');
 }

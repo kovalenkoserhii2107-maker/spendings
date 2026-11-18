@@ -293,10 +293,10 @@ def advance_check(pays, acts, value, today):
     return res
 
 
-def payment_checks(pays, acts, addendums, changes, value, today, pc, acts_known=True):
+def payment_checks(pays, acts, addendums, changes, value, today, pc, acts_known=True, docs=None):
     """Signals and checklist notes from the payments: documents and advance. Returns
     (signals, notes {checklist key: [[code, params]]}, doc_audit, advance)."""
-    signals, notes = [], {"documents": [], "price": []}
+    signals, notes = [], {"documents": [], "price": [], "guarantees": []}
     audit = doc_audit(pays, acts, addendums, changes) if acts_known else []
     for e in audit:
         if e["issue"] == "unpublished":
@@ -315,6 +315,10 @@ def payment_checks(pays, acts, addendums, changes, value, today, pc, acts_known=
     if adv and adv["over"]:
         signals.append(_sig("advance_over_30", "high", {"sum": adv["sum"], "pct": adv["pct"], "value": value}, pc, adv["sum"]))
         notes["price"].append(["advance_over_30", {"pct": adv["pct"]}])
+    # An advance needs a repayment guarantee (EIB Guide to Procurement): none among the documents.
+    if adv and adv["sum"] > 0 and docs is not None and not _has(docs, GUARANTEE, ("contractGuarantees",)):
+        signals.append(_sig("advance_no_guarantee", "medium", {"sum": adv["sum"]}, pc, adv["sum"]))
+        notes["guarantees"].append(["advance_no_guarantee", {}])
     if adv and adv.get("open"):
         o = adv["open"]
         signals.append(_sig("advance_not_closed", "high", o, pc, o["unclosed"]))

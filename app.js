@@ -302,7 +302,7 @@ const ROLES_FOR = {
 const roleOptions = (kind) => (ROLES_FOR[kind] || []).map((r) => [r, t('roleopt.' + r)]);
 // Three groups of compliance control; every signal type belongs to one.
 const SIG_GROUPS = {
-  fin: ['overpaid', 'paid_before', 'paid_over_acts', 'acts_over', 'no_contract', 'pz_treasury_mismatch', 'advance_over_30', 'advance_not_closed'],
+  fin: ['overpaid', 'paid_before', 'paid_over_acts', 'acts_over', 'no_contract', 'pz_treasury_mismatch', 'advance_over_30', 'advance_not_closed', 'advance_no_guarantee'],
   proc: ['no_tender', 'split', 'single_bidder', 'disqualified_lower_bid', 'concentration', 'unanswered_questions', 'sasu_violation'],
   contract: ['price_up', 'late', 'chain_extensions', 'missing_kb2v', 'missing_eib_covenants', 'doc_unpublished', 'doc_date_mismatch', 'doc_published_late'],
 };
@@ -1736,6 +1736,7 @@ function eventText(e) {
     case 'bids': return t('ev.bids', { old: e.old != null ? e.old : '—', new: e.new });
     case 'subvention': return t('ev.subvention', { old: e.old != null ? ni.format(e.old) : '—', new: e.new != null ? ni.format(e.new) : t('ud.subvDropped'), date: fdate(String(e.edition || '').replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')) });
     case 'matrix': return t('ev.matrix', { old: e.old || '—', new: e.new });
+    case 'funding': return t('ev.funding', { old: t('fa.st.' + e.old), new: t('fa.st.' + e.new) }) + (e.gap > 0 ? ' · ' + t('fa.gap') + ' ' + money(e.gap) : '');
     case 'completion_overdue': return t('ev.completionOverdue', { date: fdate(e.end) });
     case 'sasu': return t('ev.sasu', { id: e.id || '' }) + (e.violation ? ' · ' + t('ud.violation') : '');
     case 'sasu_status': return t('ev.sasuStatus', { id: e.id || '', status: label('sasu.st.', e.new) || e.new || '—' }) + (e.violation ? ' · ' + t('ud.violation') : '');
@@ -1745,7 +1746,7 @@ function eventText(e) {
 const eventClass = (e) => ({ payment: 'pay', change: 'add', value: 'add', end: 'add', doc: 'act', act: 'act', due: 'add', complaint: 'bad', complaint_status: 'add', sasu: 'bad', sasu_status: 'bad', matrix: 'bad', subvention: 'add', completion_overdue: 'bad' }[e.type] || '');
 // Kinds of change a user filters by.
 const EVENT_GROUPS = { pay: ['payment', 'due'], docs: ['doc', 'act'], terms: ['change', 'value', 'end', 'timeline', 'bids'], status: ['status', 'tender_status'],
-  control: ['complaint', 'complaint_status', 'sasu', 'sasu_status', 'matrix', 'subvention', 'completion_overdue'] };
+  control: ['complaint', 'complaint_status', 'sasu', 'sasu_status', 'matrix', 'subvention', 'funding', 'completion_overdue'] };
 const eventGroup = (e) => Object.keys(EVENT_GROUPS).find((g) => EVENT_GROUPS[g].includes(e.type)) || '';
 function eventPills(events, value, onpick) {
   const n = (g) => events.filter((e) => eventGroup(e) === g).length;
@@ -2243,7 +2244,9 @@ function procurementCard(s, c) {
 function fundingCard(s, t0) {
   const sv = (s.undp || {}).subvention;
   const plans = t0.plan_info || [];
-  if (!sv && !plans.length) return null;
+  const gs = (typeof guaranteesOfTid === 'function' ? guaranteesOfTid(s.tid) : null) || [];
+  const adv = s.advance && s.advance.sum > 0 ? s.advance : null;
+  if (!sv && !plans.length && !gs.length && !t0.guarantee && !adv) return null;
   const eds = (sv && sv.editions) || [];
   return h('div', { class: 'card pad section' },
     h('h2', { class: 'card-title' }, t('ud.funding')),
@@ -2257,7 +2260,43 @@ function fundingCard(s, t0) {
           return h('td', { class: 'r num ' + (v == null ? 'faint' : prev != null && v < prev - 0.5 ? 'bad' : '') }, v == null ? '—' : ni.format(v) + ' ' + t('ud.thousand'));
         }))))),
       sv.url ? h('p', { class: 'small' }, h('a', { href: sv.url, target: '_blank', rel: 'noopener noreferrer' }, sv.nreg)) : null) : null,
-    plans.length ? [h('h3', { class: 'card-sub', style: 'margin-top:12px' }, t('plan.title')), planRows(plans)] : null);
+    adequacyBlock((s.undp || {}).funding),
+    plans.length ? [h('h3', { class: 'card-sub', style: 'margin-top:12px' }, t('plan.title')), planRows(plans)] : null,
+    guaranteesBlock(t0, gs, adv));
+}
+// Is this year's subvention enough for what the contract will still need from the loan this year
+// (the table's Funding Adequacy Status and Additional Funding Needs).
+function adequacyBlock(f) {
+  if (!f) return null;
+  const cls = { insufficient: 'high', suspended: 'high', excess: 'low', adequate: 'ok' }[f.status] || '';
+  return [h('h3', { class: 'card-sub', style: 'margin-top:12px' }, t('fa.title'),
+      h('span', { class: 'sev ' + cls, style: 'margin-left:8px' }, t('fa.st.' + f.status))),
+    kv([
+      [t('fa.year'), money(f.year_subvention)],
+      [t('fa.paidYear'), f.eib_paid_year != null ? h('span', null, money(f.eib_paid_year), f.util_pct != null ? h('span', { class: 'muted' }, ' · ' + f.util_pct + '%') : null) : h('span', { class: 'muted' }, t('fa.unknown'))],
+      [t('fa.left'), f.left < 0 ? h('span', { class: 'bad' }, t('fa.over', { sum: money(-f.left) })) : money(f.left)],
+      [t('fa.remaining'), money(f.remaining)],
+      [t('fa.forecast'), h('span', null, money(f.forecast), h('span', { class: 'muted' }, ' · ' + t('fa.share', { pct: f.share_pct }) + (f.share_est ? ' ' + t('fa.est') : '')))],
+      [t('fa.need'), f.need != null ? money(f.need) : null],
+      [t('fa.gap'), f.gap > 0 ? h('b', { class: 'bad' }, money(f.gap)) : null],
+    ]),
+    h('p', { class: 'muted small' }, t('fa.hint'))];
+}
+// Guarantees: the bid security from Prozorro, the ones the team keeps in the registry, and
+// whether the advance paid is covered by an advance repayment guarantee in force.
+function guaranteesBlock(t0, gs, adv) {
+  if (!gs.length && !t0.guarantee && !adv) return null;
+  const live = gs.filter((g) => !g.closed);
+  const cover = live.filter((g) => g.kind === 'advance' && (!g.until || g.until >= today())).reduce((x, g) => x + (g.amount || 0), 0);
+  const kind = (k) => (typeof rt === 'function' ? rt('g_' + k) : k);
+  return [h('h3', { class: 'card-sub', style: 'margin-top:12px' }, t('gu.title')),
+    kv([
+      [t('gu.bid'), t0.guarantee ? money(t0.guarantee.amount, t0.guarantee.currency) : null],
+      ...live.map((g) => [kind(g.kind), h('span', null, join([g.amount != null ? money(g.amount) : null, g.bank, g.until ? t('gu.until', { date: fdate(g.until) }) : null]),
+        g.until && g.until < today() ? h('span', { class: 'sev high', style: 'margin-left:6px' }, t('gu.expired')) : g.until && g.until <= addDays(today(), 30) ? h('span', { class: 'sev medium', style: 'margin-left:6px' }, t('gu.soon')) : null)]),
+      [t('gu.advance'), adv ? h('span', { class: cover + 1 < adv.sum ? 'bad' : '' }, t(cover ? 'gu.advanceCover' : 'gu.advanceNoCover', { sum: money(adv.sum), cover: money(cover) })) : null],
+    ]),
+    !gs.length ? h('p', { class: 'muted small' }, t('gu.hint')) : null];
 }
 // The UNDP risk matrix: a rating per criterion with its reasons.
 function matrixBlock(s) {
@@ -2826,7 +2865,9 @@ function trackedEvents() {
     .sort((x, y) => (y.e.at || '').localeCompare(x.e.at || '') || (y.e.date || '').localeCompare(x.e.date || ''));
 }
 const newTrackedEvents = () => { const seen = getTrackedSeen(); return trackedEvents().filter(({ e }) => e.at > seen).length; };
-const bellCount = () => newTrackedEvents() + unreadCount();
+// Registry tasks of mine due by today count too.
+const myDueTasks = () => (typeof dueTasks === 'function' ? dueTasks(0) : []);
+const bellCount = () => newTrackedEvents() + unreadCount() + myDueTasks().length;
 function markAllSeen() {
   setTrackedSeen(new Date().toISOString().slice(0, 10) + 'T99');
   if (state.feed.items.length) setSeen(state.feed.items[0].first_seen_at);
@@ -2874,9 +2915,16 @@ function feedPage(preset) {
         state.index.orgs.length > 1 ? select([['', t('ui.allOrgs')]].concat(state.index.orgs.map((o) => [o.edrpou, o.name])), '', (e) => { f.org = e.target.value; f.page = 0; draw(); }, t('ui.allOrgs')) : null),
       list);
   }
-  const show = () => fill(box, tab.which === 'portal' ? drawPortal() : drawTracked());
+  // My tasks from the sub-project registry: overdue and due within a week.
+  function drawTasks() {
+    const list = typeof dueTasks === 'function' ? dueTasks(7) : [];
+    return h('div', { class: 'table-card' }, list.length ? h('div', { class: 'ev-feed' }, list.map((x) => h('a', { class: 'ev-row' + (x.due < today() ? ' bad' : x.due === today() ? ' new' : ''), href: '#/registry/' + encodeURIComponent(x.code) },
+      h('span', { class: 'd num' }, fdate(x.due)), h('span', null, h('b', null, x.code), h('span', { class: 'faint small' }, ' · ' + x.name.slice(0, 90)), h('div', null, x.text)), h('span'))))
+      : h('div', { class: 'empty' }, h('b', null, t('ntf.noTasks'))));
+  }
+  const show = () => fill(box, tab.which === 'portal' ? drawPortal() : tab.which === 'tasks' ? drawTasks() : drawTracked());
   const nTracked = evs.filter(({ e }) => e.at > seen).length;
-  const tabs = pills([['tracked', t('ntf.tracked'), nTracked || null], ['portal', t('ntf.portal'), unreadCount() || null]], tab.which, (v) => { tab.which = v; show(); });
+  const tabs = pills([['tracked', t('ntf.tracked'), nTracked || null]].concat(typeof hasRegistry === 'function' && hasRegistry() ? [['tasks', t('ntf.tasks'), myDueTasks().length || null]] : []).concat([['portal', t('ntf.portal'), unreadCount() || null]]), tab.which, (v) => { tab.which = v; show(); });
   show();
   return [
     pageHead(t('ntf.eyebrow'), titleGrad(t('ntf.title1'), t('ntf.title2')), null,

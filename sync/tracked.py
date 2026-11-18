@@ -430,7 +430,8 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
         overdue = round(max(0.0, due_now - eib_paid["total"]), 2)
     # Payments against the portal's acts and addendums; the advance and its closing by acts.
     pay_sig, pay_notes, doc_audit, advance = compliance.payment_checks(
-        pays, acts, addendums, contract.get("changes"), value, today.isoformat(), contract, acts_known=tc is not None)
+        pays, acts, addendums, contract.get("changes"), value, today.isoformat(), contract, acts_known=tc is not None,
+        docs=compliance._docs(tender, contract))
     # Works: the sub-project code and the buyer's other procurements for the same object
     # (design, technical and author's supervision, expert review).
     works = (tender.get("cpv") or "").startswith("45") or tender.get("category") == "works"
@@ -487,7 +488,7 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     snap["kind"] = "treasury" if treasury_only else "contract"
     # What the UNDP working table keeps: course, bidders, AMCU, price, progress, subvention, matrix.
     snap["undp"] = undp.card(tender, contract, tc, signals, snap["totals"], acts_sum if tc is not None else None, (eib_paid or {}).get("total") or paid,
-                             audit, advance, key, today.isoformat())
+                             audit, advance, key, today.isoformat(), acts=acts if tc is not None else None, eib_paid=eib_paid)
     if key.startswith("tn"):
         snap.update(contract_id=contract.get("id"), from_tender=True)
     if old and old.get("kind") == "tender":
@@ -581,6 +582,7 @@ def index_row(s):
 def _list_fields(s):
     u, t = s.get("undp") or {}, s.get("tender") or {}
     mx, pg, tl, sv, cp = u.get("matrix") or {}, u.get("progress") or {}, u.get("timeline") or {}, u.get("subvention") or {}, u.get("complaints") or {}
+    fd = u.get("funding") or {}
     tt = s.get("totals") or {}
     alerts = []
     if mx.get("overall") == 3:
@@ -593,7 +595,7 @@ def _list_fields(s):
         alerts.append("overdue")
     if pg.get("overdue_days"):
         alerts.append("late")
-    if any(str(w).startswith("subvention_") for w in (mx.get("why") or {}).get("r3") or []):
+    if any(str(w).startswith("subvention_") or w == "funding_gap" for w in (mx.get("why") or {}).get("r3") or []):
         alerts.append("subvention")
     return {k: v for k, v in {
         "risk": mx.get("overall"), "subproject": (t.get("subproject") or {}).get("code"),
@@ -601,4 +603,5 @@ def _list_fields(s):
         "acts_pct": pg.get("acts_pct"), "paid_pct": pg.get("paid_pct"), "late_days": pg.get("overdue_days"),
         "opening": tl.get("opening") if s.get("kind") == "tender" else None, "auction": tl.get("auction") if s.get("kind") == "tender" else None,
         "alerts": alerts,
+        "funding": {k: fd.get(k) for k in ("status", "need", "gap", "left", "year_subvention", "remaining", "eib_paid_year") if fd.get(k) is not None} or None,
     }.items() if v not in (None, "", [])}
