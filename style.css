@@ -34,7 +34,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-html { overflow-x: clip; -webkit-text-size-adjust: 100%; }
+html { overflow-x: clip; -webkit-text-size-adjust: 100%; touch-action: pan-x pan-y; }
 body { margin: 0; min-height: 100vh; color: var(--text); background: var(--bg); font: 15px/1.5 var(--font);
   -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 a { color: inherit; }
@@ -565,10 +565,14 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
   .nav { display: none; }
   .top-meta { margin-left: auto; gap: 8px; }
   .top-meta .lang { display: none; }
-  .section-tabs { width: auto; max-width: 100%; }
+  /* Вкладки розділу на телефоні: переносяться в рядки, без обрізаних пунктів. */
+  .section-tabs { width: 100%; max-width: 100%; flex-wrap: wrap; justify-content: center; gap: 4px; border-radius: 20px; overflow: visible; }
+  .section-tabs a { flex: 1 1 auto; justify-content: center; }
+  /* iOS наближає сторінку на полях із шрифтом менше 16px: на телефоні поля 16px. */
+  input, select, textarea, .input, .select { font-size: 16px; }
   .foot-meta { padding-bottom: calc(var(--tabbar) + 24px + var(--safe-b)); }
   .toasts, .install { bottom: calc(var(--tabbar) + 14px + var(--safe-b)); }
-  .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; display: grid; grid-template-columns: repeat(2, 1fr); height: calc(var(--tabbar) + var(--safe-b)); padding-bottom: var(--safe-b);
+  .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; display: grid; grid-template-columns: repeat(var(--tabs, 2), 1fr); height: calc(var(--tabbar) + var(--safe-b)); padding-bottom: var(--safe-b);
     background: rgba(255, 255, 255, .86); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); box-shadow: 0 -.5px 0 var(--line); }
   .tabbar a, .tabbar button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; background: none; color: var(--faint);
     font-size: 10.5px; font-weight: 700; text-decoration: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }

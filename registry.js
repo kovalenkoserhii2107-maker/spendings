@@ -31,7 +31,8 @@ const RG = {
     h_failed: 'невдалих тендерів: {n}', h_overdue: 'строк завершення {date} минув, виконано {pct}%', h_stale: 'коментар не оновлювався {days} дн.',
     h_funding: 'статус фінансування: {s}', h_disq: 'відхилено учасників: {n}', h_single: 'одна пропозиція', h_noContract: 'договору ще немає',
     h_paidGap: 'оплачено {paid}% при виконанні {pct}%',
-    importFailed: 'не збережено: {list}', autoLinked: 'прив’язано автоматично', candTitle: 'Можливі закупівлі за назвою', candHint: 'Знайдено за назвою субпроєкту; прив’яжіть ті, що стосуються його.',
+    importFailed: 'не збережено: {list}', thousand: 'тис. грн', subvTitle: 'Субвенція за розпорядженням КМУ', subvOrder: 'Розпорядження № {n}', subvOriginal: 'Початково, {date}', subvEdition: 'Ред. {date}',
+    subvTableDiff: 'У таблиці субвенція на рік {table}, у чинній редакції розпорядження — {order}.', h_subvDropped: 'проєкт вилучено з розподілу субвенції (ред. {date})', h_subvToken: 'субвенцію зменшено з {from} до символічної 1 тис. (ред. {date})', h_subvTokenOnly: 'у розподілі лише символічна 1 тис. (ред. {date})', h_subvCut: 'субвенцію зменшено з {from} до {to} (ред. {date})', autoLinked: 'прив’язано автоматично', candTitle: 'Можливі закупівлі за назвою', candHint: 'Знайдено за назвою субпроєкту; прив’яжіть ті, що стосуються його.',
     refreshDone: 'Оновлено: з ID у таблиці {linked}, знайдено за назвою {auto}, є варіанти для підтвердження {cand}, не знайдено {none}, лише англ. назва {noName}', refreshN: 'Оновити з Prozorro ({n})', pickExpert: 'Оберіть експерта: оновлюються лише його субпроєкти',
     trackAll: 'Відстежувати мої з таблиці ({n})', trackConfirm: 'Поставити на відстеження договори й закупівлі ваших {n} субпроєктів? Діючі договори — на контроль, закупівлі без договору — до підписання.',
     tracking: 'Відстеження: {n} з {total}, додано {added}…', trackDone: 'На відстеження додано {added}, уже було {already}, не вдалося {failed}',
@@ -64,7 +65,8 @@ const RG = {
     h_failed: 'failed tenders: {n}', h_overdue: 'completion date {date} passed, {pct}% done', h_stale: 'comment not updated for {days} days',
     h_funding: 'funding status: {s}', h_disq: 'bidders rejected: {n}', h_single: 'single bid', h_noContract: 'no contract yet',
     h_paidGap: '{paid}% paid at {pct}% done',
-    importFailed: 'not saved: {list}', autoLinked: 'linked automatically', candTitle: 'Possible procurements by name', candHint: 'Found by the sub-project name; link the ones that belong to it.',
+    importFailed: 'not saved: {list}', thousand: 'thousand UAH', subvTitle: 'Subvention by the CMU order', subvOrder: 'Order No. {n}', subvOriginal: 'Original, {date}', subvEdition: 'Ed. {date}',
+    subvTableDiff: 'The table has {table} of subvention for the year; the order in force has {order}.', h_subvDropped: 'project dropped from the subvention (ed. {date})', h_subvToken: 'subvention cut from {from} to a token 1 thousand (ed. {date})', h_subvTokenOnly: 'only a token 1 thousand in the order (ed. {date})', h_subvCut: 'subvention cut from {from} to {to} (ed. {date})', autoLinked: 'linked automatically', candTitle: 'Possible procurements by name', candHint: 'Found by the sub-project name; link the ones that belong to it.',
     refreshDone: 'Refreshed: with ids in the table {linked}, found by name {auto}, candidates to confirm {cand}, not found {none}, English name only {noName}', refreshN: 'Refresh from Prozorro ({n})', pickExpert: 'Choose an expert: only their sub-projects are refreshed',
     trackAll: 'Track mine from the table ({n})', trackConfirm: 'Put the contracts and procurements of your {n} sub-projects on control? Contracts in force go on control, procurements without a contract until it is signed.',
     tracking: 'Tracking: {n} of {total}, {added} added…', trackDone: '{added} added to tracking, {already} already there, {failed} failed',
@@ -84,6 +86,7 @@ function rt(key, vars) {
 async function registryInit() {
   if (!cloud || !state.user) { REG.access = null; return; }
   REG.access = await cloud.registryAccess();
+  loadSubvention().then(() => { if (location.hash.startsWith('#/registry')) softRender(); });
   if (REG.access) cloud.watchRegistry((r) => { REG.rows = r.rows; REG.meta = r.meta; if (location.hash.startsWith('#/registry')) softRender(); });
   softRender();
 }
@@ -282,14 +285,22 @@ function nameMatch(spName, title) {
   return { score: a.length ? a.filter((w) => b.has(w)).length / a.length : 0, head: a.length >= 4 && a.slice(0, 4).join(' ') === tw.slice(0, 4).join(' ') };
 }
 async function findByName(r) {
-  const name = (r.t || {}).name_uk;
-  const q = objectName(name || '').split(/\s+/).slice(0, 12).join(' ');
-  if (q.length < 12) return null;
-  const d = await pzProxy({ action: 'search', kind: 'tenders', text: q });
-  const cand = (d.items || []).map((x) => {
+  const name = spNameUk(r);
+  const words = objectName(name || '').split(/\s+/);
+  if (words.join(' ').length < 12) return null;
+  // The long query first; if it finds nothing that starts like the name, a shorter one.
+  const seen = new Map();
+  for (const n of [12, 7]) {
+    const d = await pzProxy({ action: 'search', kind: 'tenders', text: words.slice(0, n).join(' ') });
+    (d.items || []).forEach((x) => seen.set(x.tid, x));
+    if ([...seen.values()].some((x) => nameMatch(name, x.title).head) || words.length <= 7) break;
+  }
+  const cand = [...seen.values()].map((x) => {
     const m = nameMatch(name, x.title);
-    return { tid: x.tid, title: (x.title || '').slice(0, 300), status: x.status, value: x.value, buyer_name: x.buyer_name || '', role: relRole(x.title), score: Math.round(m.score * 100) / 100, head: m.head };
-  }).filter((x) => x.score >= 0.6).sort((a, b) => b.score - a.score).slice(0, 12);
+    // A title that starts with the object's name is the works procurement itself; services name
+    // it later ("Технічний нагляд за об'єктом «…»").
+    return { tid: x.tid, title: (x.title || '').slice(0, 300), status: x.status, value: x.value, buyer_name: x.buyer_name || '', role: m.head ? 'works' : relRole(x.title), score: Math.round(m.score * 100) / 100, head: m.head };
+  }).filter((x) => x.score >= 0.6).sort((a, b) => b.score - a.score).slice(0, 15);
   const auto = cand.filter((x) => x.role === 'works' && x.head && x.score >= 0.8 && x.status !== 'cancelled').map((x) => x.tid);
   return { cand, auto };
 }
@@ -372,7 +383,7 @@ async function refreshMany(rows) {
     n++;
     setStatus(rt('refreshing', { n, total: rows.length }));
     const had = spTids(r).length > 0;
-    if (!had && !(r.t || {}).name_uk) { noName++; continue; }
+    if (!had && !spNameUk(r)) { noName++; continue; }
     try {
       const pz = await refreshSp(r);
       if (had) linked++;
@@ -442,6 +453,108 @@ function riskHints(r) {
 const RISK_KEYS = ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'rx'];
 const worst = (risk) => { const l = Object.values(risk || {}).flat().map((x) => x.level); return l.includes('high') ? 'high' : l.includes('medium') ? 'medium' : l.length ? 'low' : null; };
 
+// ---- subvention by the CMU orders (data/subvention.json, from the sync) ------------------------
+
+let SUBV = null;
+async function loadSubvention() {
+  if (SUBV) return SUBV;
+  try { SUBV = await getJSON('data/subvention.json', ver()); } catch (e) { SUBV = { decrees: [], projects: [] }; }
+  SUBV.projects = SUBV.projects || [];
+  return SUBV;
+}
+const REGION_OF = { OD: 'Одеська', MY: 'Миколаївська', KS: 'Херсонська', KV: 'Київська', LV: 'Львівська', VN: 'Вінницька', VO: 'Волинська',
+  DP: 'Дніпропетровська', ZH: 'Житомирська', ZP: 'Запорізька', PL: 'Полтавська', KH: 'Харківська', CH: 'Чернігівська', CV: 'Чернівецька',
+  KM: 'Хмельницька', RV: 'Рівненська', SM: 'Сумська', TR: 'Тернопільська', IF: 'Івано-Франківська', KR: 'Кіровоградська', ZK: 'Закарпатська', CK: 'Черкаська' };
+// Ukrainian to Latin (the 2010 official table), then both sides folded so that "Vesnyane" and
+// "Vesniane", "Mykhailivka" and "Mihailivka" meet.
+const TR = { а: 'a', б: 'b', в: 'v', г: 'h', ґ: 'g', д: 'd', е: 'e', є: 'ie', ж: 'zh', з: 'z', и: 'y', і: 'i', ї: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n',
+  о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ь: '', ю: 'iu', я: 'ia' };
+const fold = (s) => s.replace(/[’'`ʼ]/g, '').replace(/y/g, 'i').replace(/i([aeu])/g, '$1').replace(/kh/g, 'h').replace(/ts/g, 'c').replace(/[^a-z0-9 ]+/g, ' ');
+const latin = (s) => fold(String(s || '').toLowerCase().replace(/[а-яіїєґ]/g, (c) => TR[c] != null ? TR[c] : c));
+const EN_COMMON = new Set('reconstruction overhaul construction building buildings street village oblast region district council facility protective civil defense defence radiation shelter water supply network system school lyceum kindergarten address house boiler sewage pumping station repair repairs major capital communal enterprise institution establishment center centre hospital office territory community settlement purpose'.split(' '));
+function lev(a, b) {
+  const d = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = d[0]; d[0] = i;
+    for (let j = 1; j <= b.length; j++) { const tmp = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = tmp; }
+  }
+  return d[b.length];
+}
+// The sub-project's line in the CMU order: by its Ukrainian name, or by the proper names and
+// numbers of its English one. The region (from the code) breaks ties.
+function subvMatch(r) {
+  if (!SUBV || !SUBV.projects.length) return null;
+  if (r._subv !== undefined) return r._subv;
+  const tt = r.t || {};
+  const region = REGION_OF[(r.code || '').slice(0, 2)];
+  let best = null;
+  const enTokens = tt.name_en ? fold(String(tt.name_en).toLowerCase()).split(/\s+/).filter((w) => (w.length >= 5 && !EN_COMMON.has(w)) || /^\d+$/.test(w)) : [];
+  for (const p of SUBV.projects) {
+    let score = 0;
+    if (tt.name_uk) score = nameMatch(tt.name_uk, p.name).score;
+    else if (enTokens.length) {
+      const pt = latin(p.name).split(/\s+/).filter(Boolean);
+      const hit = enTokens.filter((w) => pt.some((x) => (/^\d+$/.test(w) ? x === w : x.length >= 4 && lev(w, x) <= Math.max(1, Math.floor(w.length / 5)))));
+      score = hit.length / enTokens.length;
+      // Several proper names or a well / house number in common are enough on their own.
+      const nums = hit.filter((w) => /^\d{3,}$/.test(w)).length;
+      if (hit.length >= 3 || (nums && hit.length >= 2)) score = Math.max(score, 0.6);
+    }
+    if (region && (p.region || '').startsWith(region)) score += 0.1;
+    if (!best || score > best.score) best = { score, p };
+  }
+  r._subv = best && best.score >= (tt.name_uk ? 0.8 : 0.6) ? best.p : null;
+  return r._subv;
+}
+const spNameUk = (r) => (r.t || {}).name_uk || ((subvMatch(r) || {}).name || '');
+const fmtK = (x) => ni.format(x) + ' ' + rt('thousand');
+const edDate = (d) => fdate(d.slice(0, 4) + '-' + d.slice(4, 6) + '-' + d.slice(6, 8));
+
+// Funding gap hints from the order's editions: cut, cut to a token, dropped.
+function subvRisk(r) {
+  const p = subvMatch(r);
+  if (!p || !SUBV) return [];
+  const dec = (SUBV.decrees || []).find((d) => d.nreg === p.nreg) || { editions: Object.keys(p.amounts).sort() };
+  const eds = dec.editions || [];
+  const last = eds[eds.length - 1];
+  const vals = eds.map((e) => p.amounts[e]).filter((v) => v != null);
+  const max = Math.max(...vals);
+  const now = p.amounts[last];
+  if (now == null) return [{ level: 'high', text: rt('h_subvDropped', { date: edDate(last) }) }];
+  if (now <= 1 && max > 1) return [{ level: 'high', text: rt('h_subvToken', { from: fmtK(max), date: edDate(last) }) }];
+  if (now <= 1) return [{ level: 'medium', text: rt('h_subvTokenOnly', { date: edDate(last) }) }];
+  if (now < max - 0.5) return [{ level: 'medium', text: rt('h_subvCut', { from: fmtK(max), to: fmtK(now), date: edDate(last) }) }];
+  return [];
+}
+function allRisk(r) {
+  const extra = subvRisk(r);
+  if (!extra.length) return r.risk || {};
+  const out = Object.assign({}, r.risk || {});
+  out.r3 = (out.r3 || []).concat(extra);
+  return out;
+}
+
+function subventionCard(r) {
+  const p = subvMatch(r);
+  if (!p) return null;
+  const dec = (SUBV.decrees || []).find((d) => d.nreg === p.nreg) || {};
+  const eds = dec.editions || Object.keys(p.amounts).sort();
+  const tt = r.t || {};
+  const last = p.amounts[eds[eds.length - 1]];
+  return h('div', { class: 'card pad section' },
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('subvTitle')), ext(dec.url || '#', rt('subvOrder', { n: (p.nreg || '').replace(/-\d{4}-р$/, '-р') }))),
+    h('p', { class: 'muted small' }, join([p.budget, p.region])), h('p', { class: 'small' }, p.name),
+    h('div', { class: 'scroll' }, h('table', null,
+      h('thead', null, h('tr', null, eds.map((e, i) => h('th', { class: 'r' }, i ? rt('subvEdition', { date: edDate(e) }) : rt('subvOriginal', { date: edDate(e) }))))),
+      h('tbody', null, h('tr', null, eds.map((e, i) => {
+        const v = p.amounts[e], prev = i ? p.amounts[eds[i - 1]] : null;
+        const cls = v == null ? 'faint' : prev != null && v < prev - 0.5 ? 'bad' : prev != null && v > prev + 0.5 ? 'ok' : '';
+        return h('td', { class: 'r num ' + cls }, v == null ? '—' : fmtK(v));
+      }))))),
+    tt.subv_year != null && last != null && Math.abs(tt.subv_year - last * 1000) > 1000
+      ? h('p', { class: 'notice small', style: 'margin-top:10px' }, rt('subvTableDiff', { table: money(tt.subv_year), order: money(last * 1000) })) : null);
+}
+
 // ---- list ------------------------------------------------------------------------------------
 
 const REGF = { expert: null, programme: '', which: '', q: '', page: 0 };
@@ -476,7 +589,7 @@ function registryPage() {
   const progs = [...new Set(rows.map((r) => (r.t || {}).programme).filter(Boolean))].sort();
   const tests = {
     nolink: (r) => !spTids(r).length, linked: (r) => spTids(r).length > 0,
-    risk: (r) => ['high', 'medium'].includes(worst(r.risk)), nocontract: (r) => !mainContract(r),
+    risk: (r) => ['high', 'medium'].includes(worst(allRisk(r))), nocontract: (r) => !mainContract(r),
   };
   function filtered() {
     const words = REGF.q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -535,7 +648,7 @@ function registryTable(rows) {
         td(L.k, { class: 'w-party' }, m ? [h('div', { class: 'cell-main' }, ((m.c.suppliers || [])[0] || {}).name || '—'), h('div', { class: 'cell-sub' }, join([m.c.number && '№ ' + m.c.number, m.c.value ? money(m.c.value.amount) : null]))]
           : tt.contractor ? tt.contractor : h('span', { class: 'faint' }, '—')),
         td(L.g, { class: 'num' }, join([pctOf(tt.pct) != null ? pctOf(tt.pct) + '%' : null, pctOf(tt.paid_pct) != null ? rt('paidShort', { pct: pctOf(tt.paid_pct) }) : null]) || '—'),
-        td(L.r, null, riskChips(r.risk)));
+        td(L.r, null, riskChips(allRisk(r))));
     }))));
 }
 
@@ -553,10 +666,11 @@ function registryCard(code) {
       h('h1', { class: 'org-title' }, tt.name_uk || tt.name_en || r.code),
       tt.name_uk && tt.name_en ? h('p', { class: 'muted' }, tt.name_en) : null,
       h('div', { class: 'chips' }, tt.expert ? h('span', { class: 'tag' }, tt.expert) : null, tt.funding ? h('span', { class: 'tag' }, tt.funding) : null,
-        worst(r.risk) ? h('span', { class: 'sev ' + worst(r.risk) }, rt('colRisk')) : null)),
+        worst(allRisk(r)) ? h('span', { class: 'sev ' + worst(allRisk(r)) }, rt('colRisk')) : null)),
     h('div', { class: 'org-actions' }, h('div', { class: 'row' }, back, tt.dream ? ext(/^http/.test(tt.dream) ? tt.dream : dreamUrl(tt.dream.match(/DREAM-UA-\S+/) ? tt.dream.match(/DREAM-UA-\S+/)[0] : tt.dream), 'DREAM', 'btn') : null)));
   return [head,
     h('div', { class: 'grid-2 section' }, tableCard(r), risksCard(r)),
+    subventionCard(r),
     pzCard(r),
     (r.tenders || []).length ? sheetTendersCard(r) : null,
     paymentsCard(r),
@@ -586,7 +700,7 @@ function risksCard(r) {
   return h('div', { class: 'card pad' },
     h('h2', { class: 'card-title' }, rt('risks')), h('p', { class: 'muted small' }, rt('risksHint')),
     h('div', { class: 'checklist' }, RISK_KEYS.map((k) => {
-      const items = (r.risk || {})[k] || [];
+      const items = (allRisk(r) || {})[k] || [];
       const score = k !== 'rx' ? tt[k] : null;
       if (k === 'rx' && !items.length) return null;
       // No hint and no rating in the table: nothing known, not "fine".
@@ -726,7 +840,7 @@ async function exportXlsx(rows) {
     const sup = m ? (m.c.suppliers || [])[0] || {} : {};
     const sasu = pzT.some((x) => x.sasu && x.sasu.violation) ? 'Negative' : pzT.some((x) => x.sasu && x.sasu.active) ? 'Ongoing' : pzT.some((x) => x.sasu && x.sasu.n) ? 'Positive' : '';
     const amcu = pzT.reduce((s, x) => s + ((x.complaints || {}).n || 0), 0);
-    const hints = RISK_KEYS.flatMap((k) => ((r.risk || {})[k] || []).map((x) => rt(k).replace(/^(\d)\..*/, '$1') + ': ' + x.text)).join('; ');
+    const hints = RISK_KEYS.flatMap((k) => ((allRisk(r) || {})[k] || []).map((x) => rt(k).replace(/^(\d)\..*/, '$1') + ': ' + x.text)).join('; ');
     return [r.code, tt.name_uk || '', tt.expert || '', (pzT[0] || {}).buyer || '', spTids(r).map((x) => 'https://prozorro.gov.ua/tender/' + x).join('\n'),
       pzT[0] ? label('pzs.', pzT[0].status) : '', spTids(r).length || '', amcu || '', sasu, sup.name || '', sup.code || '', m ? m.c.number || '' : '',
       m && m.c.value ? m.c.value.amount : '', m ? m.c.signed || '' : '', m ? m.c.end || '' : '', m ? m.c.changes || 0 : '', hints, (r.pz || {}).at ? (r.pz.at || '').slice(0, 10) : ''];

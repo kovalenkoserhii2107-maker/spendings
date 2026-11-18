@@ -622,6 +622,8 @@ function accountButton() {
   return h('a', { class: 'avatar', href: '#/settings', title: join([u.displayName, u.email], ' · '), 'aria-label': t('nav.settings') }, pic);
 }
 
+// The sections: the sub-project registry only for the people on its access list.
+const navItems = () => NAV.concat(typeof hasRegistry === 'function' && hasRegistry() ? [['#/registry', 'registry', 'building', 'nav.registry']] : []);
 function shell(route, page) {
   const last = state.index.runs && state.index.runs[0];
   const failed = last && last.orgs_failed;
@@ -632,7 +634,7 @@ function shell(route, page) {
       h('a', { class: 'brand', href: '#/' },
         logo(),
         h('span', null, h('b', null, t('app.name')), h('small', null, t('app.tagline')))),
-      h('nav', { class: 'nav', 'aria-label': t('nav.label') }, NAV.concat(typeof hasRegistry === 'function' && hasRegistry() ? [['#/registry', 'registry', 'building', 'nav.registry']] : []).map(link)),
+      h('nav', { class: 'nav', 'aria-label': t('nav.label') }, navItems().map(link)),
       h('div', { class: 'top-meta' },
         h('span', { class: 'chip' + (failed ? ' warn' : ''), title: last ? t('top.lastCheck', { at: ftime(last.finished_at) }) : '' }, h('i'), last ? ftime(last.finished_at).slice(0, 5) + ' ' + ftime(last.finished_at).slice(11) : '—'),
         langSwitch(),
@@ -641,8 +643,8 @@ function shell(route, page) {
     h('main', { class: 'page' }, h('div', { class: 'wrap' }, page)),
     h('footer', { class: 'foot-meta wrap' }, h('span', null, t('app.name'), ' · ', h('a', { href: '#/settings' }, 'v' + APP.version)), h('span', null, t('foot.data'))),
     // Phone layout: the same five sections at the bottom.
-    h('nav', { class: 'tabbar', 'aria-label': t('nav.label') },
-      NAV.map(([href, key, ico, label]) => h('a', { href, class: route === key ? 'on' : '' }, icon(ico), h('span', null, t(key === 'eib' ? 'eib.short' : label)), badgeFor(key)))),
+    h('nav', { class: 'tabbar', 'aria-label': t('nav.label'), style: '--tabs:' + navItems().length },
+      navItems().map(([href, key, ico, label]) => h('a', { href, class: route === key ? 'on' : '' }, icon(ico), h('span', null, t(key === 'eib' ? 'eib.short' : label)), badgeFor(key)))),
   ];
 }
 
@@ -3500,6 +3502,10 @@ async function boot() {
     render();
   }
 }
+
+// A fixed scale on phones: no pinch zoom (iOS Safari ignores user-scalable=no); double-tap zoom is
+// off through touch-action in style.css.
+['gesturestart', 'gesturechange'].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault(), { passive: false }));
 
 setupServiceWorker();
 boot();

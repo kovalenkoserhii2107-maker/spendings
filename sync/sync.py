@@ -35,6 +35,7 @@ import eib  # noqa: E402
 import prozorro  # noqa: E402
 import tracked  # noqa: E402
 import spending  # noqa: E402
+import subvention  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.environ.get("DATA_DIR") or os.path.join(ROOT, "data")
@@ -596,6 +597,11 @@ def main():
                 write_json(EIB_FILE, found)
         except Exception:
             traceback.print_exc()
+    # The CMU orders spreading the EIB programmes' subvention, with all their editions.
+    try:
+        subvention.sync(os.path.join(DATA, "subvention.json"), log=lambda m: print(m, flush=True))
+    except Exception:
+        traceback.print_exc()
     feed.sort(key=lambda i: (i["first_seen_at"], i.get("date") or "", i["ext_id"]), reverse=True)
     runs = state.setdefault("runs", [])
     runs.insert(0, {
