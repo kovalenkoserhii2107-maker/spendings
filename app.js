@@ -1730,16 +1730,26 @@ function eventText(e) {
     case 'stage_contract': return t('ev.stageContract', { n: e.number || '—' }) + (e.amount ? ' ' + money(e.amount) : '') + (e.supplier ? ' · ' + e.supplier : '');
     case 'contract_new': return t('ev.contractNew', { n: e.number || '—' }) + (e.amount ? ' ' + money(e.amount) : '') + (e.supplier ? ' · ' + e.supplier : '');
     case 'due': return t('ev.due', { sum: money(e.amount) }) + (e.overdue > 1 ? ' · ' + t('tr.overdueN', { sum: money(e.overdue) }) : '');
+    case 'complaint': return t('ev.complaint', { of: t('ud.of.' + e.of) }) + (e.title ? ': ' + e.title : '') + ' · ' + t('ud.cs.' + (e.status || 'pending'));
+    case 'complaint_status': return t('ev.complaintStatus', { of: t('ud.of.' + e.of), old: t('ud.cs.' + (e.old || 'pending')), new: t('ud.cs.' + (e.new || 'pending')) });
+    case 'timeline': return t('ev.timeline', { what: t('ud.tl.' + e.field), old: e.old ? fdate(e.old) : '—', new: fdate(e.new) });
+    case 'bids': return t('ev.bids', { old: e.old != null ? e.old : '—', new: e.new });
+    case 'subvention': return t('ev.subvention', { old: e.old != null ? ni.format(e.old) : '—', new: e.new != null ? ni.format(e.new) : t('ud.subvDropped'), date: fdate(String(e.edition || '').replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')) });
+    case 'matrix': return t('ev.matrix', { old: e.old || '—', new: e.new });
+    case 'completion_overdue': return t('ev.completionOverdue', { date: fdate(e.end) });
+    case 'sasu': return t('ev.sasu', { id: e.id || '' }) + (e.violation ? ' · ' + t('ud.violation') : '');
+    case 'sasu_status': return t('ev.sasuStatus', { id: e.id || '', status: label('sasu.st.', e.new) || e.new || '—' }) + (e.violation ? ' · ' + t('ud.violation') : '');
     default: return e.type;
   }
 }
-const eventClass = (e) => ({ payment: 'pay', change: 'add', value: 'add', end: 'add', doc: 'act', act: 'act', due: 'add' }[e.type] || '');
+const eventClass = (e) => ({ payment: 'pay', change: 'add', value: 'add', end: 'add', doc: 'act', act: 'act', due: 'add', complaint: 'bad', complaint_status: 'add', sasu: 'bad', sasu_status: 'bad', matrix: 'bad', subvention: 'add', completion_overdue: 'bad' }[e.type] || '');
 // Kinds of change a user filters by.
-const EVENT_GROUPS = { pay: ['payment', 'due'], docs: ['doc', 'act'], terms: ['change', 'value', 'end'], status: ['status', 'tender_status'] };
+const EVENT_GROUPS = { pay: ['payment', 'due'], docs: ['doc', 'act'], terms: ['change', 'value', 'end', 'timeline', 'bids'], status: ['status', 'tender_status'],
+  control: ['complaint', 'complaint_status', 'sasu', 'sasu_status', 'matrix', 'subvention', 'completion_overdue'] };
 const eventGroup = (e) => Object.keys(EVENT_GROUPS).find((g) => EVENT_GROUPS[g].includes(e.type)) || '';
 function eventPills(events, value, onpick) {
   const n = (g) => events.filter((e) => eventGroup(e) === g).length;
-  return pills([['', t('ui.all'), events.length], ['pay', t('evg.pay'), n('pay')], ['docs', t('evg.docs'), n('docs')], ['terms', t('evg.terms'), n('terms')], ['status', t('evg.status'), n('status')]]
+  return pills([['', t('ui.all'), events.length], ['pay', t('evg.pay'), n('pay')], ['docs', t('evg.docs'), n('docs')], ['terms', t('evg.terms'), n('terms')], ['status', t('evg.status'), n('status')], ['control', t('evg.control'), n('control')]]
     .filter((x) => x[0] === '' || x[2] || x[0] === value), value, onpick);
 }
 const eventSub = (e) => (e.type === 'payment' && e.purpose ? h('div', { class: 'cell-sub clamp1' }, e.purpose) : null);
@@ -1957,6 +1967,8 @@ function trackedDossier(id) {
         h('div', { class: 'stat' + (tt.overdue > 1 && !tt.partial ? ' bad' : '') }, h('small', null, t('tr.dueNow')), h('b', { class: 'num' }, money(tt.due_now)), h('span', { class: 'sub' }, tt.overdue > 1 ? (tt.partial ? t('tr.notSeen', { sum: money(tt.overdue) }) : t('tr.overdueN', { sum: money(tt.overdue) })) : t('tr.noOverdue')))),
       h('div', { class: 'card pad section' }, trackedBar(tt, s.acts_sum), h('div', { class: 'bar-label' }, h('span', null, t('tr.paidOf', { paid: money(tt.paid), value: money(tt.value) })), h('span', null, s.acts_sum ? t('tr.actsSum', { sum: money(s.acts_sum) }) : ''))),
       complianceCard(s),
+    undpCard(s),
+      undpCard(s),
       h('div', { class: 'grid-2 section' },
         h('div', { class: 'card pad' },
           h('h2', { class: 'card-title' }, t('tr.stages')),
@@ -2126,6 +2138,60 @@ function liveRelated(t0) {
     fill(box, relatedCard(list, t0) || '');
   }).catch((e) => fill(box, h('p', { class: 'muted small' }, e.message)));
   return box;
+}
+
+// What the UNDP working table keeps for this procurement and contract (snap.undp, from the sync):
+// course, bidders, AMCU, price, progress, subvention and the risk matrix with its Overall Rating.
+const UD_KEYS = ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8'];
+function udWhy(x) {
+  const [code, n] = String(x).split(':');
+  return t('ud.why.' + code, { n });
+}
+function undpCard(s) {
+  const u = s.undp;
+  if (!u) return null;
+  const tl = u.timeline || {}, pr = u.price || {}, pg = u.progress || {}, sv = u.subvention, mx = u.matrix || {}, bd = u.bidders || {}, cp = u.complaints || {};
+  const pct = (x) => (x != null ? ni.format(x) + '%' : null);
+  const sp = typeof hasRegistry === 'function' && hasRegistry() ? [...REG.rows.values()].find((r) => spTids(r).includes(s.tid)) : null;
+  const amcu = (of) => { const x = cp[of] || {}; return x.n ? t('ud.amcuLine', { n: x.n, open: x.open || 0, upheld: x.upheld || 0 }) : (x.claims ? t('ud.claimsOnly', { n: x.claims }) : t('ud.none')); };
+  const eds = (sv && sv.editions) || [];
+  return h('div', { class: 'card pad section' },
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, t('ud.title')),
+      h('div', { class: 'row' }, mx.overall ? h('span', { class: 'sev ' + ['', 'low', 'medium', 'high'][mx.overall], title: t('ud.overallHint') }, t('ud.overall', { n: mx.overall })) : null,
+        sp ? h('a', { class: 'btn btn-sm', href: '#/registry/' + encodeURIComponent(sp.code) }, icon('building'), sp.code) : null)),
+    h('div', { class: 'grid-2' },
+      h('div', null, h('h3', { class: 'card-sub' }, t('ud.procurement')), kv([
+        [t('ud.tl.announced'), tl.announced ? fdate(tl.announced) : null],
+        [t('ud.tl.opening'), tl.opening ? join([fdate(tl.opening), tl.length_days != null ? t('ud.days', { n: tl.length_days }) : null]) : null],
+        [t('ud.tl.auction'), tl.auction ? fdate(tl.auction) : null],
+        [t('ud.tl.award'), tl.award ? fdate(tl.award) : null],
+        [t('ud.tl.signed'), tl.signed ? join([fdate(tl.signed), tl.duration_months != null ? t('ud.months', { n: ni.format(tl.duration_months) }) : null]) : null],
+        [t('ud.bidders'), bd.bids != null ? String(bd.bids) : null],
+        [t('ud.amcuTd'), amcu('tender')],
+        [t('ud.amcuEval'), amcu('award')],
+      ]),
+      (bd.list || []).length ? h('div', { class: 'explain', style: 'margin-top:8px' }, bd.list.map((b) => h('div', null,
+        h('span', { class: 'tag' + (b.status === 'active' ? ' ok' : b.status === 'unsuccessful' ? ' warn' : '') }, label('ud.aw.', b.status) || b.status || ''), ' ',
+        h('span', null, party(b.name, b.code)), b.amount != null ? h('span', { class: 'num faint' }, ' · ' + money(b.amount)) : null))) : null),
+      h('div', null, h('h3', { class: 'card-sub' }, t('ud.money')), kv([
+        [t('ud.expected'), pr.expected != null ? money(pr.expected) : null],
+        [t('ud.won'), pr.won != null ? join([money(pr.won), pr.below_expected_pct ? t('ud.belowExpected', { n: pr.below_expected_pct }) : null]) : null],
+        [t('ud.now'), pr.now != null ? join([money(pr.now), pr.change ? t('ud.changed', { sum: money(pr.change), n: pr.change_pct }) : null]) : null],
+        [t('ud.acts'), pct(pg.acts_pct)],
+        [t('ud.paid'), pct(pg.paid_pct)],
+        [t('ud.end'), pg.end ? join([fdate(pg.end), pg.overdue_days ? t('ud.overdue', { n: pg.overdue_days }) : null]) : null],
+        [sv ? (sv.level === 'budget' ? t('ud.subvBudget') : t('ud.subv')) : t('ud.subv'), sv ? h('div', null,
+          h('div', null, eds.map((e, i) => { const v = (sv.amounts || {})[e]; return (i ? ' → ' : '') + (v != null ? ni.format(v) : '—'); }).join(''), ' ', t('ud.thousand')),
+          h('div', { class: 'cell-sub' }, join([sv.programme, sv.level === 'budget' ? sv.budget : null, eds.length ? t('ud.editions', { list: eds.map((e) => fdate(e.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))).join(', ') }) : null])),
+          sv.url ? h('a', { href: sv.url, target: '_blank', rel: 'noopener noreferrer', class: 'small' }, sv.nreg) : null) : t('ud.subvNone')],
+      ]))),
+    h('h3', { class: 'card-sub', style: 'margin-top:14px' }, t('ud.matrix')),
+    h('div', { class: 'checklist' }, UD_KEYS.map((k) => {
+      const v = (mx.scores || {})[k];
+      return h('div', { class: 'chk ' + (v === 3 ? 'bad' : v === 2 ? 'warn' : v === 1 ? 'ok' : 'na') },
+        h('span', { class: 'chk-ico' }, v != null ? String(v) : '–'),
+        h('div', null, h('b', null, t('ud.r.' + k)), h('div', { class: 'small muted' }, ((mx.why || {})[k] || []).map(udWhy).join(' · ') || (v == null ? t('ud.expert') : '—'))));
+    })));
 }
 
 // Quick links to check a party: procurement, Treasury, registers and sanctions lists.

@@ -25,6 +25,7 @@ import compliance
 import eib
 import prozorro
 import sasu
+import undp
 import spending
 
 PUB_URL = ("https://firestore.googleapis.com/v1/projects/spending-monitor-2122b/"
@@ -484,6 +485,9 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
         "payments_checked": today.isoformat(),
     }
     snap["kind"] = "treasury" if treasury_only else "contract"
+    # What the UNDP working table keeps: course, bidders, AMCU, price, progress, subvention, matrix.
+    snap["undp"] = undp.card(tender, contract, tc, signals, snap["totals"], acts_sum if tc is not None else None, (eib_paid or {}).get("total") or paid,
+                             audit, advance, key, today.isoformat())
     if key.startswith("tn"):
         snap.update(contract_id=contract.get("id"), from_tender=True)
     if old and old.get("kind") == "tender":
@@ -492,6 +496,8 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
         events = [_event("stage_contract", number=contract.get("number") or "", amount=value, supplier=sup.get("name") or "")]
     else:
         events = _diff(old, snap)
+        if old:
+            events += undp.events(old.get("undp"), snap["undp"], _event) + undp.sasu_events(old.get("sasu"), audit, _event)
     snap["history"] = (events + ((old or {}).get("history") or []))[:HISTORY_SIZE]
     snap["changed_at"] = events[0]["at"] if events else (old or {}).get("changed_at")
     log("  %s № %s: сплачено %.2f з %.2f, подій %d" % (req["tid"], contract.get("number") or "—", paid, value, len(events)))
@@ -530,8 +536,10 @@ def sync_tender(req, old, log=print, tender=None):
         "eib": eib_kind, "eib_tx": False, "sasu": audit,
         "payments_checked": spending.today().isoformat(),
     }
+    snap["undp"] = undp.card(tender, None, None, signals, snap["totals"], 0, 0, audit, None, key, spending.today().isoformat(), contract_stage=False)
     events = _diff(old, snap)
     if old:
+        events += undp.events(old.get("undp"), snap["undp"], _event) + undp.sasu_events(old.get("sasu"), audit, _event)
         known = {c.get("id") for c in (old.get("tender") or {}).get("contracts") or []}
         for c in tender.get("contracts") or []:
             if c.get("id") not in known:

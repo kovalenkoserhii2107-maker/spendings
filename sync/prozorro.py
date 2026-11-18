@@ -251,7 +251,7 @@ def _awards(t):
         sup = _org((a.get("suppliers") or [{}])[0])
         out.append({k: v for k, v in {
             "id": a.get("id"), "status": a.get("status"), "date": _day(a.get("date")),
-            "amount": (a.get("value") or {}).get("amount"),
+            "amount": (a.get("value") or {}).get("amount"), "vat": (a.get("value") or {}).get("valueAddedTaxIncluded"),
             "supplier_code": sup.get("code"), "supplier_name": sup.get("name"),
             "lot": a.get("lotID"), "title": a.get("title") or a.get("description") or "",
         }.items() if v not in (None, "")})
@@ -259,11 +259,15 @@ def _awards(t):
 
 
 def _complaints(t):
+    """Complaints and claims: of the tender documents ("tender") or of an award ("award")."""
     out = []
-    for c in (t.get("complaints") or []) + [c for a in t.get("awards") or [] for c in a.get("complaints") or []]:
+    pairs = [(c, "tender", None) for c in t.get("complaints") or []] \
+        + [(c, "award", a.get("id")) for a in t.get("awards") or [] for c in a.get("complaints") or []]
+    for c, of, award in pairs:
         out.append({k: v for k, v in {
-            "id": c.get("id"), "status": c.get("status"), "type": c.get("type"),
+            "id": c.get("id"), "status": c.get("status"), "type": c.get("type"), "of": of, "award": award,
             "title": c.get("title") or "", "date": _day(c.get("dateSubmitted") or c.get("date")),
+            "decided": _day(c.get("dateDecision")),
         }.items() if v not in (None, "")})
     return out
 
@@ -412,6 +416,10 @@ def compact_tender(t, contracts):
         # "date" moves with every status change; the procedure's own date is when it was created.
         "date": _day(t.get("dateCreated")) or _tid_day(t.get("tenderID")) or _day(t.get("date")),
         "deadline": _day(tender_period.get("endDate")),
+        "tender_start": _day(tender_period.get("startDate")),
+        "enquiry_end": _day((t.get("enquiryPeriod") or {}).get("endDate")),
+        "auction": _day((t.get("auctionPeriod") or {}).get("startDate")
+                        or next((l["auctionPeriod"]["startDate"] for l in t.get("lots") or [] if (l.get("auctionPeriod") or {}).get("startDate")), None)),
         "value": _value(t.get("value")),
         "category": t.get("mainProcurementCategory") or "",
         "cpv": "%s %s" % (cls.get("id") or "", cls.get("description") or "") if cls else "",
