@@ -573,4 +573,32 @@ def index_row(s):
         "checks": {x["key"]: x["status"] for x in s.get("checklist") or []},
         "viewers": s.get("viewers") or [],  # hashes; the Drive script copies the contracts it sees itself in
         "owners": s.get("owners") or [],
+        # For sorting and grouping the list: risk, sub-project, programme, region, progress, dates.
+        **_list_fields(s),
     }
+
+
+def _list_fields(s):
+    u, t = s.get("undp") or {}, s.get("tender") or {}
+    mx, pg, tl, sv, cp = u.get("matrix") or {}, u.get("progress") or {}, u.get("timeline") or {}, u.get("subvention") or {}, u.get("complaints") or {}
+    tt = s.get("totals") or {}
+    alerts = []
+    if mx.get("overall") == 3:
+        alerts.append("risk")
+    if any(m.get("violation") for m in s.get("sasu") or []):
+        alerts.append("sasu")
+    if sum((cp.get(of) or {}).get("open", 0) for of in ("tender", "award")):
+        alerts.append("amcu")
+    if (tt.get("overdue") or 0) > 1 and not tt.get("partial"):
+        alerts.append("overdue")
+    if pg.get("overdue_days"):
+        alerts.append("late")
+    if any(str(w).startswith("subvention_") for w in (mx.get("why") or {}).get("r3") or []):
+        alerts.append("subvention")
+    return {k: v for k, v in {
+        "risk": mx.get("overall"), "subproject": (t.get("subproject") or {}).get("code"),
+        "programme": sv.get("programme"), "region": t.get("region"),
+        "acts_pct": pg.get("acts_pct"), "paid_pct": pg.get("paid_pct"), "late_days": pg.get("overdue_days"),
+        "opening": tl.get("opening") if s.get("kind") == "tender" else None, "auction": tl.get("auction") if s.get("kind") == "tender" else None,
+        "alerts": alerts,
+    }.items() if v not in (None, "", [])}

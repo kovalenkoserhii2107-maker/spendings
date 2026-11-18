@@ -656,3 +656,54 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
 .multi-acc { margin-top: 12px; }
 .multi-acc summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 700; }
 .multi-acc p { margin: 8px 0; }
+
+/* ---- Tracked list: tiles that filter, groups, one line per contract with a risk stripe ---- */
+.tr-tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.tr-tiles .stat { border: 0; text-align: left; cursor: pointer; font: inherit; color: inherit; }
+.tr-tiles .stat.on { outline: 2px solid #000; outline-offset: -2px; }
+.tint-red { background: linear-gradient(135deg, #FFE9E7, #FFF6F4); }
+.tr-group-by { flex: 0 0 auto; }
+.tr-group { border-bottom: .5px solid var(--line); }
+.tr-group > summary { display: flex; align-items: center; gap: 8px; padding: 12px 18px; cursor: pointer; list-style: none; font-weight: 800; background: #FBFCFD; }
+.tr-group > summary::-webkit-details-marker { display: none; }
+.tr-group > summary::before { content: '›'; display: inline-block; width: 12px; color: var(--muted); transition: transform .15s; }
+.tr-group[open] > summary::before { transform: rotate(90deg); }
+.risk-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.risk-dot.r3 { background: var(--red); } .risk-dot.r2 { background: #E5A000; } .risk-dot.r1 { background: var(--green); }
+.tr-rows { display: grid; }
+.tr-line { display: grid; grid-template-columns: 34px minmax(0, 2.4fr) 110px minmax(150px, 1fr) 96px minmax(0, 1.3fr); gap: 14px; align-items: center;
+  padding: 12px 18px 12px 14px; border-top: .5px solid var(--line); border-left: 4px solid #D9DEE5; color: inherit; text-decoration: none; }
+.tr-line:hover { background: var(--soft); }
+.tr-line.risk-3 { border-left-color: var(--red); } .tr-line.risk-2 { border-left-color: #E5A000; } .tr-line.risk-1 { border-left-color: var(--green); }
+.tr-line.new { background: #F7FAFF; }
+.tl-risk b { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; color: #fff; font-size: 13px; background: #9AA3AF; }
+.risk-3 .tl-risk b { background: var(--red); } .risk-2 .tl-risk b { background: #E5A000; } .risk-1 .tl-risk b { background: var(--green); }
+.tl-title { display: block; line-height: 1.3; }
+.tl-money { text-align: right; }
+.tl-bar { display: grid; grid-template-columns: 54px minmax(0, 1fr) 38px; gap: 6px; align-items: center; font-size: 12px; }
+.tl-bar small { color: var(--muted); }
+.tl-bar .num { text-align: right; }
+.mini-bar { display: block; height: 6px; border-radius: 3px; background: var(--soft); overflow: hidden; }
+.mini-bar i { display: block; height: 100%; border-radius: 3px; background: #8B95A5; }
+.mini-bar.paid i { background: var(--green); }
+.tl-end small { display: block; color: var(--muted); font-size: 11.5px; }
+.tl-end .bad { color: var(--red); font-weight: 800; }
+.tl-news { min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+@media (max-width: 1100px) {
+  .tr-line { grid-template-columns: 34px minmax(0, 2fr) 100px minmax(140px, 1fr) 90px; }
+  .tl-news { display: none; }
+}
+@media (max-width: 760px) {
+  .tr-tiles { grid-template-columns: 1fr 1fr; }
+  .tr-tiles .stat:first-child { grid-column: 1 / -1; }
+  .tr-tiles { gap: 8px; }
+  .tr-tiles .stat { padding: 10px 12px; min-height: 0; }
+  .tr-tiles .stat b { font-size: 20px; }
+  .tr-tiles .stat .sub { font-size: 12px; }
+  /* Phone: the line becomes a short card, the stripe stays. */
+  .tr-line { grid-template-columns: 30px minmax(0, 1fr) auto; grid-template-areas: "risk main money" "risk prog prog" "risk end end"; gap: 6px 10px; padding: 12px 14px 12px 10px; }
+  .tl-risk { grid-area: risk; align-self: start; } .tl-main { grid-area: main; } .tl-money { grid-area: money; align-self: start; }
+  .tl-progress { grid-area: prog; } .tl-end { grid-area: end; display: flex; gap: 6px; align-items: baseline; }
+  .tl-end small { display: inline; }
+  .tl-progress:empty, .tl-end:empty { display: none; }
+}
