@@ -24,6 +24,7 @@ import urllib.parse
 import urllib.request
 from datetime import date, timedelta
 
+import collusion
 import spending
 
 SITE = "https://prozorro.gov.ua/api"
@@ -436,6 +437,7 @@ def compact_tender(t, contracts):
         "milestones": milestones(t),
         "docs": documents(t.get("documents")),
         "awards": _awards(t),
+        "collusion": collusion.check(t),
         "complaints": _complaints(t),
         "questions_count": len(t.get("questions") or []) or None,
         "questions_unanswered": sum(1 for q in t.get("questions") or [] if not q.get("answer")) or None,

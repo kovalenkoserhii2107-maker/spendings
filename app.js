@@ -1736,6 +1736,7 @@ function eventText(e) {
     case 'bids': return t('ev.bids', { old: e.old != null ? e.old : '—', new: e.new });
     case 'subvention': return t('ev.subvention', { old: e.old != null ? ni.format(e.old) : '—', new: e.new != null ? ni.format(e.new) : t('ud.subvDropped'), date: fdate(String(e.edition || '').replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')) });
     case 'matrix': return t('ev.matrix', { old: e.old || '—', new: e.new });
+    case 'collusion': return t('ev.collusion', { what: t('co.k.' + e.kind) }) + (e.a ? ' · ' + e.a + (e.b ? ' / ' + e.b : '') : '');
     case 'funding': return t('ev.funding', { old: t('fa.st.' + e.old), new: t('fa.st.' + e.new) }) + (e.gap > 0 ? ' · ' + t('fa.gap') + ' ' + money(e.gap) : '');
     case 'completion_overdue': return t('ev.completionOverdue', { date: fdate(e.end) });
     case 'sasu': return t('ev.sasu', { id: e.id || '' }) + (e.violation ? ' · ' + t('ud.violation') : '');
@@ -1746,7 +1747,7 @@ function eventText(e) {
 const eventClass = (e) => ({ payment: 'pay', change: 'add', value: 'add', end: 'add', doc: 'act', act: 'act', due: 'add', complaint: 'bad', complaint_status: 'add', sasu: 'bad', sasu_status: 'bad', matrix: 'bad', subvention: 'add', completion_overdue: 'bad' }[e.type] || '');
 // Kinds of change a user filters by.
 const EVENT_GROUPS = { pay: ['payment', 'due'], docs: ['doc', 'act'], terms: ['change', 'value', 'end', 'timeline', 'bids'], status: ['status', 'tender_status'],
-  control: ['complaint', 'complaint_status', 'sasu', 'sasu_status', 'matrix', 'subvention', 'funding', 'completion_overdue'] };
+  control: ['complaint', 'complaint_status', 'sasu', 'sasu_status', 'matrix', 'subvention', 'funding', 'collusion', 'completion_overdue'] };
 const eventGroup = (e) => Object.keys(EVENT_GROUPS).find((g) => EVENT_GROUPS[g].includes(e.type)) || '';
 function eventPills(events, value, onpick) {
   const n = (g) => events.filter((e) => eventGroup(e) === g).length;
@@ -1861,7 +1862,7 @@ function trackedPage(preset) {
           x && x.subproject ? h('span', { class: 'tag eib' }, x.subproject) : null,
           x && x.programme ? h('span', { class: 'tag' }, x.programme) : x && x.eib ? h('span', { class: 'tag eib' }, t('eib.short')) : null,
           tender ? h('span', { class: 'tag' }, t('stage.tender')) : x ? h('span', { class: 'pz-st ' + (x.status === 'active' ? 'ok' : x.status === 'terminated' ? 'off' : 'run') }, label('pzc.', x.status)) : h('span', { class: 'chip warn' }, h('i'), t('tr.pending')),
-          ((x && x.alerts) || []).map((a) => h('span', { class: 'sev ' + (['risk', 'sasu', 'late'].includes(a) ? 'high' : 'medium') }, t('tra.' + a))),
+          ((x && x.alerts) || []).map((a) => h('span', { class: 'sev ' + (['risk', 'sasu', 'late', 'collusion'].includes(a) ? 'high' : 'medium') }, t('tra.' + a))),
           newN ? h('span', { class: 'tag pz' }, t('tr.newN', { n: newN })) : null),
         h('b', { class: 'tl-title' }, tender ? t('tr.tenderHeading', { tid: (x && x.tid) || p.tid })
           : (x ? x.number : p.number) && (x ? x.number : p.number) !== '—' ? t('dos.heading', { n: x ? x.number : p.number, date: fdate(x && x.signed) }) : t('pz.draftContract')),
@@ -2238,7 +2239,8 @@ function procurementCard(s, c) {
         [t('ud.amcuTd'), amcu('tender')],
         [t('ud.amcuEval'), amcu('award')],
       ])),
-    awards.length ? [h('h3', { class: 'card-sub', style: 'margin-top:14px' }, t('dos.awards')), awardsTable(awards)] : null);
+    awards.length ? [h('h3', { class: 'card-sub', style: 'margin-top:14px' }, t('dos.awards')), awardsTable(awards)] : null,
+    collusionBlock(u.collusion));
 }
 // Where the money comes from: the Cabinet's subvention for the project (or its community) by
 // edition, and the procurement plan's sources.
@@ -2425,6 +2427,21 @@ function partiesCard(t0, c) {
   return h('div', { class: 'card pad section parties' },
     side('dos.buyer', t0.buyer_name, t0.buyer, 'buyer'),
     side('dos.supplier', sup.name, sup.code, 'supplier'));
+}
+
+// Signs of collusion between bidders and of a link with the buyer, read from the bids.
+function collusionBlock(list) {
+  if (!list) return null;
+  const nm = (name, code) => name || code || '—';
+  const order = { high: 0, medium: 1, low: 2 };
+  const items = list.slice().sort((a, b) => order[a.level] - order[b.level]);
+  return [h('h3', { class: 'card-sub', style: 'margin-top:14px' }, t('co.title')),
+    items.length ? h('div', { class: 'checklist' }, items.map((f) => h('div', { class: 'chk ' + (f.level === 'high' ? 'bad' : f.level === 'medium' ? 'warn' : 'na') },
+      h('span', { class: 'chk-ico' }, f.level === 'high' ? '!' : f.level === 'medium' ? '?' : '·'),
+      h('div', null, h('b', null, t('co.k.' + f.kind)),
+        h('div', { class: 'small muted' }, t('co.d.' + f.kind, { a: nm(f.a_name, f.a), b: nm(f.b_name, f.b), v: f.value || '', what: f.value ? t('co.what.' + f.value) : '' }))))))
+      : h('p', { class: 'muted small' }, t('co.none')),
+    h('p', { class: 'muted small' }, t('co.hint'))];
 }
 
 // Who is building: the contractor across Prozorro (volume by year, what it has on its hands, whom it

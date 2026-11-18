@@ -595,6 +595,8 @@ def _list_fields(s):
         alerts.append("overdue")
     if pg.get("overdue_days"):
         alerts.append("late")
+    if any(f.get("level") == "high" for f in u.get("collusion") or []):
+        alerts.append("collusion")
     if any(str(w).startswith("subvention_") or w == "funding_gap" for w in (mx.get("why") or {}).get("r3") or []):
         alerts.append("subvention")
     return {k: v for k, v in {

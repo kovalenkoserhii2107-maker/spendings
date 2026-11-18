@@ -313,7 +313,7 @@ def overall(sc):
     return 1
 
 
-def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contract_stage, fund=None):
+def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contract_stage, fund=None, coll=None):
     """Ratings 1–3 with the reasons, where there is something to judge by; 6 (the contractor's
     legal status) stays with the expert."""
     types = {x["type"] for x in signals or []}
@@ -334,10 +334,12 @@ def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contr
             put("r1", 2, "changes:%d" % len(changes), "extensions:%d" % ext if ext else None)
         else:
             put("r1", 1, "changes:%d" % len(changes) if changes else None)
-    if "disqualified_lower_bid" in types:
-        put("r2", 3, "disqualified_lower_bid")
-    elif "single_bidder" in types:
-        put("r2", 2, "single_bidder")
+    high = sorted({f["kind"] for f in coll or [] if f.get("level") == "high"})
+    medium = sorted({f["kind"] for f in coll or [] if f.get("level") == "medium"})
+    if "disqualified_lower_bid" in types or high:
+        put("r2", 3, "disqualified_lower_bid" if "disqualified_lower_bid" in types else None, *["coll_" + k for k in high])
+    elif "single_bidder" in types or medium:
+        put("r2", 2, "single_bidder" if "single_bidder" in types else None, *["coll_" + k for k in medium])
     elif (price_ or {}).get("won"):
         put("r2", 1)
     if subv:
@@ -389,6 +391,8 @@ def card(t, c, tc, signals, totals, acts_sum, paid, audit, advance, own_key, tod
     pr = price(t, c, tc) if contract_stage else price(t, None, None)
     comp = complaints(t)
     subv = subvention(t)
+    lot = (c or {}).get("lot")
+    coll = [f for f in t.get("collusion") or [] if not f.get("lot") or not lot or f.get("lot") == lot]
     record = contractor_record(((c or {}).get("suppliers") or [{}])[0].get("code"), own_key) if contract_stage else None
     value = ((c or {}).get("value") or {}).get("amount") or (t.get("value") or {}).get("amount")
     fund = funding(subv, value, paid, acts, eib_paid, (c or {}).get("start") or (c or {}).get("signed"), today) if contract_stage else None
@@ -397,7 +401,8 @@ def card(t, c, tc, signals, totals, acts_sum, paid, audit, advance, own_key, tod
         "progress": progress(value, acts_sum, paid, (c or {}).get("end"), today, (c or {}).get("status")) if contract_stage else None,
         "subvention": subv, "contractor": record,
         "funding": fund,
-        "matrix": matrix(c, signals, totals, pr, subv, record, audit, comp, advance, contract_stage, fund),
+        "collusion": coll if t.get("collusion") is not None else None,
+        "matrix": matrix(c, signals, totals, pr, subv, record, audit, comp, advance, contract_stage, fund, coll),
     }.items() if v is not None}
 
 
@@ -427,6 +432,10 @@ def events(old, new, event):
     os_, ns = old.get("subvention") or {}, new.get("subvention") or {}
     if ns and (ns.get("now") != os_.get("now") or len(ns.get("editions") or []) != len(os_.get("editions") or [])):
         out.append(event("subvention", old=os_.get("now"), new=ns.get("now"), edition=(ns.get("editions") or [""])[-1], nreg=ns.get("nreg")))
+    was = {(f.get("kind"), f.get("a"), f.get("b")) for f in old.get("collusion") or []}
+    for f in new.get("collusion") or []:
+        if (f.get("kind"), f.get("a"), f.get("b")) not in was and f.get("level") != "low" and old.get("collusion") is not None:
+            out.append(event("collusion", kind=f.get("kind"), level=f.get("level"), a=f.get("a_name") or f.get("a"), b=f.get("b_name") or f.get("b")))
     of_, nf = (old.get("funding") or {}).get("status"), (new.get("funding") or {}).get("status")
     if nf and of_ and nf != of_:
         out.append(event("funding", old=of_, new=nf, gap=(new.get("funding") or {}).get("gap")))
