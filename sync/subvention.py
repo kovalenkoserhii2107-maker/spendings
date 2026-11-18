@@ -25,6 +25,7 @@ import json
 import re
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -44,16 +45,31 @@ CODE = re.compile(r"^\d{10}$")
 AMOUNT = re.compile(r"^\d[\d  ]*(?:,\d+)?$")
 
 
+class Unreachable(Exception):
+    """The site does not answer at all (it is not reachable from abroad, e.g. from GitHub)."""
+
+
+_down = [False]
+
+
 def _get(path):
+    if _down[0]:
+        raise Unreachable("data.rada.gov.ua недоступний")
     req = urllib.request.Request(BASE + path, headers={"User-Agent": UA})
     last = None
-    for attempt in range(6):
+    for attempt in range(4):
         try:
-            with urllib.request.urlopen(req, timeout=60, context=spending._ctx) as res:
+            with urllib.request.urlopen(req, timeout=25, context=spending._ctx) as res:
                 return res.read()
+        except urllib.error.URLError as e:
+            # No connection at all: give up at once and for the whole run.
+            if isinstance(getattr(e, "reason", None), (TimeoutError, OSError)) and not isinstance(e, urllib.error.HTTPError):
+                _down[0] = True
+                raise Unreachable("data.rada.gov.ua недоступний: %s" % e.reason)
+            last = e
         except Exception as e:  # noqa: BLE001 - the site cuts answers short now and then
             last = e
-            time.sleep(2 + 3 * attempt)
+        time.sleep(2 + 3 * attempt)
     raise last
 
 
