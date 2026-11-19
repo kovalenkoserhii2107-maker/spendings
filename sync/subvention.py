@@ -218,13 +218,14 @@ def sync(path, log=print):
     sources = SOURCES + [d for d in old.get("found") or [] if d["nreg"] not in {s["nreg"] for s in SOURCES}]
     found = [d for d in sources if d.get("auto")] + discover({s["nreg"] for s in sources}, log)
     sources += [d for d in found if d["nreg"] not in {s["nreg"] for s in sources}]
-    decrees, projects = [], []
+    decrees, projects, fresh = [], [], 0
     for d in sources:
         y = d.get("year") or year
         if d["kind"] == "order" and y != year:
             continue
         try:
             info, items = decree(d, y, log)
+            fresh += 1
         except Exception as e:  # noqa: BLE001 - keep what the last run had for it
             log("  ! субвенція %s: %s" % (d["nreg"], e))
             info = next((x for x in old.get("decrees") or [] if x.get("nreg") == d["nreg"]), None)
@@ -235,6 +236,11 @@ def sync(path, log=print):
             continue
         decrees.append(info)
         projects += [dict(p, nreg=d["nreg"], programme=d["programme"]) for p in items]
+    # Nothing read anew (the site did not answer): the file stays as the last good run left it, so
+    # a run that cannot reach the site never overwrites one that could (the daily run on the Mac).
+    if not fresh and old:
+        log("Субвенція: джерела недоступні, лишаю дані від %s" % old.get("generated_at"))
+        return
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "year": year, "decrees": decrees,
                    "found": [d for d in found if d.get("auto")], "projects": projects}, f, ensure_ascii=False, separators=(",", ":"))

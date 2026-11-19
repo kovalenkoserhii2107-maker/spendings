@@ -276,6 +276,25 @@ def sync(codes, data_dir, log=print):
             out["edr_at"] = now
         except Exception as e:  # noqa: BLE001 - keep last week's
             log("  ! ЄДР: %s" % e)
+    # The register as the Mac's daily run read it (data/edr.json), where it is newer than ours.
+    try:
+        with open(os.path.join(data_dir, "edr.json"), encoding="utf-8") as f:
+            mac = json.load(f)
+    except (OSError, ValueError):
+        mac = None
+    if mac and mac.get("at") and (mac["at"] > (out.get("edr_at") or "") or any("edr" not in items.get(c, {}) for c in codes)):
+        took = 0
+        for c in codes:
+            rec = items.setdefault(c, {})
+            if c in (mac.get("items") or {}) and ("edr" not in rec or mac["at"] > (out.get("edr_at") or "")):
+                rec["edr"] = mac["items"][c]
+                rec.pop("edr_missing", None)
+                took += 1
+            elif c in (mac.get("missing") or []) and "edr" not in rec:
+                rec["edr_missing"] = mac["at"]
+        if mac["at"] > (out.get("edr_at") or ""):
+            out["edr_at"] = mac["at"]
+        log("  ЄДР з Mac (%s): узято %d" % (mac["at"], took))
     if codes and (ago("sanctions_at", DAY) or new):
         try:
             hits = scan_sanctions(codes, log)

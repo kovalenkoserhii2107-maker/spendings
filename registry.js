@@ -158,6 +158,10 @@ const LATIN = { А: 'A', В: 'B', С: 'C', Е: 'E', Н: 'H', І: 'I', К: 'K', �
 const normCode = (s) => String(s || '').trim().toUpperCase().replace(/[АВСЕНІКМОРТХ]/g, (c) => LATIN[c]).replace(/^([A-Z]{2}\d{2}[A-Z]?_\d{2})_([A-Z])$/, '$1-$2');
 const codesOf = (s) => String(s || '').split(/[\s,;]+/).map(normCode).filter((x) => /^[A-Z]{2}\d{2}[A-Z]?_\d{2}/.test(x));
 const PZ_ID = /UA-\d{4}-\d{2}-\d{2}-\d{6}-[a-z]/g;
+// A DREAM project ID wherever it is written: alone, in a link with or without "https://", with "/profile".
+const dreamId = (s) => ((String(s || '').match(/DREAM-UA-\d{6}-[0-9A-Z]{8}/i) || [])[0] || '').toUpperCase().replace(/^DREAM-UA/, 'DREAM-UA');
+// The sub-project's DREAM project: the table's, else one a linked procurement names.
+const spDream = (r) => dreamId((r.t || {}).dream) || (((r.pz || {}).tenders || []).find((x) => x.dream_id) || {}).dream_id || '';
 
 function cellValue(v) {
   if (v == null) return null;
@@ -217,6 +221,14 @@ function mapHeaders(labels, spec) {
 }
 
 function parseWorkbook(XLSX, wb) {
+  // A cell's hyperlink, if it has one: "тендер" may hide the procurement's whole address.
+  const linkAt = (name, i, c) => {
+    const ws = wb.Sheets[name];
+    if (!ws || c == null || !ws['!ref']) return '';
+    const base = XLSX.utils.decode_range(ws['!ref']).s;
+    const cell = ws[XLSX.utils.encode_cell({ r: base.r + i, c: base.c + c })];
+    return (cell && cell.l && cell.l.Target) || '';
+  };
   const rowsOf = (name) => (wb.Sheets[name] ? XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: null }) : null);
   const sps = rowsOf('SPs');
   if (!sps) throw new Error(rt('importBad'));
@@ -236,12 +248,18 @@ function parseWorkbook(XLSX, wb) {
   groups.forEach((g, i) => { if (/^Week \d+/.test(g) && /EXPERT/i.test(labels[i])) weeks.push({ label: g, i }); });
   const ca = labels.findIndex((l, i) => l === 'CA' && /NEXT ACTIVITY/.test(groups[i] || ''));
   const out = new Map();
-  for (const r of sps.slice(hi + 1)) {
+  for (let ri = hi + 1; ri < sps.length; ri++) {
+    const r = sps[ri];
+    if (!r) continue;
     const codes = codesOf(r[col.code]);
     if (!codes.length) continue;
-    const tt = { codes, _row: sps.indexOf(r) + 1 };
+    const tt = { codes, _row: ri + 1 };
     for (const [key] of SP_COLS) if (col[key] != null && key !== 'code') { const v = cellValue(r[col[key]]); if (v != null && v !== '') tt[key] = v; }
-    if (tt.pz_link) tt.pz_ids = [...new Set(String(tt.pz_link).match(PZ_ID) || [])];
+    const pzLink = [tt.pz_link || '', linkAt('SPs', ri, col.pz_link)].join(' ');
+    const ids = [...new Set(pzLink.match(PZ_ID) || [])];
+    if (ids.length) tt.pz_ids = ids;
+    const dream = dreamId([tt.dream || '', linkAt('SPs', ri, col.dream)].join(' '));
+    if (dream) tt.dream = dream;
     if (ca >= 0 && (r[ca] || r[ca + 1])) tt.next = { who: cellValue(r[ca]), what: cellValue(r[ca + 1]), date: cellValue(r[ca + 2]) };
     const log = [];
     for (const w of weeks) {
@@ -258,13 +276,15 @@ function parseWorkbook(XLSX, wb) {
     const th = tn.findIndex((r) => r && String(r[0] || '').trim() === 'SP ID');
     if (th >= 0) {
       const tcol = mapHeaders(tn[th].map((x) => String(x || '').replace(/\s+/g, ' ').trim()), TN_COLS);
-      for (const r of tn.slice(th + 1)) {
+      for (let ri = th + 1; ri < tn.length; ri++) {
+        const r = tn[ri];
+        if (!r) continue;
         const code = codesOf(r[tcol.sp])[0];
         const sp = code && byCode(code);
         if (!sp) continue;
         const row = {};
         for (const [key] of TN_COLS) if (tcol[key] != null && key !== 'sp') { const v = cellValue(r[tcol[key]]); if (v != null && v !== '' && v !== false) row[key] = v; }
-        const ids = String(row.pz || '').match(PZ_ID);
+        const ids = [String(row.pz || ''), linkAt('Tenders', ri, tcol.pz), linkAt('Tenders', ri, tcol.contract_link), linkAt('Tenders', ri, tcol.contract_no)].join(' ').match(PZ_ID);
         if (ids) row.pz = ids[0];
         sp.tenders.push(row);
         tendersN++;
@@ -378,11 +398,14 @@ async function findByName(r) {
 
 async function refreshSp(r) {
   let tids = spTids(r), cand = null, link = null;
-  if (!tids.length && !((r.link || {}).off || []).length) {
+  // The other procurements for the object are looked for every time (design, supervision, a new
+  // works tender); only a sub-project with nothing linked gets the works tender linked by itself.
+  if (spNameUk(r)) {
     const found = await findByName(r);
     if (found) {
-      cand = found.cand;
-      if (found.auto.length) { tids = found.auto; link = { tids: found.auto, off: [], auto: found.auto }; }
+      const off = (r.link || {}).off || [];
+      cand = found.cand.filter((x) => !off.includes(x.tid));
+      if (!tids.length && !off.length && found.auto.length) { tids = found.auto; link = { tids: found.auto, off: [], auto: found.auto }; }
     }
   }
   const tenders = [];
@@ -873,7 +896,7 @@ function registryCard(code) {
       h('div', { class: 'chips' }, tt.expert ? h('span', { class: 'tag' }, tt.expert) : null, tt.funding ? h('span', { class: 'tag' }, tt.funding) : null,
         overallRating(scoresOf(r).scores) ? h('span', { class: 'sev ' + ['', 'low', 'medium', 'high'][overallRating(scoresOf(r).scores)] }, rt('overall', { n: overallRating(scoresOf(r).scores) })) : null,
         tt.manual ? h('span', { class: 'tag warn' }, rt('manualTag')) : null)),
-    h('div', { class: 'org-actions' }, h('div', { class: 'row' }, back, tt.manual ? h('button', { class: 'btn btn-sm', onclick: () => addSpDialog(r) }, rt('editSp')) : null, tt.dream ? ext(/^http/.test(tt.dream) ? tt.dream : dreamUrl(tt.dream.match(/DREAM-UA-\S+/) ? tt.dream.match(/DREAM-UA-\S+/)[0] : tt.dream), 'DREAM', 'btn') : null)));
+    h('div', { class: 'org-actions' }, h('div', { class: 'row' }, back, tt.manual ? h('button', { class: 'btn btn-sm', onclick: () => addSpDialog(r) }, rt('editSp')) : null, spDream(r) ? ext(dreamUrl(spDream(r)), 'DREAM', 'btn') : null)));
   // What it stands at → what the expert does → its risks → its procurements → its money → the rest.
   return [head,
     statusCard(r),
@@ -1386,9 +1409,10 @@ function sheetPatch(xml, sst) {
     if (typeof value === 'boolean') return `<c r="${ref}"${keep} t="b"><v>${value ? 1 : 0}</v></c>`;
     if (typeof value === 'number') return `<c r="${ref}"${keep}><v>${value}</v></c>`;
     if (value && value.day) return `<c r="${ref}"${keep}><v>${excelDay(value.day)}</v></c>`;
+    if (value && value.f) return `<c r="${ref}"${keep} t="str"><f>${xmlEsc(value.f)}</f><v>${xmlEsc(value.v || '')}</v></c>`;
     return `<c r="${ref}"${keep} t="inlineStr"><is><t xml:space="preserve">${xmlEsc(value)}</t></is></c>`;
   };
-  const same = (a, b) => (b && b.day ? typeof a === 'number' && Math.abs(a - excelDay(b.day)) < 1 : typeof b === 'number' ? typeof a === 'number' && Math.abs(a - b) < 0.005
+  const same = (a, b) => (b && b.f ? String(a == null ? '' : a).trim() === String(b.v || '').trim() : b && b.day ? typeof a === 'number' && Math.abs(a - excelDay(b.day)) < 1 : typeof b === 'number' ? typeof a === 'number' && Math.abs(a - b) < 0.005
     : typeof b === 'boolean' ? a === b : String(a == null ? '' : a).trim() === String(b).trim());
   return {
     stat,
@@ -1526,7 +1550,16 @@ async function fillWorkbook(buf, mode, onStep) {
     // The expert's ratings are kept in the monitor: they go in as they are there.
     for (const k of UD_KEYS) if ((r.scores || {})[k] != null) setK(k, +r.scores[k], 'force');
     const tids = spTids(r);
-    if (tids.length) setK('pz_link', tids.join('\n'), 'blank');
+    // Links as links: one procurement opens itself; several open the works one, all named.
+    if (tids.length) {
+      const works = ((r.pz || {}).tenders || []).find((x) => tids.includes(x.tid) && isWorksTender(x));
+      const go = (works && works.tid) || tids[0];
+      setK('pz_link', { f: `HYPERLINK("https://prozorro.gov.ua/tender/${go}",${tids.map((x) => '"' + x + '"').join('&CHAR(10)&')})`, v: tids.join('\n') }, 'blank');
+      const n = ((r.pz || {}).tenders || []).filter((x) => tids.includes(x.tid) && isWorksTender(x)).length;
+      setK('tenders_n', n || tids.length, 'blank');
+    }
+    const dream = spDream(r);
+    if (dream) setK('dream', { f: `HYPERLINK("${dreamUrl(dream)}","${dream}")`, v: dream }, 'blank');
     const pzT = ((r.pz || {}).tenders || []).filter((x) => !x.error);
     const m = mainContract(r);
     const main = m ? m.t0 : pzT[0];
