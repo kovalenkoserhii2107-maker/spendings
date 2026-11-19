@@ -1057,3 +1057,37 @@ details.fold > .fold-body > .card-title { display: none; }
 .checklist .chk { height: 100%; box-sizing: border-box; }
 details.fold > .fold-body > .card-head > .card-title { display: none; }
 details.fold > .fold-body > .card-head { justify-content: flex-end; }
+
+/* The Funding tab: the works price as one bar */
+.f-bar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--soft); margin: 6px 0 10px; }
+.f-bar i { display: block; height: 100%; }
+.f-bar .eib, .f-legend .eib { background: #2F6FDB; } .f-bar .local, .f-legend .local { background: #8A7CF0; } .f-bar .left, .f-legend .left { background: #E7EAF0; }
+.f-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; margin-bottom: 12px; }
+.f-legend span { display: inline-flex; gap: 6px; align-items: center; }
+.f-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+/* The Work tab */
+.w-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 4px 0 12px; }
+.w-form .grow { flex: 1 1 260px; min-width: 200px; }
+.w-form .select { flex: 0 1 220px; }
+.w-group { display: flex; align-items: baseline; gap: 4px; margin: 14px 0 6px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.w-group.bad { color: var(--red); }
+.w-list { display: flex; flex-direction: column; }
+.w-item { display: grid; grid-template-columns: auto 1fr 96px 32px; gap: 12px; align-items: center; padding: 10px 4px; border-top: 1px solid var(--line); }
+.w-list .w-item:first-child { border-top: 0; }
+.w-item.log { grid-template-columns: 150px 1fr 96px 32px; align-items: start; }
+.w-item.marks { grid-template-columns: 1fr auto; }
+.w-item.late .w-date { color: var(--red); font-weight: 700; }
+.w-item.done .w-main > div:first-child { text-decoration: line-through; color: var(--muted); }
+.w-main { min-width: 0; }
+.w-date { font-size: 13px; color: var(--muted); text-align: right; }
+.w-kind { font-size: 11px; font-weight: 800; letter-spacing: .03em; padding: 3px 8px; border-radius: 8px; background: var(--soft); color: var(--muted); justify-self: start; }
+.w-kind.k-VISIT { background: #E3EEFF; color: #1F4FA8; } .w-kind.k-PROCUREMENT_ANALYSE { background: #EEE8FD; color: #5B3CC4; }
+.w-kind.k-COST_VERIFICATION { background: #FFF4D6; color: #8A5A00; } .w-kind.k-RISK_MANAGEMENT { background: var(--red-bg); color: var(--red); }
+.w-kind.k-EX_POST_REVIEW { background: var(--green-bg); color: var(--green); }
+.ok-text { color: var(--green); font-weight: 700; }
+details.w-done { margin-top: 12px; } details.w-done > summary { cursor: pointer; font-size: 13px; font-weight: 700; color: var(--muted); }
+@media (max-width: 640px) {
+  .w-item, .w-item.log { grid-template-columns: 1fr auto; }
+  .w-item .w-date { grid-column: 1; text-align: left; }
+  .w-item.log .w-kind { grid-column: 1 / -1; }
+}
