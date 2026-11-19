@@ -84,7 +84,7 @@ const RG = {
     pfSub23: "Закупівлі з відміткою AC Assessment в аркуші Tenders.",
     pfSub22: "{n} з {of} субпроєктів: запис COST VERIFICATION у журналі або відмітка Price Verification. Для нових субпроєктів оберіть їхній пул (Batch).",
     pfSub21: "Рахуються завдання експертів за рік: виконано {n} з {of}.",
-    pfHint: "Відповідність тендерів рахується за правилами, спільними для всіх редакцій: строк подання (20 днів для робіт, 15 для технагляду й консультанта) за датами оголошення й розкриття з таблиці та підписання договору не раніше ніж через 5 днів після рішення. Для закупівель на контролі додаються перевірки монітора (забезпечення пропозиції тощо). Порушення правил ранніх редакцій показано як «перевірити» й не зменшує відсоток.",
+    pfHint: "Відповідність тендерів рахується за правилами, спільними для всіх редакцій: строк подання (20 днів для робіт; для технагляду й консультанта 15, а в ПВУ і НКПВУ з 13.07.2026 — 20) за датами оголошення й розкриття з таблиці та підписання договору не раніше ніж через 5 днів після рішення. Для закупівель на контролі додаються перевірки монітора (забезпечення пропозиції тощо). Порушення правил ранніх редакцій показано як «перевірити» й не зменшує відсоток.",
     pfOverview: "Портфель",
     pfSps: "Субпроєктів",
     pfBuilding: "Будуються (договір робіт підписано, не завершено)",
@@ -225,7 +225,7 @@ const RG = {
     pfSub23: "Procurements ticked AC Assessment in the Tenders sheet.",
     pfSub22: "{n} of {of} sub-projects: a COST VERIFICATION entry or Price Verification ticked. For newly selected ones pick their batch.",
     pfSub21: "Counted as the experts' tasks of the year: {n} of {of} done.",
-    pfHint: "Tender compliance is judged by the rules every edition shares: the bid period (20 days for works, 15 for supervision and the consulting engineer) from the table's notice and opening dates, and signing no sooner than 5 days after the award. Procurements on control add the monitor's checks (bid security and others). A broken rule of an earlier edition is shown as worth checking and does not lower the share.",
+    pfHint: "Tender compliance is judged by the rules every edition shares: the bid period (20 days for works; 15 for supervision and the consulting engineer, 20 under URP and ERP from 13 Jul 2026) from the table's notice and opening dates, and signing no sooner than 5 days after the award. Procurements on control add the monitor's checks (bid security and others). A broken rule of an earlier edition is shown as worth checking and does not lower the share.",
     pfOverview: "Portfolio",
     pfSps: "Sub-projects",
     pfBuilding: "Under construction (works contract signed, not finished)",
@@ -1891,7 +1891,7 @@ function exportDialog() {
 const PF = { year: String(new Date().getFullYear()), expert: '', programme: '', batch: '' };
 const KPI_TARGET = { k21: 80, k22: 60, k23: 55, k24: 80, k25: 100, k26: { 2026: 70, 2027: 75 } };
 const KPI_FINAL = { k23: 110, k24: 160, k25: 200, k26: 80 };
-const EDITION_FROM = { urp3_2026: '2026-11-02', urp3_2024: '2024-08-20', urp_2024: '2024-05-03' };  // as sync/rules.py
+const EDITION_FROM = { urp3_2026: '2026-11-02', urp3_2024: '2024-08-20', urp_2024: '2024-05-03', urp_2026: '2026-07-13' };  // as sync/rules.py
 const PROC_KEYS = ['period', 'standstill', 'bid_security', 'method', 'eligibility'];  // rules of the procedure itself
 const DONE_ST = ['Contract Signed', 'No Bids', 'All Rejected', 'Cancelled'];
 const progKey = (p) => (/III|\b3\b/.test(p || '') ? 'urp3' : /UERP|\bERP\b|НКПВУ/i.test(p || '') ? 'uerp' : /URP|ПВУ/i.test(p || '') ? 'urp' : null);
@@ -1899,7 +1899,7 @@ const tKind = (k) => (/^(Ad_)?W$/i.test(k || '') ? 'works' : /^TS$/i.test(k || '
 const dayDiff = (a, b) => (a && b ? Math.round((Date.parse(b) - Date.parse(a)) / 864e5) : null);
 function editionOf(prog, day) {
   if (prog === 'urp3') { const ed = day >= EDITION_FROM.urp3_2026 ? 'urp3_2026' : 'urp3_2024'; return { ed, strict: day >= EDITION_FROM[ed] }; }
-  if (prog) return { ed: 'urp_2024', strict: day >= EDITION_FROM.urp_2024 };
+  if (prog) return day >= EDITION_FROM.urp_2026 ? { ed: 'urp_2026', strict: true } : { ed: 'urp_2024', strict: day >= EDITION_FROM.urp_2024 };
   return { ed: null, strict: false };
 }
 // What the sync found for a procedure on control, by its Prozorro id.
@@ -1915,11 +1915,11 @@ function tenderVerdict(r, x) {
   const pz = ((r.pz || {}).tenders || []).find((t0) => t0.tid === x.pz) || {};
   const issued = x.issued || pz.date || null, opening = x.opening || pz.deadline || null;
   const day = String(issued || opening || x.award || x.contract_date || '');
-  const prog = progKey((r.t || {}).programme), { strict } = editionOf(prog, day);
+  const prog = progKey((r.t || {}).programme), { ed, strict } = editionOf(prog, day);
   const direct = /direct/i.test(x.method || '') || /^(reporting|negotiation)/.test(pz.method || '');
   const found = [];
   const days = dayDiff(issued, opening);
-  if (k && !direct && days != null && days >= 0) { const min = k === 'works' ? 20 : 15; found.push({ key: 'period', st: days >= min ? 'ok' : strict ? 'bad' : 'check', days, min }); }
+  if (k && !direct && days != null && days >= 0) { const min = k === 'works' || ed === 'urp_2026' ? 20 : 15; found.push({ key: 'period', st: days >= min ? 'ok' : strict ? 'bad' : 'check', days, min }); }
   const ss = dayDiff(x.award, x.contract_date);
   if (!direct && ss != null && ss >= 0) { const bids = Number(x.bidders_n || pz.bids || 0); found.push({ key: 'standstill', st: ss >= 5 ? 'ok' : bids > 1 ? 'bad' : 'check', days: ss }); }
   if (direct) found.push({ key: 'direct', st: 'check' });

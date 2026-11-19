@@ -5,7 +5,9 @@ Implementation Guidelines (PIG, with its Procurement Manual for national procedu
     approved on 2 November 2026 (Mindev letter 18417/31/14-26);
   - urp3_2024: ПВУ ІІІ, the first edition (2024, FI 97043, Law 3905-IX);
   - urp_2024:  «Програма з відновлення України» (ПВУ) and «Надзвичайна кредитна програма для
-    відновлення України» (НКПВУ), the edition approved by the EIB on 3 May 2024.
+    відновлення України» (НКПВУ), the edition approved by the EIB on 3 May 2024;
+  - urp_2026:  ПВУ and НКПВУ procurements from 13 July 2026, under that edition's model tender
+    documents (20 days for supervision and the consulting engineer as well).
 
 The programme is read from the procurement (its title, plan and funding sources) or the Cabinet's
 subvention line; without it, the most lenient edition's figures are used and nothing is called
@@ -49,6 +51,11 @@ EDITIONS = {
                   "load": {"years": 5, "urp3": False}, "bid_security": True, "csc_max": 2.0},
     "urp_2024": {"from": "2024-05-03", "years": 4, "similar": {"n": 2, "within": 5}, "turnover": "5",
                  "load": {"years": 2, "urp3": False}, "bid_security": False, "csc_max": 3.0},
+    # The model tender documents for ПВУ and НКПВУ of 13 July 2026: the same criteria, but 20 days
+    # for supervision and the consulting engineer too.
+    "urp_2026": {"from": "2026-07-13", "years": 4, "similar": {"n": 2, "within": 5}, "turnover": "5",
+                 "load": {"years": 2, "urp3": False}, "bid_security": False, "csc_max": 3.0,
+                 "min_days": {"works": 20, "ts": 20, "csc": 20}},
 }
 URP3_TEXT = re.compile(r"(відновлення\s+україни\s*(ІІІ|III|3)(?![\wІ])|\bПВУ\s*(ІІІ|III)(?![\wІ])|3121690|\b7367\b|97\s?043|3905-IX|4611-IX|URP\s*III)", re.I)
 UERP_TEXT = re.compile(r"(надзвичайн\w*\s+кредитн\w*\s+програм|НКПВУ|\bUERP\b|\bERP\b)", re.I)
@@ -102,7 +109,7 @@ def edition(t, subv=None):
     if prog == "urp3":
         key = "urp3_2026" if day >= EDITIONS["urp3_2026"]["from"] else "urp3_2024"
     elif prog in ("urp", "uerp"):
-        key = "urp_2024"
+        key = "urp_2026" if day >= EDITIONS["urp_2026"]["from"] else "urp_2024"
     else:  # unknown: the newest edition for new procurements, else the most lenient figures
         key = "urp3_2026" if day >= EDITIONS["urp3_2026"]["from"] else "urp_2024"
     return key, prog, tranche, bool(prog) and day >= EDITIONS[key]["from"]
@@ -269,7 +276,8 @@ def check(t, c=None, related=None, advance=None, acts=None, paid_total=None, leg
     if method in OPEN:
         n = _days(t.get("tender_start") or t.get("date"), t.get("deadline"))
         if n is not None:
-            put("period", "ok" if n >= MIN_DAYS[k] else "bad", "high", days=n, min=MIN_DAYS[k])
+            need = ed.get("min_days", MIN_DAYS)[k]
+            put("period", "ok" if n >= need else "bad", "high", days=n, min=need)
 
     # 3. Bid security for works: required, a bank guarantee of at most 0.5% of the expected value.
     if k == "works" and method in OPEN and not (t.get("lots") and "lot_guarantee" not in t):
