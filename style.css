@@ -283,7 +283,30 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 .tag { padding: 2px 9px; border-radius: 999px; background: var(--soft); color: var(--muted); font-size: 11.5px; font-weight: 800; }
 .tag.ok { background: var(--green-bg); color: var(--green); }
 .tag.warn { background: #FFF4D6; color: #8A5A00; }
-.chk .score-pick { flex: none; width: 56px; min-height: 30px; height: 30px; padding: 0 8px; font-weight: 800; }
+.chk .score-pick { flex: none; width: 40px; min-height: 32px; height: 32px; padding: 0; border-radius: 10px; font-weight: 800; text-align: center; text-align-last: center; -webkit-appearance: none; appearance: none; background: #fff; box-shadow: inset 0 0 0 1px var(--line); cursor: pointer; }
+.chk.ok .score-pick { background: var(--green); color: #fff; box-shadow: none; } .chk.warn .score-pick { background: #E5A000; color: #fff; box-shadow: none; } .chk.bad .score-pick { background: var(--red); color: #fff; box-shadow: none; }
+.chk > div { min-width: 0; }
+/* The sub-projects table: fixed shares, nothing past the frame. */
+.reg-table { table-layout: fixed; }
+.reg-table col.rc-c { width: 104px; } .reg-table col.rc-s { width: 23%; } .reg-table col.rc-e { width: 112px; } .reg-table col.rc-p { width: 190px; }
+.reg-table col.rc-k { width: 17%; } .reg-table col.rc-g { width: 112px; } .reg-table col.rc-r { width: 22%; }
+.reg-table td { overflow-wrap: anywhere; vertical-align: top; overflow: hidden; }
+.reg-table th { white-space: normal; line-height: 1.25; vertical-align: bottom; }
+.reg-table td .cell-main.num { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reg-table td.w-text, .reg-table td.w-party { min-width: 0; max-width: none; }
+.risk-line { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-bottom: 6px; font-size: 12.5px; }
+.risk-text { color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* The sub-project's status card and forms. */
+.st-grid { align-items: start; gap: 24px; }
+.st-edit { display: grid; gap: 10px; padding: 14px; border-radius: 14px; background: var(--soft); }
+.st-edit textarea { min-height: 110px; padding: 10px 12px; resize: vertical; line-height: 1.45; background: #fff; }
+.st-edit .input { background: #fff; width: 100%; }
+.st-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.st-was summary { cursor: pointer; }
+.sp-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-top: 12px; }
+.sp-form .wide { grid-column: 1 / -1; }
+.sp-form .input, .sp-form .select { width: 100%; }
+@media (max-width: 760px) { .reg-table { table-layout: auto; } .st-row, .sp-form { grid-template-columns: 1fr; } }
 .tag.nocontract { background: var(--yellow); color: var(--amber); white-space: nowrap; }
 
 /* Prozorro */

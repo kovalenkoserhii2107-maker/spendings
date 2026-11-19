@@ -45,6 +45,11 @@ const RG = {
     xRows: 'Субпроєктів у файлі: {sp}; закупівель із даними Prozorro: {tn}; тижнів журналу: {w}.', xKept: 'Не змінено: заповнених вами — {kept}, з формулами — {formula}.',
     xMissing: 'Немає у файлі ({n}): {list}', xNoWeek: 'Записів журналу без свого тижня в таблиці: {n}.',
     mark_td: 'ТД перевірено', mark_assist: 'Супровід', mark_monitor: 'Моніторинг', markHint: 'Відмітка команди (стовпці TD Checking / Tender Assistance / Tender Monitoring)', xJournal: 'Журнал', xTasks: 'Завдання', overall: 'Загальна оцінка: {n}', overallHint: 'За формулою робочої таблиці (стовпець M)', acceptHints: 'Прийняти підказки ({n})', from_own: 'оцінка експерта', from_table: 'з таблиці', from_hint: 'підказка — не прийнята', from_none: 'немає даних', orphans: 'Виплати в Payments без рядка в SPs: {list}', orphansTitle: 'Оплати без субпроєкту: {n} кодів на {sum}', orphansText: 'На аркуші Payments є суми оплат за цими кодами, але на аркуші SPs рядка з таким кодом немає, тож монітор не може віднести їх до жодного субпроєкту. Можливо, субпроєкт прибрали з SPs або код записано інакше (наприклад, «_A» замість «-A»). Варто додати рядок у SPs або виправити код у Payments.',
+    stTitle: 'Стан субпроєкту', stPct: '% виконання', stUpd: 'Дата оновлення', stComment: 'Коментар', stSave: 'Зберегти', stContract: 'Договір підряду', stDates: 'Строки', stStart: 'початок {date}', stEnd: 'завершення {date}',
+    stPaid: 'Оплачено (Payments)', stUpdApp: 'оновлено {date} · {who}', stUpdTable: 'з таблиці, оновлено {date}', stTableWas: 'У таблиці було (оновлено {date})',
+    addSp: 'Додати субпроєкт', editSp: 'Редагувати', spAdd: 'Додати', manualTag: 'додано вручну', addSpHint: 'Субпроєкт, якого ще немає в таблиці. Код — як у таблиці (OD08_05); при вивантаженні в таблицю такий рядок треба додати в SPs самому — монітор рядків не додає.',
+    f_code: 'Код', f_programme: 'Програма', f_batch: 'Пул (Batch)', f_office: 'Офіс', f_name_uk: 'Назва (укр)', f_name_en: 'Назва (англ)', f_expert: 'Експерт', f_beneficiary: 'Замовник / кінцевий бенефіціар', f_beneficiary_id: 'ЄДРПОУ замовника', f_pz: 'Закупівлі в Prozorro (необов’язково)',
+    spCodeBad: 'Код має бути як OD08_05 або OD08_05-A', spExists: 'Субпроєкт {code} уже є', spNameNeeded: 'Вкажіть назву', spAdded: 'Додано {code}', spSaved: 'Збережено {code}',
     linkTitle: 'Прив’язати закупівлю вручну', linkHint: 'Вставте ідентифікатор або посилання Prozorro — можна кілька. Монітор перевірить, що закупівля існує, прив’яже її й одразу завантажить дані.', linkPh: 'UA-2026-01-01-000000-a або посилання prozorro.gov.ua', linkBad: 'Не бачу ідентифікатора виду UA-2026-01-01-000000-a', linkEmpty: 'Вставте ідентифікатор закупівлі', linkChecking: 'Перевіряю в Prozorro…', linkNotFound: 'не знайдено в Prozorro: {list}', linkLoading: 'Прив’язано, завантажую дані…', linkDone: 'Прив’язано: {list}', thousand: 'тис. грн', subvTitle: 'Субвенція за розпорядженням КМУ', subvBudgetTitle: 'Субвенція громаді за програмою {prog}', subvBudgetNote: 'Цю програму КМУ розподіляє лише по громадах: сума — на всі її проєкти в громаді.', subvOrder: 'Розпорядження № {n}', subvResolution: 'Постанова № {n}', subvOriginal: 'Початково, {date}', subvEdition: 'Ред. {date}',
     adeqTitle: 'Достатність субвенції цього року', adeqTable: 'у таблиці: {s}', adeqTableNeed: 'Додаткова потреба за таблицею', adeqNoTracked: 'У таблиці: {s}. Щоб монітор оцінив сам, відстежуйте договори субпроєкту.',
     adeqDiff: 'Таблиця каже «{table}», за даними монітора — «{ours}». Варто перевірити.', adeqHint: 'Сума за відстежуваними договорами субпроєкту ({n}): прогноз робіт до 31 грудня на частку кредиту проти залишку субвенції.',
@@ -96,6 +101,11 @@ const RG = {
     xRows: 'Sub-projects in the file: {sp}; procurements with Prozorro data: {tn}; journal weeks: {w}.', xKept: 'Left as they are: filled in by you {kept}, with formulas {formula}.',
     xMissing: 'Not in the file ({n}): {list}', xNoWeek: 'Journal entries with no week of their own in the table: {n}.',
     mark_td: 'TD checked', mark_assist: 'Assistance', mark_monitor: 'Monitoring', markHint: "The team's mark (TD Checking / Tender Assistance / Tender Monitoring columns)", xJournal: 'Journal', xTasks: 'Tasks', overall: 'Overall rating: {n}', overallHint: 'By the working table formula (column M)', acceptHints: 'Accept hints ({n})', from_own: "expert's rating", from_table: 'from the table', from_hint: 'hint — not accepted', from_none: 'no data', orphans: 'Payments with no row in SPs: {list}', orphansTitle: 'Payments with no sub-project: {n} codes, {sum}', orphansText: 'The Payments sheet has payments under these codes, but the SPs sheet has no row with such a code, so the monitor cannot put them to any sub-project. The sub-project may have been taken off SPs or the code is written differently (e.g. “_A” instead of “-A”). Add the row to SPs or correct the code in Payments.',
+    stTitle: 'Sub-project status', stPct: '% of completion', stUpd: 'Update date', stComment: 'Comment', stSave: 'Save', stContract: 'Works contract', stDates: 'Dates', stStart: 'start {date}', stEnd: 'completion {date}',
+    stPaid: 'Paid (Payments)', stUpdApp: 'updated {date} · {who}', stUpdTable: 'from the table, updated {date}', stTableWas: 'The table had (updated {date})',
+    addSp: 'Add a sub-project', editSp: 'Edit', spAdd: 'Add', manualTag: 'added by hand', addSpHint: "A sub-project the table does not have yet. The code as in the table (OD08_05); when exporting, add such a row to SPs yourself: the monitor does not add rows.",
+    f_code: 'Code', f_programme: 'Programme', f_batch: 'Batch', f_office: 'Office', f_name_uk: 'Name (Ukrainian)', f_name_en: 'Name (English)', f_expert: 'Expert', f_beneficiary: 'Promoter / final beneficiary', f_beneficiary_id: "Promoter's EDRPOU", f_pz: 'Prozorro procurements (optional)',
+    spCodeBad: 'The code must look like OD08_05 or OD08_05-A', spExists: 'Sub-project {code} already exists', spNameNeeded: 'Give a name', spAdded: 'Added {code}', spSaved: 'Saved {code}',
     linkTitle: 'Link a procurement by hand', linkHint: 'Paste a Prozorro ID or link, several at once if needed. The monitor checks the procurement exists, links it and loads its data at once.', linkPh: 'UA-2026-01-01-000000-a or a prozorro.gov.ua link', linkBad: 'No ID like UA-2026-01-01-000000-a found', linkEmpty: 'Paste a procurement ID', linkChecking: 'Checking in Prozorro…', linkNotFound: 'not found in Prozorro: {list}', linkLoading: 'Linked, loading the data…', linkDone: 'Linked: {list}', thousand: 'thousand UAH', subvTitle: 'Subvention by the CMU order', subvBudgetTitle: 'Subvention to the community under {prog}', subvBudgetNote: 'The CMU spreads this programme by community only: the amount covers all its projects there.', subvOrder: 'Order No. {n}', subvResolution: 'Resolution No. {n}', subvOriginal: 'Original, {date}', subvEdition: 'Ed. {date}',
     adeqTitle: "This year's subvention adequacy", adeqTable: 'table: {s}', adeqTableNeed: 'Additional needs per the table', adeqNoTracked: 'Table: {s}. Track the sub-project\'s contracts for the monitor to estimate it.',
     adeqDiff: 'The table says “{table}”, the monitor\'s data say “{ours}”. Worth checking.', adeqHint: "Sum over the sub-project's tracked contracts ({n}): works forecast to 31 December times the loan share, against the subvention left.",
@@ -765,6 +775,7 @@ function registryPage() {
     meta ? rt('imported', { at: ftime(meta.at && meta.at.toDate ? meta.at.toDate().toISOString() : meta.at), by: meta.byName || '—', n: meta.rows }) : rt('noTable'),
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => file.click() }, icon('cloud'), rt('upload')), file,
       rows.length ? h('button', { class: 'btn', onclick: () => exportDialog() }, icon('download'), rt('export')) : null,
+      h('button', { class: 'btn', onclick: () => addSpDialog(null) }, icon('plus'), rt('addSp')),
       rows.length ? refreshBtn : null,
       // Only an expert's own sub-projects, into their own tracking, whatever the filters show.
       own.length ? h('button', { class: 'btn btn-dark', onclick: () => { if (confirm(rt('trackConfirm', { n: own.length }))) trackAll(own); } }, icon('star'), rt('trackAll', { n: own.length })) : null, status));
@@ -814,13 +825,14 @@ function riskChips(risk) {
   const items = RISK_KEYS.flatMap((k) => ((risk || {})[k] || []).map((x) => ({ k, level: x.level, text: x.text })));
   if (!items.length) return h('span', { class: 'faint' }, '—');
   const top = items.sort((a, b) => ['high', 'medium', 'low'].indexOf(a.level) - ['high', 'medium', 'low'].indexOf(b.level)).slice(0, 2);
-  return [top.map((x) => h('div', { class: 'small' }, h('span', { class: 'sev ' + x.level }, rt(x.k).replace(/^\d\.\s*/, '')), ' ', x.text)), items.length > 2 ? h('div', { class: 'faint small' }, '+' + (items.length - 2)) : null];
+  return [top.map((x) => h('div', { class: 'risk-line' }, h('span', { class: 'sev ' + x.level }, rt(x.k).replace(/^\d\.\s*/, '')), h('span', { class: 'risk-text' }, x.text))), items.length > 2 ? h('div', { class: 'faint small' }, '+' + (items.length - 2)) : null];
 }
 
 function registryTable(rows) {
   if (!rows.length) return h('div', { class: 'empty' }, t('qs.none'));
   const L = { c: rt('colCode'), s: rt('colSp'), e: rt('colExpert'), p: rt('colPz'), k: rt('colContract'), g: rt('colProgress'), r: rt('colRisk') };
-  return h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
+  return h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile reg-table' },
+    h('colgroup', null, ['c', 's', 'e', 'p', 'k', 'g', 'r'].map((k) => h('col', { class: 'rc-' + k }))),
     h('thead', null, h('tr', null, [L.c, L.s, L.e, L.p, L.k, L.g, L.r].map((x) => h('th', null, x)))),
     h('tbody', null, rows.map((r) => {
       const tt = r.t || {};
@@ -829,7 +841,7 @@ function registryTable(rows) {
       const last = ((r.pz || {}).tenders || [])[0];
       const open = () => { location.hash = '#/registry/' + encodeURIComponent(r.code); };
       return h('tr', { class: 'click', tabindex: 0, onclick: open, onkeydown: (e) => { if (e.key === 'Enter') open(); } },
-        td(L.c, { class: 'num' }, h('b', null, r.code), h('div', { class: 'cell-sub' }, join([tt.programme, tt.batch && 'B' + tt.batch]))),
+        td(L.c, { class: 'num' }, h('b', null, r.code), h('div', { class: 'cell-sub' }, join([tt.programme, tt.batch && 'B' + tt.batch])), tt.manual ? h('div', { class: 'cell-sub' }, rt('manualTag')) : null),
         td(L.s, { class: 'w-text' }, h('div', { class: 'clamp' }, tt.name_uk || tt.name_en || '—'), h('div', { class: 'cell-sub clamp1' }, tt.beneficiary || '')),
         td(L.e, null, tt.expert || '—'),
         td(L.p, null, tids.length ? [h('div', { class: 'cell-main num' }, tids.length > 1 ? `${tids.length} × UA-…` : tids[0]), last ? pzStatus(last.status) : h('span', { class: 'faint small' }, rt('never')),
@@ -837,7 +849,7 @@ function registryTable(rows) {
           : ((r.pz || {}).cand || []).length ? h('span', { class: 'tag warn' }, rt('candidates', { n: r.pz.cand.length })) : h('span', { class: 'tag' }, rt('notLinked'))),
         td(L.k, { class: 'w-party' }, m ? [h('div', { class: 'cell-main' }, ((m.c.suppliers || [])[0] || {}).name || '—'), h('div', { class: 'cell-sub' }, join([m.c.number && '№ ' + m.c.number, m.c.value ? money(m.c.value.amount) : null]))]
           : tt.contractor ? tt.contractor : h('span', { class: 'faint' }, '—')),
-        td(L.g, { class: 'num' }, join([pctOf(tt.pct) != null ? pctOf(tt.pct) + '%' : null, paidShare(r) != null ? rt('paidShort', { pct: paidShare(r) }) : null]) || '—'),
+        td(L.g, { class: 'num' }, join([pctOf(spStatus(r).pct) != null ? pctOf(spStatus(r).pct) + '%' : null, paidShare(r) != null ? rt('paidShort', { pct: paidShare(r) }) : null]) || '—'),
         td(L.r, null, riskChips(allRisk(r))));
     }))));
 }
@@ -856,35 +868,111 @@ function registryCard(code) {
       h('h1', { class: 'org-title' + (String(tt.name_uk || tt.name_en || '').length > 90 ? ' long' : '') }, tt.name_uk || tt.name_en || r.code),
       tt.name_uk && tt.name_en ? h('p', { class: 'muted' }, tt.name_en) : null,
       h('div', { class: 'chips' }, tt.expert ? h('span', { class: 'tag' }, tt.expert) : null, tt.funding ? h('span', { class: 'tag' }, tt.funding) : null,
-        worst(allRisk(r)) ? h('span', { class: 'sev ' + worst(allRisk(r)) }, rt('colRisk')) : null)),
-    h('div', { class: 'org-actions' }, h('div', { class: 'row' }, back, tt.dream ? ext(/^http/.test(tt.dream) ? tt.dream : dreamUrl(tt.dream.match(/DREAM-UA-\S+/) ? tt.dream.match(/DREAM-UA-\S+/)[0] : tt.dream), 'DREAM', 'btn') : null)));
+        overallRating(scoresOf(r).scores) ? h('span', { class: 'sev ' + ['', 'low', 'medium', 'high'][overallRating(scoresOf(r).scores)] }, rt('overall', { n: overallRating(scoresOf(r).scores) })) : null,
+        tt.manual ? h('span', { class: 'tag warn' }, rt('manualTag')) : null)),
+    h('div', { class: 'org-actions' }, h('div', { class: 'row' }, back, tt.manual ? h('button', { class: 'btn btn-sm', onclick: () => addSpDialog(r) }, rt('editSp')) : null, tt.dream ? ext(/^http/.test(tt.dream) ? tt.dream : dreamUrl(tt.dream.match(/DREAM-UA-\S+/) ? tt.dream.match(/DREAM-UA-\S+/)[0] : tt.dream), 'DREAM', 'btn') : null)));
+  // What it stands at → what the expert does → its risks → its procurements → its money → the rest.
   return [head,
-    h('div', { class: 'grid-2 section' }, tableCard(r), risksCard(r)),
+    statusCard(r),
     workCard(r),
-    guaranteesCard(r),
-    subventionCard(r),
+    h('div', { class: 'section' }, risksCard(r)),
     pzCard(r),
     (r.tenders || []).length ? sheetTendersCard(r) : null,
+    subventionCard(r),
+    guaranteesCard(r),
     paymentsCard(r),
     noteCard(r)];
 }
 
-function tableCard(r) {
-  const tt = r.t || {};
-  const pct = (x) => (x == null ? null : pctOf(x) + '%');
-  return h('div', { class: 'card pad' },
-    h('h2', { class: 'card-title' }, rt('fromTable')),
-    kv([
-      [t('eib.buyer'), join([tt.beneficiary, tt.beneficiary_id])],
-      [rt('finance'), join([tt.invest_eur != null ? 'Invest ' + ni.format(tt.invest_eur) + ' €' : null, tt.eib_eur != null ? 'EIB ' + ni.format(tt.eib_eur) + ' €' : null])],
-      [rt('subvention'), join([+tt.subv_year > 0 ? money(+tt.subv_year) : null, +tt.subv_paid > 0 ? rt('subvPaid', { sum: money(+tt.subv_paid) }) : null, +tt.subv_util > 0 ? pct(tt.subv_util) : null])],
-      [rt('progress'), join([tt.start ? fdate(tt.start) : null, tt.completion ? '→ ' + fdate(tt.completion) : null, tt.pct != null ? pct(tt.pct) : null])],
-      [rt('paidSheet'), r.paid != null ? money(r.paid) : null],
-      [rt('comment'), tt.comment ? h('div', null, tt.comment, tt.upd ? h('div', { class: 'cell-sub' }, fdate(tt.upd)) : null) : null],
-      [rt('next'), tt.next ? join([tt.next.who, tt.next.what, tt.next.date && fdate(tt.next.date)]) : null],
-    ]),
-    (tt.log || []).length ? [h('h3', { class: 'card-sub', style: 'margin-top:12px' }, rt('weekly')),
-      h('div', { class: 'explain' }, tt.log.slice().reverse().map((x) => h('div', null, h('b', null, x.week.replace(/\s*\(.*/, '') + ' · '), join([x.who, x.what]), x.done ? ' ✓' : '')))] : null);
+// Where the sub-project stands: the table's PROJECT PROGRESS columns (% of completion, Update date,
+// Coments), kept up to date here. An edit is kept apart from the table's own values, so uploading
+// the table again does not undo it unless the table's update date is newer.
+function spStatus(r) {
+  const tt = r.t || {}, st = (r.work || {}).status;
+  const mine = st && (!tt.upd || String(st.upd || '') >= String(tt.upd));
+  return mine ? { pct: st.pct, upd: st.upd, comment: st.comment, by: st.by, app: true } : { pct: tt.pct, upd: tt.upd, comment: tt.comment, app: false };
+}
+function statusCard(r) {
+  const tt = r.t || {}, s = spStatus(r);
+  const m = mainContract(r);
+  const sup = m ? (m.c.suppliers || [])[0] || {} : {};
+  const pctIn = h('input', { class: 'input', type: 'number', min: 0, max: 100, step: 1, inputmode: 'numeric', 'aria-label': rt('stPct') });
+  pctIn.value = s.pct != null ? pctOf(s.pct) : '';
+  const dayIn = h('input', { class: 'input', type: 'date', 'aria-label': rt('stUpd') });
+  dayIn.value = today();
+  const textIn = h('textarea', { class: 'input', rows: 5, maxlength: 4000, 'aria-label': rt('stComment') });
+  textIn.value = s.comment || '';
+  const msg = h('span', { class: 'small muted' });
+  const saveBtn = h('button', { class: 'btn btn-sm btn-dark', onclick: async () => {
+    const p = pctIn.value === '' ? null : Math.max(0, Math.min(100, Number(pctIn.value))) / 100;
+    saveBtn.disabled = true;
+    try {
+      await saveWork(r, (w) => { w.status = { pct: p, upd: dayIn.value || today(), comment: textIn.value.trim().slice(0, 4000), by: myExpert(), at: new Date().toISOString() }; });
+      fill(msg, rt('saved'));
+    } catch (e) { fill(msg, h('span', { class: 'bad' }, e.message)); } finally { saveBtn.disabled = false; }
+  } }, icon('check'), rt('stSave'));
+  const paid = paidShare(r);
+  return h('div', { class: 'card pad section' },
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('stTitle')),
+      s.upd ? h('span', { class: 'faint small' }, rt(s.app ? 'stUpdApp' : 'stUpdTable', { date: fdate(s.upd), who: s.by || '' })) : null),
+    h('div', { class: 'grid-2 st-grid' },
+      kv([
+        [t('eib.buyer'), join([tt.beneficiary, tt.beneficiary_id])],
+        [rt('finance'), join([tt.invest_eur != null ? 'Invest ' + ni.format(tt.invest_eur) + ' €' : null, tt.eib_eur != null ? 'EIB ' + ni.format(tt.eib_eur) + ' €' : null])],
+        [rt('stContract'), m ? h('span', null, h('b', null, sup.name || '—'), h('div', { class: 'cell-sub' }, join([m.c.number && '№ ' + m.c.number, m.c.value ? money(m.c.value.amount) : null, m.c.end ? '→ ' + fdate(m.c.end) : null])))
+          : tt.contractor || null],
+        [rt('stDates'), join([tt.start ? rt('stStart', { date: fdate(tt.start) }) : null, tt.completion ? rt('stEnd', { date: fdate(tt.completion) }) : null])],
+        [rt('stPaid'), join([r.paid != null ? money(r.paid) : null, paid != null ? rt('paidShort', { pct: paid }) : null])],
+        [rt('subvention'), join([+tt.subv_year > 0 ? money(+tt.subv_year) : null, +tt.subv_paid > 0 ? rt('subvPaid', { sum: money(+tt.subv_paid) }) : null])],
+        [rt('next'), tt.next ? join([tt.next.who, tt.next.what, tt.next.date && fdate(tt.next.date)]) : null],
+      ]),
+      h('div', { class: 'st-edit' },
+        h('div', { class: 'st-row' }, h('label', { class: 'field' }, h('span', null, rt('stPct')), pctIn), h('label', { class: 'field' }, h('span', null, rt('stUpd')), dayIn)),
+        h('label', { class: 'field' }, h('span', null, rt('stComment')), textIn),
+        s.app && tt.comment && tt.comment !== s.comment ? h('details', { class: 'small muted st-was' }, h('summary', null, rt('stTableWas', { date: tt.upd ? fdate(tt.upd) : '—' })), h('div', null, tt.comment)) : null,
+        h('div', { class: 'row' }, saveBtn, msg))));
+}
+
+// A sub-project the table does not have yet, added by hand (and its fields edited the same way).
+const SP_CODE = /^[A-Z]{2}\d{2}[A-Z]?_\d{2}(-[A-Z])?$/;
+function addSpDialog(r0) {
+  const tt0 = (r0 && r0.t) || {};
+  const experts = [...new Set([...REG.rows.values()].map((x) => (x.t || {}).expert).filter(Boolean).concat([myExpert()]))].filter(Boolean).sort();
+  const progs = [...new Set(['URP III', 'URP', 'UERP'].concat([...REG.rows.values()].map((x) => (x.t || {}).programme).filter(Boolean)))];
+  const inp = (key, ph, v) => { const el = h('input', { class: 'input', placeholder: ph || '', 'aria-label': rt('f_' + key) }); el.value = v || ''; return el; };
+  const code = inp('code', 'OD08_05', r0 && r0.code);
+  if (r0) code.disabled = true;
+  const prog = select(progs.map((x) => [x, x]), tt0.programme || 'URP III', () => {}, rt('f_programme'));
+  const batch = inp('batch', '8', tt0.batch), office = inp('office', 'Odesa', tt0.office);
+  const nameUk = inp('name_uk', '', tt0.name_uk), nameEn = inp('name_en', '', tt0.name_en);
+  const expert = select(experts.map((x) => [x, x]), tt0.expert || REG.access.expert || myExpert(), () => {}, rt('f_expert'));
+  const ben = inp('beneficiary', '', tt0.beneficiary), benId = inp('beneficiary_id', '', tt0.beneficiary_id);
+  const pz = inp('pz', 'UA-2026-…', '');
+  const msg = h('div', { class: 'small' });
+  const f = (key, el) => h('label', { class: 'field' }, h('span', null, rt('f_' + key)), el);
+  const save = h('button', { class: 'btn btn-dark', onclick: async () => {
+    const c = normCode(code.value);
+    if (!SP_CODE.test(c)) { fill(msg, h('span', { class: 'bad' }, rt('spCodeBad'))); return; }
+    if (!r0 && REG.rows.has(c)) { fill(msg, h('span', { class: 'bad' }, rt('spExists', { code: c }))); return; }
+    if (!nameUk.value.trim() && !nameEn.value.trim()) { fill(msg, h('span', { class: 'bad' }, rt('spNameNeeded'))); return; }
+    save.disabled = true;
+    try {
+      const t = Object.assign({}, tt0, { codes: [c], programme: prog.value, batch: batch.value.trim(), office: office.value.trim(), name_uk: nameUk.value.trim(), name_en: nameEn.value.trim(),
+        expert: expert.value, beneficiary: ben.value.trim(), beneficiary_id: benId.value.trim(), manual: true });
+      const ids = [...new Set(String(pz.value).match(PZ_ID) || [])];
+      const patch = { code: c, t };
+      if (ids.length) patch.link = { tids: [...new Set(((r0 && r0.link && r0.link.tids) || []).concat(ids))], off: [] };
+      await cloud.updateRegistry(c, patch);
+      closeSheet();
+      location.hash = '#/registry/' + encodeURIComponent(c);
+      toast(rt(r0 ? 'spSaved' : 'spAdded', { code: c }));
+    } catch (e) { fill(msg, h('span', { class: 'bad' }, (e && e.code === 'permission-denied') ? rt('denied') : e.message)); save.disabled = false; }
+  } }, rt(r0 ? 'stSave' : 'spAdd'));
+  sheet(h('h2', { class: 'card-title' }, rt(r0 ? 'editSp' : 'addSp')), h('p', { class: 'muted small' }, rt('addSpHint')),
+    h('div', { class: 'sp-form' }, f('code', code), f('programme', prog), f('batch', batch), f('office', office),
+      h('div', { class: 'wide' }, f('name_uk', nameUk)), h('div', { class: 'wide' }, f('name_en', nameEn)), f('expert', expert), f('beneficiary_id', benId),
+      h('div', { class: 'wide' }, f('beneficiary', ben)), r0 ? null : h('div', { class: 'wide' }, f('pz', pz))),
+    h('div', { class: 'row', style: 'margin-top:12px' }, save), msg);
 }
 
 function risksCard(r) {
@@ -1411,6 +1499,13 @@ async function fillWorkbook(buf, mode, onStep) {
       const sup = (m.c.suppliers || [])[0] || {};
       setK('contractor', sup.name);
       if (m.c.start) setK('start', { day: m.c.start }, 'blank');
+    }
+    // The progress kept in the monitor, when newer than the file's.
+    const st = (r.work || {}).status;
+    if (st && (!r.t.upd || String(st.upd || '') >= String(r.t.upd))) {
+      if (st.pct != null) setK('pct', st.pct, 'force');
+      if (st.upd) setK('upd', { day: st.upd }, 'force');
+      if (st.comment) setK('comment', st.comment, 'force');
     }
     const pSub = subvMatch(r);
     const ad = pSub && pSub.name ? adequacyData(r, pSub.amounts[Object.keys(pSub.amounts).sort().pop()]) : null;
