@@ -142,6 +142,38 @@ const RG = {
     pfXRating: "Оцінка",
     pfYes: "так", pfAnyBatch: "Усі пули",
     colStage: "Етап", riskShort: "ризик {n}",
+    update: "Оновити",
+    sg_seen: "виявлено {date}",
+    updateHint: "Перечитати Prozorro для {n} субпроєктів ({who}) і оновити, що монітор веде",
+    updNote: "Дані Prozorro: {at} · платежі й акти Казначейства оновлюються самі кожні кілька годин",
+    sgTitle1: "Сигнали",
+    sgTitle2: "по субпроєктах",
+    sgLead: "Відкриті питання — що зараз потребує дій у субпроєктах (незалежно від того, коли з’явилось), і нове на договорах за останні 30 днів.",
+    sgMine: "Мої субпроєкти",
+    sgAll: "Уся команда",
+    sgMineHint: "Субпроєкти, де менеджер — {who}: ті, що монітор оновлює у вашому застосунку.",
+    sgAllHint: "Усі субпроєкти реєстру, хто б їх не вів; оновлює кожен свій менеджер.",
+    sgc_late: "Прострочення",
+    sgc_money: "Гроші",
+    sgc_checks: "Перевірки",
+    sgc_docs: "Документи",
+    sgc_tasks: "Завдання",
+    sgc_news: "Нове за 30 днів",
+    sgHigh: "Потребує дій",
+    sgMid: "До уваги",
+    sgNews: "Нове за 30 днів",
+    sgLow: "Дрібниці",
+    sgFiltered: "Показано: {cat}.",
+    sgClear: "Показати все",
+    sg_new: "нове",
+    sg_late: "Роботи прострочено на {n} дн.",
+    sg_lateText: "Строк завершення {date} минув; виконано {pct}%. Підрядник: {who}.",
+    sg_wait: "Оплата ЄІБ чекає ({n})",
+    sg_waitText: "Найдовше {days} дн. від отримання документів ({date}); разом {sum}.",
+    sg_afterTerm: "Оплати після строку договору",
+    sg_noPcr: "Результати торгів не надіслано в ЄІБ",
+    sg_task: "Прострочене завдання",
+    sg_rules: "Порушено правила програми",
     autoNote3: "Ваші субпроєкти ({who}) оновлюються самі раз на добу.",
     orphansMenu: "Оплати без субпроєкту ({n})",
     orphansMenuHint: "Коди з аркуша Payments, яких немає в SPs",
@@ -468,6 +500,38 @@ const RG = {
     pfXRating: "Rating",
     pfYes: "yes", pfAnyBatch: "All batches",
     colStage: "Stage", riskShort: "risk {n}",
+    update: "Update",
+    sg_seen: "seen {date}",
+    updateHint: "Read Prozorro again for {n} sub-projects ({who}) and bring what the monitor follows up to date",
+    updNote: "Prozorro data: {at} · Treasury payments and acts update themselves every few hours",
+    sgTitle1: "Signals",
+    sgTitle2: "by sub-project",
+    sgLead: "Open issues — what needs doing in the sub-projects now (whenever it came up) — and the news on the contracts over the last 30 days.",
+    sgMine: "My sub-projects",
+    sgAll: "The whole team",
+    sgMineHint: "Sub-projects managed by {who}: the ones the monitor keeps up to date in your app.",
+    sgAllHint: "Every sub-project of the registry, whoever keeps it; each is updated by its own manager.",
+    sgc_late: "Late",
+    sgc_money: "Money",
+    sgc_checks: "Checks",
+    sgc_docs: "Documents",
+    sgc_tasks: "Tasks",
+    sgc_news: "News, 30 days",
+    sgHigh: "Needs action",
+    sgMid: "Worth a look",
+    sgNews: "News, last 30 days",
+    sgLow: "Minor",
+    sgFiltered: "Showing: {cat}.",
+    sgClear: "Show all",
+    sg_new: "new",
+    sg_late: "Works {n} days late",
+    sg_lateText: "Completion date {date} passed; {pct}% done. Contractor: {who}.",
+    sg_wait: "EIB payment waiting ({n})",
+    sg_waitText: "Longest {days} days since the documents came ({date}); {sum} in all.",
+    sg_afterTerm: "Payments after the contract term",
+    sg_noPcr: "Tender results not sent to the EIB",
+    sg_task: "Overdue task",
+    sg_rules: "Programme rules broken",
     autoNote3: "Your sub-projects ({who}) update themselves once a day.",
     orphansMenu: "Payments with no sub-project ({n})",
     orphansMenuHint: "Codes in the Payments sheet missing from SPs",
@@ -1442,12 +1506,15 @@ function registryPage() {
   const meta = REG.meta;
   // Prozorro is read only for the chosen expert's sub-projects: all 400+ would take half an hour.
   const ofExpert = () => (REGF.expert ? rows.filter((r) => spManager(r) === REGF.expert) : []);
-  const refreshBtn = h('button', { class: 'btn', onclick: () => {
+  // One "Update": Prozorro read again now for the chosen manager's sub-projects, then (for one's own)
+  // what the monitor follows brought up to date. The daily run does the same by itself, quietly.
+  const refreshBtn = h('button', { class: 'btn', onclick: async () => {
     const list = ofExpert();
     if (!list.length) { toast(rt('pickExpert'), { bad: true }); return; }
-    refreshMany(list);
+    await refreshMany(list);
+    if (list.some(isMine)) autoTrack(true).catch(() => {});
   } });
-  const drawRefresh = () => { const n = ofExpert().length; fill(refreshBtn, icon('refresh'), n ? rt('refreshN', { n }) : rt('refresh')); refreshBtn.title = n ? REGF.expert : rt('pickExpert'); };
+  const drawRefresh = () => { const n = ofExpert().length; fill(refreshBtn, icon('refresh'), rt('update')); refreshBtn.title = n ? rt('updateHint', { n, who: REGF.expert }) : rt('pickExpert'); };
   drawRefresh();
   // Payments the table's Payments sheet has under codes its SPs sheet has no row for: a check of the
   // table, not everyday work; it opens from the Data menu.
@@ -1464,8 +1531,7 @@ function registryPage() {
     orphans.length ? [rt('orphansMenu', { n: orphans.length }), showOrphans, 'alert', rt('orphansMenuHint')] : null,
   ], 'db');
   const lead = h('span', null, meta ? rt('imported', { at: ftime(meta.at && meta.at.toDate ? meta.at.toDate().toISOString() : meta.at), by: meta.byName || '—', n: meta.rows }) : rt('noTable'),
-    h('span', { class: 'lead-sub' }, rt('autoNote3', { who: myManager() }), ' ',
-      h('button', { class: 'linkish', type: 'button', onclick: () => autoTrack(true) }, rt('autoRun'))));
+    h('span', { class: 'lead-sub' }, rt('updNote', { at: (() => { const d = rows.map((r) => (r.pz || {}).at).filter(Boolean).sort().pop(); return d ? ftime(d) : '—'; })() })));
   const head = pageHead(rt('eyebrow'), titleGrad(rt('title1'), rt('title2')), lead,
     h('div', { class: 'head-actions' }, rows.length ? refreshBtn : null, dataMenu, file, mrdFile, status));
   if (!rows.length) return [head];
@@ -3045,43 +3111,102 @@ const median = (a) => { const s = a.filter((x) => x != null).sort((x, y) => x - 
 
 // ---- signals by sub-project ----------------------------------------------------------------------
 //
-// One feed for the team: what changed on the contracts the monitor follows (since it started following
-// them), and what the sub-project's own data say needs doing (late, payments waiting, overdue tasks),
-// by sub-project, newest first. Mine by default, all on a click.
-const SIGF = { scope: 'mine' };
-function spSignalRows() {
-  const out = [];
-  for (const r of REG.rows.values()) {
-    const news = spNews(spTracked(r)), st = spStage(r), wk = spWork(r), f = mrdFacts(r);
-    const items = news.signals.map((g) => ({ at: String(g.since || '').slice(0, 10), level: g.severity, text: t('sig.' + g.type + '.title'), who: g.row.number ? '№ ' + g.row.number : g.row.tid, href: '#/tracked/' + g.row.key }));
-    if (st.late) items.push({ at: st.end, level: 'high', text: rt('lateBy', { n: st.late }), href: '#/registry/' + encodeURIComponent(r.code) + '/overview' });
-    const waiting = f ? f.waiting.filter((x) => x.days > 14) : [];
-    if (waiting.length) items.push({ at: waiting.map((x) => x.received).sort().pop(), level: waiting.some((x) => x.days > 30) ? 'high' : 'medium', text: rt('h_mrdWaiting', { n: waiting.length, days: Math.max(...waiting.map((x) => x.days)) }), href: '#/registry/' + encodeURIComponent(r.code) + '/finance' });
-    if (wk.next && wk.next.due && wk.next.due < today()) items.push({ at: wk.next.due, level: 'medium', text: rt('sigTask', { text: wk.next.text }), href: '#/registry/' + encodeURIComponent(r.code) + '/work' });
-    if (items.length) out.push({ r, st, items: items.sort((a, b) => String(b.at || '').localeCompare(String(a.at || ''))) });
+// Two layers. Open issues: where each sub-project stands now — late works, EIB payments waiting,
+// broken rules and State Audit findings, missing acts, overdue tasks — whenever they came up (the
+// state, not news). News: what changed on the contracts the monitor follows in the last 30 days
+// (payments, acts, amendments, new signals since it started following them). "Mine" is the
+// sub-projects whose manager is the signed-in user; "the team" is all of them.
+const SIGF = { scope: 'mine', cat: '' };
+const SIG_CAT = { proc: 'checks', contract: 'docs', fin: 'money' };
+function spSignalItems(r) {
+  const out = [], st = spStage(r), wk = spWork(r), f = mrdFacts(r), m = mainContract(r);
+  const tab = (k) => '#/registry/' + encodeURIComponent(r.code) + '/' + k;
+  if (st.late) {
+    const sup = m ? ((m.c.suppliers || [])[0] || {}).name : (r.t || {}).contractor;
+    out.push({ sev: 'high', cat: 'late', at: st.end, title: rt('sg_late', { n: st.late }),
+      text: rt('sg_lateText', { date: fdate(st.end), pct: st.pct != null ? st.pct : '—', who: sup || '—' }), href: tab('overview') });
   }
-  return out.sort((a, b) => String(b.items[0].at || '').localeCompare(String(a.items[0].at || '')));
+  if (f) {
+    const wait = f.waiting.filter((x) => x.days > 14);
+    if (wait.length) out.push({ sev: wait.some((x) => x.days > 30) ? 'high' : 'medium', cat: 'money', at: wait.map((x) => x.received).sort()[0],
+      title: rt('sg_wait', { n: wait.length }), text: rt('sg_waitText', { days: Math.max(...wait.map((x) => x.days)), sum: money(wait.reduce((a, x) => a + (x.eib || 0), 0)), date: fdate(wait.map((x) => x.received).sort()[0]) }), href: tab('finance') });
+    if (f.afterTerm.length) out.push({ sev: 'medium', cat: 'money', at: f.afterTerm.map((x) => x.paid).sort().pop(), title: rt('sg_afterTerm'), text: rt('h_mrdAfterTerm', { n: f.afterTerm.length, date: fdate(f.term) }), href: tab('finance') });
+    if (f.noPcr) out.push({ sev: 'medium', cat: 'checks', at: f.last, title: rt('sg_noPcr'), text: rt('h_mrdNoPcr'), href: tab('finance') });
+  }
+  if (wk.next && wk.next.due && wk.next.due < today()) out.push({ sev: 'medium', cat: 'tasks', at: wk.next.due, title: rt('sg_task'), text: wk.next.text, href: tab('work') });
+  // The contracts the monitor follows: their signals (each kind once per contract), broken rules, recent changes.
+  const since = addDays(today(), -30);
+  for (const row of spTracked(r)) {
+    const who = row.number ? '№ ' + row.number : row.tid, href = '#/tracked/' + row.key;
+    const seen = new Set();
+    for (const g of row.signals || []) {
+      if (seen.has(g.type)) continue;
+      seen.add(g.type);
+      let text = '';
+      try { text = signalText(g); } catch (e) { text = ''; }
+      out.push({ sev: g.severity || 'low', cat: SIG_CAT[sigGroup(g.type)] || 'checks', at: String(g.since || '').slice(0, 10), title: t('sig.' + g.type + '.title'), text, who, href, fresh: !g.base });
+    }
+    const bad = ((row.rules || {}).bad) || [];
+    if (bad.length) out.push({ sev: 'high', cat: 'checks', at: String(row.changed_at || '').slice(0, 10), title: rt('sg_rules'), text: bad.map((k) => t('rl.k.' + k)).join(', '), who, href });
+    for (const e of row.events || []) {
+      if (String(e.at || '') < since) continue;
+      let text = '';
+      try { text = eventText(e); } catch (er) { text = e.type; }
+      out.push({ sev: 'news', cat: 'news', at: String(e.at || '').slice(0, 10), title: text, text: '', who, href });
+    }
+  }
+  // A procurement followed and the contract it turned into can say the same thing: once.
+  const seenKey = new Set();
+  return out.filter((x) => { const k = [x.cat, x.title, x.who, x.text].join('|'); if (seenKey.has(k)) return false; seenKey.add(k); return true; }).map((x) => Object.assign({ r }, x));
+}
+function spSignalPool(scope) {
+  return [...REG.rows.values()].filter((r) => scope === 'all' || isMine(r)).flatMap(spSignalItems);
 }
 function spSignalCount() {
   if (!REG.access || !REG.rows.size) return 0;
-  return spSignalRows().filter((x) => isMine(x.r)).reduce((a, x) => a + x.items.filter((i) => i.level === 'high').length, 0);
+  return spSignalPool('mine').filter((x) => x.sev === 'high').length;
 }
+const SEV_ORDER = { high: 0, medium: 1, low: 2, news: 3 };
 function spSignalsPage() {
   if (REG.access === undefined) return [h('div', { class: 'card empty section' }, t('ui.loading'))];
   const box = h('div');
   const draw = () => {
-    const all = spSignalRows(), mine = all.filter((x) => isMine(x.r));
-    const list = SIGF.scope === 'mine' ? mine : all;
-    fill(box, h('div', { class: 'section' }, pills([['mine', rt('sigMine', { who: myManager() }), mine.length], ['all', rt('sigAll'), all.length]], SIGF.scope, (v) => { SIGF.scope = v; draw(); })),
-      list.length ? list.map(({ r, st, items }) => h('div', { class: 'card pad section sig-sp' },
-        h('div', { class: 'card-head' },
-          h('a', { class: 'sig-sp-title', href: '#/registry/' + encodeURIComponent(r.code) + '/overview' }, h('b', null, r.code), ' ', h('span', { class: 'clamp1' }, (r.t || {}).name_uk || (r.t || {}).name_en || '')),
-          h('div', { class: 'row' }, stageChip(st), h('span', { class: 'tag' + (isMine(r) ? ' ok' : '') }, spManager(r) || '—'))),
-        h('div', { class: 'ev-feed' }, items.slice(0, 8).map((i) => h('a', { class: 'ev-row' + (i.level === 'high' ? ' bad' : ''), href: i.href },
-          h('span', { class: 'num' }, i.at ? fdate(i.at) : '—'), h('span', null, h('b', null, i.text), i.who ? ' · ' + i.who : '')))),
-        items.length > 8 ? h('p', { class: 'muted small' }, rt('sigMore', { n: items.length - 8 })) : null))
-        : h('div', { class: 'card empty section' }, rt('sigNone')));
+    const pool = spSignalPool(SIGF.scope);
+    const issues = pool.filter((x) => x.sev !== 'news');
+    const cats = ['late', 'money', 'checks', 'docs', 'tasks', 'news'];
+    const count = (c) => (c === 'news' ? pool.filter((x) => x.cat === 'news').length : issues.filter((x) => x.cat === c && x.sev !== 'low').length);
+    const shown = SIGF.cat ? pool.filter((x) => x.cat === SIGF.cat) : pool;
+    // Within a section the rows of one sub-project stay together (its newest first); its name once.
+    const sortSection = (list) => {
+      const latest = {};
+      for (const x of list) if (String(x.at || '') > (latest[x.r.code] || '')) latest[x.r.code] = String(x.at || '');
+      return list.sort((a, b) => (latest[b.r.code] || '').localeCompare(latest[a.r.code] || '') || a.r.code.localeCompare(b.r.code) || String(b.at || '').localeCompare(String(a.at || '')));
+    };
+    const row = (x, i, list) => h('a', { class: 'sg-row sev-' + x.sev + (i && list[i - 1].r.code === x.r.code ? ' same' : ''), href: x.href },
+      h('span', { class: 'sg-dot', 'aria-hidden': 'true' }),
+      i && list[i - 1].r.code === x.r.code ? h('span') : h('span', { class: 'sg-sp' }, h('b', null, x.r.code), h('span', { class: 'clamp1' }, (x.r.t || {}).name_uk || (x.r.t || {}).name_en || ''),
+        SIGF.scope === 'all' ? h('small', null, spManager(x.r) || '—') : null),
+      h('span', { class: 'sg-what' },
+        h('span', { class: 'sg-head' }, h('span', { class: 'sg-cat' }, rt('sgc_' + x.cat)), x.fresh ? h('span', { class: 'sg-new' }, rt('sg_new')) : null, h('b', null, x.title)),
+        x.text ? h('span', { class: 'sg-text clamp' }, x.text) : null,
+        x.who ? h('small', { class: 'faint' }, x.who) : null),
+      // A signal that was there when the monitor began following the contract: the day it was seen, not of the event.
+      h('span', { class: 'sg-at num' }, x.at ? (x.fresh === false ? h('small', null, rt('sg_seen', { date: fdate(x.at) })) : fdate(x.at)) : '—'),
+      icon('arrow'));
+    const section = (title, list, open = true) => (list.length ? h('details', { class: 'card pad section fold sg-section', open: open || null },
+      h('summary', null, h('h2', { class: 'card-title' }, title, h('span', { class: 'count-inline' }, list.length))),
+      h('div', { class: 'sg-list' }, sortSection(list).map(row))) : null);
+    const high = shown.filter((x) => x.sev === 'high'), mid = shown.filter((x) => x.sev === 'medium'), low = shown.filter((x) => x.sev === 'low'), news = shown.filter((x) => x.sev === 'news');
+    const mineN = [...REG.rows.values()].filter(isMine).length;
+    fill(box,
+      h('div', { class: 'sg-scope section' }, pills([['mine', rt('sgMine', { who: myManager() }), mineN], ['all', rt('sgAll'), REG.rows.size]], SIGF.scope, (v) => { SIGF.scope = v; draw(); }),
+        h('span', { class: 'muted small' }, rt(SIGF.scope === 'mine' ? 'sgMineHint' : 'sgAllHint', { who: myManager() }))),
+      h('div', { class: 'sg-tiles section' }, cats.map((c) => h('button', { class: 'sg-tile' + (SIGF.cat === c ? ' on' : '') + (c !== 'news' && issues.some((x) => x.cat === c && x.sev === 'high') ? ' hot' : ''), type: 'button',
+        onclick: () => { SIGF.cat = SIGF.cat === c ? '' : c; draw(); } }, h('small', null, rt('sgc_' + c)), h('b', { class: 'num' }, count(c))))),
+      SIGF.cat ? h('p', { class: 'small' }, rt('sgFiltered', { cat: rt('sgc_' + SIGF.cat) }), ' ', h('button', { class: 'linkish', type: 'button', onclick: () => { SIGF.cat = ''; draw(); } }, rt('sgClear'))) : null,
+      !shown.length ? h('div', { class: 'card empty section' }, rt('sigNone')) : null,
+      section(rt('sgHigh'), high), section(rt('sgMid'), mid), section(rt('sgNews'), news), section(rt('sgLow'), low, false));
   };
   draw();
-  return [pageHead(rt('sigEyebrow'), titleGrad(rt('sigTitle1'), rt('sigTitle2')), rt('sigLead')), box];
+  return [pageHead(rt('sigEyebrow'), titleGrad(rt('sgTitle1'), rt('sgTitle2')), rt('sgLead')), box];
 }
