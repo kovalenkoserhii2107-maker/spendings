@@ -631,4 +631,8 @@ def _list_fields(s):
         "opening": tl.get("opening") if s.get("kind") == "tender" else None, "auction": tl.get("auction") if s.get("kind") == "tender" else None,
         "alerts": alerts,
         "funding": {k: fd.get(k) for k in ("status", "need", "gap", "left", "year_subvention", "remaining", "eib_paid_year") if fd.get(k) is not None} or None,
+        # The programme rules in short, for the portfolio summary: what is broken, how much to look at.
+        "rules": {"ed": rl.get("edition"), "prog": rl.get("programme"), "strict": rl.get("strict"),
+                  "bad": [x["key"] for x in rl.get("items") or [] if x.get("st") == "bad"],
+                  "look": sum(1 for x in rl.get("items") or [] if x.get("st") == "check" and x.get("level") != "low")} if isinstance(rl, dict) else None,
     }.items() if v not in (None, "", [])}

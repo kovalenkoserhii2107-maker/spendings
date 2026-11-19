@@ -4144,7 +4144,7 @@ function render() {
   else if (route === 'tracked' && /^([0-9a-f]{32}|sp\d{3,20}|tn[0-9a-f]{32})$/.test(parts[1] || '')) { page = trackedDossier(parts[1]); key = 'tracked'; }
   else if (route === 'orgs') { page = trackedPage('orgs'); key = 'tracked'; }
   else if (route === 'org' && /^\d+$/.test(parts[1] || '')) { page = orgPage(parts[1], parts[2], parts[3]); key = 'tracked'; }
-  else if (route === 'registry' && typeof registryPage === 'function') { page = parts[1] ? registryCard(decodeURIComponent(parts[1])) : registryPage(); key = 'registry'; }
+  else if (route === 'registry' && typeof registryPage === 'function') { page = parts[1] === 'summary' && typeof portfolioPage === 'function' ? portfolioPage() : parts[1] ? registryCard(decodeURIComponent(parts[1])) : registryPage(); key = 'registry'; }
   else if (route === 'feed') page = feedPage(parts[1]);
   else if (route === 'search') page = searchPage(parts[1]);
   else if (route === 'method') { page = methodPage(); key = 'settings'; }
