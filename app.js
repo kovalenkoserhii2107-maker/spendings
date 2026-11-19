@@ -2444,14 +2444,21 @@ function objectName(title, n = 14) {
   return rest.replace(/[«»")]/g, ' ').split(/\s+/).filter(Boolean).slice(0, n).join(' ');
 }
 const REL_RX = [['supervision', /технічн\S*\s+нагляд/i], ['author', /авторськ\S*\s+нагляд/i], ['expertise', /експертиз|обстеженн|інвентаризац/i],
-  ['design', /про[еє]кт\S*\s*[-–‑]?\s*кошторисн|про[еє]ктуванн|розробленн\S*\s+про[еє]кт|робоч\S+\s+про[еє]кт|коригуванн/i], ['works', /будівництв|реконструкці|капітальн\S*\s+ремонт|ремонт|монтаж/i]];
+  ['design', /про[еє]кт\S*\s*[-–‑]?\s*кошторисн|про[еє]ктуванн|розробленн\S*\s+про[еє]кт|робоч\S+\s+про[еє]кт|коригуванн/i],
+  ['consulting', /консультаційн|консалтинг|(?<!\d)713[1-5]\d{4}-\d/i], ['works', /будівництв|реконструкці|капітальн\S*\s+ремонт|ремонт|монтаж/i]];
 function relRole(title) {
+  const s = title || '';
+  const works = /(?<!\d)45\d{6}-\d/.test(s);
   for (const [role, rx] of REL_RX) {
-    if (role === 'design' && /(?<!\d)45\d{6}-\d/.test(title || '')) return 'works';
-    if (rx.test(title || '')) return role;
+    if (role === 'design' && works) return 'works';
+    // A services or goods code in the title is not construction, whatever object it names.
+    if (role === 'works' && !works && [...s.matchAll(/(?<!\d)(\d{8})-\d/g)].some((m) => !m[1].startsWith('45'))) return 'other';
+    if (rx.test(s)) return role;
   }
   return 'other';
 }
+// A works procurement: a construction CPV code, or a works title with no other code.
+const isWorksTender = (t0) => /^45/.test((t0 && t0.cpv) || '') || (!(t0 && t0.cpv) && relRole((t0 && t0.title) || '') === 'works');
 function liveRelated(t0) {
   const q = objectName(t0.title);
   const box = h('div', null, h('p', { class: 'muted small' }, t('ui.loading')));

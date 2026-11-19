@@ -49,7 +49,7 @@ const RG = {
     adeqTitle: 'Достатність субвенції цього року', adeqTable: 'у таблиці: {s}', adeqTableNeed: 'Додаткова потреба за таблицею', adeqNoTracked: 'У таблиці: {s}. Щоб монітор оцінив сам, відстежуйте договори субпроєкту.',
     adeqDiff: 'Таблиця каже «{table}», за даними монітора — «{ours}». Варто перевірити.', adeqHint: 'Сума за відстежуваними договорами субпроєкту ({n}): прогноз робіт до 31 грудня на частку кредиту проти залишку субвенції.',
     subvTableEmpty: 'У таблиці субвенцію на рік не заповнено; за чинною редакцією розпорядження — {order}.',
-    subvTableDiff: 'У таблиці субвенція на рік {table}, у чинній редакції розпорядження — {order}.', h_subvDropped: 'проєкт вилучено з розподілу субвенції (ред. {date})', h_subvToken: 'субвенцію зменшено з {from} до символічної 1 тис. (ред. {date})', h_subvTokenOnly: 'у розподілі лише символічна 1 тис. (ред. {date})', h_subvCut: 'субвенцію зменшено з {from} до {to} (ред. {date})', autoLinked: 'прив’язано автоматично', candTitle: 'Можливі закупівлі за назвою', candHint: 'Знайдено за назвою субпроєкту; прив’яжіть ті, що стосуються його.',
+    subvTableDiff: 'У таблиці субвенція на рік {table}, у чинній редакції розпорядження — {order}.', h_subvDropped: 'проєкт вилучено з розподілу субвенції (ред. {date})', h_subvToken: 'субвенцію зменшено з {from} до символічної 1 тис. (ред. {date})', h_subvTokenOnly: 'у розподілі лише символічна 1 тис. (ред. {date})', h_subvCut: 'субвенцію зменшено з {from} до {to} (ред. {date})', autoLinked: 'прив’язано автоматично', candTitle: 'Можливі закупівлі за назвою', linkAll: 'Прив’язати всі ({n})', candHint: 'Знайдено за назвою субпроєкту; прив’яжіть ті, що стосуються його.',
     refreshDone: 'Оновлено: з ID у таблиці {linked}, знайдено за назвою {auto}, є варіанти для підтвердження {cand}, не знайдено {none}, лише англ. назва {noName}', refreshN: 'Оновити з Prozorro ({n})', pickExpert: 'Оберіть експерта: оновлюються лише його субпроєкти',
     trackAll: 'Відстежувати мої з таблиці ({n})', trackConfirm: 'Поставити на відстеження договори й закупівлі ваших {n} субпроєктів? Діючі договори — на контроль, закупівлі без договору — до підписання.',
     tracking: 'Відстеження: {n} з {total}, додано {added}…', trackDone: 'На відстеження додано {added}, уже було {already}, не вдалося {failed}',
@@ -100,7 +100,7 @@ const RG = {
     adeqTitle: "This year's subvention adequacy", adeqTable: 'table: {s}', adeqTableNeed: 'Additional needs per the table', adeqNoTracked: 'Table: {s}. Track the sub-project\'s contracts for the monitor to estimate it.',
     adeqDiff: 'The table says “{table}”, the monitor\'s data say “{ours}”. Worth checking.', adeqHint: "Sum over the sub-project's tracked contracts ({n}): works forecast to 31 December times the loan share, against the subvention left.",
     subvTableEmpty: 'The table has no subvention for the year; the order in force has {order}.',
-    subvTableDiff: 'The table has {table} of subvention for the year; the order in force has {order}.', h_subvDropped: 'project dropped from the subvention (ed. {date})', h_subvToken: 'subvention cut from {from} to a token 1 thousand (ed. {date})', h_subvTokenOnly: 'only a token 1 thousand in the order (ed. {date})', h_subvCut: 'subvention cut from {from} to {to} (ed. {date})', autoLinked: 'linked automatically', candTitle: 'Possible procurements by name', candHint: 'Found by the sub-project name; link the ones that belong to it.',
+    subvTableDiff: 'The table has {table} of subvention for the year; the order in force has {order}.', h_subvDropped: 'project dropped from the subvention (ed. {date})', h_subvToken: 'subvention cut from {from} to a token 1 thousand (ed. {date})', h_subvTokenOnly: 'only a token 1 thousand in the order (ed. {date})', h_subvCut: 'subvention cut from {from} to {to} (ed. {date})', autoLinked: 'linked automatically', candTitle: 'Possible procurements by name', linkAll: 'Link all ({n})', candHint: 'Found by the sub-project name; link the ones that belong to it.',
     refreshDone: 'Refreshed: with ids in the table {linked}, found by name {auto}, candidates to confirm {cand}, not found {none}, English name only {noName}', refreshN: 'Refresh from Prozorro ({n})', pickExpert: 'Choose an expert: only their sub-projects are refreshed',
     trackAll: 'Track mine from the table ({n})', trackConfirm: 'Put the contracts and procurements of your {n} sub-projects on control? Contracts in force go on control, procurements without a contract until it is signed.',
     tracking: 'Tracking: {n} of {total}, {added} added…', trackDone: '{added} added to tracking, {already} already there, {failed} failed',
@@ -457,9 +457,13 @@ async function refreshMany(rows) {
 }
 
 // The works contract of a sub-project: the latest signed one of its linked procedures.
+// Only a works procurement counts: design, expertise or supervision firms are not the contractor.
 function mainContract(r) {
   const cs = [];
-  for (const t0 of ((r.pz || {}).tenders || [])) for (const c of t0.contracts || []) if (c.status === 'active' || c.status === 'terminated') cs.push({ c, t0 });
+  for (const t0 of ((r.pz || {}).tenders || [])) {
+    if (!isWorksTender(t0)) continue;
+    for (const c of t0.contracts || []) if (c.status === 'active' || c.status === 'terminated') cs.push({ c, t0 });
+  }
   cs.sort((a, b) => (b.c.signed || '').localeCompare(a.c.signed || ''));
   return cs[0] || null;
 }
@@ -981,7 +985,14 @@ function pzCard(r) {
   };
   const cands = (pz.cand || []).filter((x) => !tids.includes(x.tid));
   fill(box, tids.length ? h('div', { class: 'qs-list' }, tids.map(tenderBlock)) : h('p', { class: 'muted small' }, rt('notLinked')), linkForm,
-    cands.length ? [h('h3', { class: 'card-sub', style: 'margin-top:14px' }, rt('candTitle')), h('p', { class: 'muted small' }, rt('candHint')),
+    cands.length ? [h('div', { class: 'card-head', style: 'margin-top:14px' }, h('h3', { class: 'card-sub' }, rt('candTitle')),
+        cands.length > 1 ? h('button', { class: 'btn btn-sm btn-dark', onclick: async (e) => {
+          e.currentTarget.disabled = true;
+          const all = cands.map((x) => x.tid);
+          await save([...new Set(linkIds.concat(all))], off.filter((y) => !all.includes(y)));
+          await refreshSp(Object.assign({}, r, { link: { tids: [...new Set(linkIds.concat(all))], off: off.filter((y) => !all.includes(y)) } }));
+        } }, rt('linkAll', { n: cands.length })) : null),
+      h('p', { class: 'muted small' }, rt('candHint')),
       h('div', { class: 'qs-list' }, cands.map((x) => h('div', { class: 'qs-row' },
         h('div', null, h('span', { class: 'tag' }, t('rel.role.' + x.role)), ' ', h('b', null, x.title),
           h('div', { class: 'cell-sub' }, join([x.tid, x.buyer_name, label('pzs.', x.status), x.value ? money(x.value.amount, x.value.currency) : null]))),

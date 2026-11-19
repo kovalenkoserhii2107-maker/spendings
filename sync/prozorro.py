@@ -311,8 +311,10 @@ RELATED_ROLES = (
     ("author", re.compile(r"авторськ\w*\s+нагляд", re.I)),
     ("expertise", re.compile(r"експертиз|обстеженн|інвентаризац", re.I)),
     ("design", re.compile(r"про[еє]кт\w*\s*[-–‑]?\s*кошторисн|про[еє]ктуванн|розробленн\w*\s+про[еє]кт|\bпкд\b|робоч\w+\s+про[еє]кт|коригуванн", re.I)),
+    ("consulting", re.compile(r"консультаційн|консалтинг|(?<!\d)713[1-5]\d{4}-\d", re.I)),
     ("works", re.compile(r"будівництв|реконструкці|капітальн\w*\s+ремонт|ремонт|монтаж", re.I)),
 )
+_ANY_CPV = re.compile(r"(?<!\d)(\d{8})-\d")
 
 
 def object_name(title):
@@ -333,6 +335,9 @@ def related_role(title):
     for role, rx in RELATED_ROLES:
         if role == "design" and _WORKS_CPV.search(title or ""):
             return "works"  # a works CPV code: construction, whatever the text says of the project
+        # A services or goods code in the title is not construction, whatever object it names.
+        if role == "works" and any(not c.startswith("45") for c in _ANY_CPV.findall(title or "")) and not _WORKS_CPV.search(title or ""):
+            return "other"
         if rx.search(title or ""):
             return role
     return "other"
