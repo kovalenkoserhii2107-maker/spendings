@@ -142,6 +142,60 @@ const RG = {
     pfXRating: "Оцінка",
     pfYes: "так", pfAnyBatch: "Усі пули",
     colStage: "Етап", riskShort: "ризик {n}",
+    mrdUpload: "Реєстр оплат Мінрозвитку",
+    mrdUploadHint: "Завантажити реєстр оплат з коштів позики ЄІБ (xlsx Мінрозвитку)",
+    mrdSaving: "Зберігаю оплати: субпроєкт {n} з {total}…",
+    mrdDone: "Реєстр оплат: записано субпроєктів {n} (у файлі {found}, немає в реєстрі {missing})",
+    mrdTitle: "Оплати ЄІБ за реєстром Мінрозвитку",
+    mrdNone: "Реєстр оплат Мінрозвитку ще не завантажено: там оплати з коштів позики ЄІБ (рахунки в Укрексімбанку), яких Казначейство не показує.",
+    mrdAsOf: "завантажено {date} {file}",
+    mrdPaid: "Сплачено",
+    mrdEib: "ЄІБ {sum}",
+    mrdLocal: "місцевий бюджет {sum}",
+    mrdPct: "{pct}% ціни робіт",
+    mrdLast: "Остання оплата",
+    mrdWaitingL: "Чекають оплати",
+    mrdWaitingV: "{n}, найдовше {days} дн.",
+    mrdNoWaiting: "немає",
+    mrdSpeed: "Швидкість за рік",
+    mrdSpeedV: "медіана {med} дн. від отримання документів до оплати ({n} оплат, довше 30 днів — {slow})",
+    mrdTerm: "Строк дії договору робіт",
+    mrdAfterTerm: "оплат після строку: {n} — перевірте додаткові угоди",
+    mrdContracts: "Договори",
+    mrdOrg: "Виконавець",
+    mrdSum: "Сума (ЄІБ + місцевий)",
+    mrdGuarantee: "Гарантія",
+    mrdPcr: "Результати торгів в ЄІБ",
+    mrdNoPcrShort: "не надіслано",
+    mrdTo: "до {date}",
+    mrdPayments: "Оплати ({n})",
+    mrdReceived: "Отримано від КБ",
+    mrdPaidOn: "Сплачено",
+    mrdDays: "Днів",
+    mrdWhat: "Призначення",
+    mrdEibCol: "ЄІБ",
+    mrdLocalCol: "Місцевий",
+    mrdNote: "Акт / коментар",
+    mrdWait: "чекає {n} дн.",
+    mrdK_works: "виконані роботи",
+    mrdK_ts: "технагляд",
+    mrdK_csc: "інженер-консультант",
+    mrdK_advance: "аванс",
+    mrdK_advance_close: "закриття авансу",
+    mrdK_refund: "повернення",
+    mrdK_other: "інше",
+    mrdHint: "Дані реєстру Мінрозвитку, як їх завантажила команда. Днів — від отримання документів від кінцевого бенефіціара до оплати.",
+    h_mrdWaiting: "оплат ЄІБ чекають {n}, найдовше {days} дн.",
+    h_mrdSlow: "оплат довше 30 днів: {n} з {of} за рік",
+    h_mrdAfterTerm: "оплати робіт після строку договору ({date}): {n}",
+    h_mrdNoPcr: "результати торгів не надіслано в ЄІБ, а оплати є",
+    pfMrd: "Оплати ЄІБ (реєстр Мінрозвитку)",
+    pfMrdSpeed: "Від документів до оплати",
+    pfMrdSpeedV: "{n} оплат за період: медіана {med} дн., 9 з 10 — до {p90} дн.",
+    pfMrdWaiting: "Чекають довше 14 днів: {n}",
+    pfMrdAfterTerm: "Оплати робіт після строку договору: {n}",
+    pfMrdNoPcr: "Результати торгів не надіслано в ЄІБ: {n}",
+    pfMrdHint: "Субпроєктів у реєстрі оплат: {n}. Затримки оплат угода ЄІБ–ПРООН просить повідомляти ЄІБ, Мінфіну й Мінрозвитку.",
     fromContract: "договір {who}: {why}",
     lateBy: "прострочено {n} дн.",
     stepFailed: "невдалих: {n}",
@@ -341,6 +395,60 @@ const RG = {
     pfXRating: "Rating",
     pfYes: "yes", pfAnyBatch: "All batches",
     colStage: "Stage", riskShort: "risk {n}",
+    mrdUpload: "Mindev payments register",
+    mrdUploadHint: "Upload the register of payments from the EIB loan (Mindev's xlsx)",
+    mrdSaving: "Saving payments: sub-project {n} of {total}…",
+    mrdDone: "Payments register: {n} sub-projects written ({found} in the file, {missing} not in the registry)",
+    mrdTitle: "EIB payments by Mindev's register",
+    mrdNone: "The Mindev payments register is not uploaded yet: it has the payments from the EIB loan (Ukreximbank accounts), which the Treasury does not show.",
+    mrdAsOf: "uploaded {date} {file}",
+    mrdPaid: "Paid",
+    mrdEib: "EIB {sum}",
+    mrdLocal: "local budget {sum}",
+    mrdPct: "{pct}% of the works price",
+    mrdLast: "Last payment",
+    mrdWaitingL: "Waiting for payment",
+    mrdWaitingV: "{n}, longest {days} days",
+    mrdNoWaiting: "none",
+    mrdSpeed: "Speed over the year",
+    mrdSpeedV: "median {med} days from documents received to payment ({n} payments, over 30 days: {slow})",
+    mrdTerm: "Works contract term",
+    mrdAfterTerm: "payments after the term: {n} — check the addendums",
+    mrdContracts: "Contracts",
+    mrdOrg: "Contractor",
+    mrdSum: "Amount (EIB + local)",
+    mrdGuarantee: "Guarantee",
+    mrdPcr: "Tender results to the EIB",
+    mrdNoPcrShort: "not sent",
+    mrdTo: "to {date}",
+    mrdPayments: "Payments ({n})",
+    mrdReceived: "Received from the FB",
+    mrdPaidOn: "Paid",
+    mrdDays: "Days",
+    mrdWhat: "Purpose",
+    mrdEibCol: "EIB",
+    mrdLocalCol: "Local",
+    mrdNote: "Act / comment",
+    mrdWait: "waiting {n} days",
+    mrdK_works: "works done",
+    mrdK_ts: "supervision",
+    mrdK_csc: "consulting engineer",
+    mrdK_advance: "advance",
+    mrdK_advance_close: "advance closing",
+    mrdK_refund: "refund",
+    mrdK_other: "other",
+    mrdHint: "Mindev's register as the team uploaded it. Days run from the final beneficiary's documents received to the payment.",
+    h_mrdWaiting: "{n} EIB payments waiting, longest {days} days",
+    h_mrdSlow: "payments over 30 days: {n} of {of} in the year",
+    h_mrdAfterTerm: "works paid after the contract term ({date}): {n}",
+    h_mrdNoPcr: "tender results not sent to the EIB, yet payments made",
+    pfMrd: "EIB payments (Mindev register)",
+    pfMrdSpeed: "From documents to payment",
+    pfMrdSpeedV: "{n} payments in the period: median {med} days, 9 in 10 within {p90} days",
+    pfMrdWaiting: "Waiting over 14 days: {n}",
+    pfMrdAfterTerm: "Works paid after the contract term: {n}",
+    pfMrdNoPcr: "Tender results not sent to the EIB: {n}",
+    pfMrdHint: "Sub-projects in the payments register: {n}. The EIB–UNDP agreement asks for payment delays to be reported to the EIB, the MoF and Mindev.",
     fromContract: "contract {who}: {why}",
     lateBy: "{n} days late",
     stepFailed: "failed: {n}",
@@ -1062,11 +1170,11 @@ function subvRisk(r) {
   return [];
 }
 function allRisk(r) {
-  const extra = subvRisk(r), fromContracts = contractHints(r);
-  if (!extra.length && !Object.keys(fromContracts).length) return r.risk || {};
+  const extra = subvRisk(r), fromContracts = contractHints(r), fromMrd = mrdHints(r);
+  if (!extra.length && !Object.keys(fromContracts).length && !Object.keys(fromMrd).length) return r.risk || {};
   const out = Object.assign({}, r.risk || {});
   if (extra.length) out.r3 = (out.r3 || []).concat(extra);
-  for (const [k, list] of Object.entries(fromContracts)) out[k] = (out[k] || []).concat(list);
+  for (const src of [fromContracts, fromMrd]) for (const [k, list] of Object.entries(src)) out[k] = (out[k] || []).concat(list);
   return out;
 }
 // One matrix, the sub-project's: what the monitor rated on its contracts on control (prices,
@@ -1151,6 +1259,7 @@ function registryPage() {
   const rows = [...REG.rows.values()];
   const status = h('span', { class: 'muted small', id: 'reg-status' }, REG.status ? h('span', { class: REG.status.bad ? 'bad' : '' }, REG.status.text) : null);
   const file = h('input', { type: 'file', accept: '.xlsx', hidden: true, onchange: () => file.files[0] && importFile(file.files[0]) });
+  const mrdFile = h('input', { type: 'file', accept: '.xlsx', hidden: true, onchange: () => mrdFile.files[0] && importMrd(mrdFile.files[0]) });
   const meta = REG.meta;
   const own = REG.access.expert ? rows.filter((r) => (r.t || {}).expert === REG.access.expert) : [];
   // Prozorro is read only for the chosen expert's sub-projects: all 400+ would take half an hour.
@@ -1168,6 +1277,7 @@ function registryPage() {
       rows.length ? h('button', { class: 'btn', onclick: () => exportDialog() }, icon('download'), rt('export')) : null,
       h('button', { class: 'btn', onclick: () => addSpDialog(null) }, icon('plus'), rt('addSp')),
       rows.length ? h('a', { class: 'btn', href: '#/registry/summary' }, icon('chart'), rt('pfOpen')) : null,
+      rows.length ? h('button', { class: 'btn', onclick: () => mrdFile.click(), title: rt('mrdUploadHint') }, icon('cloud'), rt('mrdUpload')) : null, mrdFile,
       rows.length ? refreshBtn : null,
       // Only an expert's own sub-projects, into their own tracking, whatever the filters show.
       own.length ? h('button', { class: 'btn btn-dark', onclick: () => { if (confirm(rt('trackConfirm', { n: own.length }))) trackAll(own); } }, icon('star'), rt('trackAll', { n: own.length })) : null, status));
@@ -1334,7 +1444,7 @@ function registryCard(code, tab) {
     overview: () => [stageCard(r, st), statusCard(r), newsCard(tracked, news), h('div', { class: 'section' }, risksCard(r))],
     procurement: () => [pzCard(r), (r.tenders || []).length ? tenderChecksCard(r) : null, (r.tenders || []).length ? sheetTendersCard(r) : null],
     contracts: () => [contractsCard(r), guaranteesCard(r), paymentsCard(r)],
-    finance: () => [subventionCard(r), financeFactsCard(r)],
+    finance: () => [mrdCard(r), subventionCard(r), financeFactsCard(r)],
     work: () => [workCard(r), noteCard(r)],
   }[tab]();
   return [head, tabs].concat(body);
@@ -2332,7 +2442,15 @@ function portfolioData() {
   rows.forEach((r) => { const o = overallRating(scoresOf(r).scores); ratings[o || 'none']++; });
   const funding = {};
   rows.forEach((r) => { const f = (r.t || {}).funding; if (f) funding[f] = (funding[f] || 0) + 1; });
-  return { all, rows, tenders, fin, judged, bad: fin.filter((v) => v.verdict === 'bad'), kpi, building, fewVisits, noTs, noCsc, ratings, funding, acts, costChecked };
+  // The EIB's payments by the Mindev register: speed in the period, waiting now, after the term, no results to the EIB.
+  const facts = rows.map((r) => ({ r, f: mrdFacts(r) })).filter((x) => x.f);
+  const pays = facts.flatMap(({ r, f }) => (r.mrd.payments || []).filter((x) => x.paid && inYear(x.paid, y) && f.lag(x) != null && f.lag(x) >= 0 && f.lag(x) < 400).map((x) => f.lag(x)));
+  const mrd = facts.length ? {
+    sps: facts.length, asOf: facts.map((x) => x.f.asOf).sort().pop(), n: pays.length, med: median(pays), p90: pays.length ? pays.slice().sort((a, b) => a - b)[Math.floor(pays.length * 0.9)] : null,
+    waiting: facts.filter((x) => x.f.waiting.some((w) => w.days > 14)).map((x) => ({ r: x.r, days: Math.max(...x.f.waiting.map((w) => w.days)), n: x.f.waiting.length })).sort((a, b) => b.days - a.days),
+    afterTerm: facts.filter((x) => x.f.afterTerm.length).map((x) => x.r), noPcr: facts.filter((x) => x.f.noPcr).map((x) => x.r),
+  } : null;
+  return { all, rows, tenders, fin, judged, bad: fin.filter((v) => v.verdict === 'bad'), kpi, building, fewVisits, noTs, noCsc, ratings, funding, acts, costChecked, mrd };
 }
 const kpiTarget = (k, y) => (y === 'all' ? KPI_FINAL[k] || (typeof KPI_TARGET[k] === 'number' ? KPI_TARGET[k] : null) : typeof KPI_TARGET[k] === 'object' ? KPI_TARGET[k][y] || KPI_FINAL[k] : KPI_TARGET[k]);
 function portfolioPage() {
@@ -2393,6 +2511,13 @@ function portfolioBody(d) {
         h('thead', null, h('tr', null, [rt('colCode'), rt('pfKind'), 'Prozorro', rt('pfIssued'), rt('pfWhy')].map((x) => h('th', null, x)))),
         h('tbody', null, d.bad.map((v) => h('tr', null, h('td', null, spLink(v.r)), h('td', null, v.x.kind || ''), h('td', { class: 'num' }, v.x.pz ? h('a', { href: pzUrl(v.x.pz), target: '_blank', rel: 'noopener noreferrer' }, v.x.pz) : '—'),
           h('td', { class: 'num' }, fdate(v.issued)), h('td', null, reasons(v))))))) : h('p', { class: 'muted small' }, rt('pfNoBad'))),
+    d.mrd ? h('div', { class: 'card pad section' }, h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('pfMrd')), h('span', { class: 'muted small' }, rt('mrdAsOf', { date: fdate(d.mrd.asOf), file: '' }))),
+      kv([
+        [rt('pfMrdSpeed'), d.mrd.n ? rt('pfMrdSpeedV', { n: d.mrd.n, med: d.mrd.med, p90: d.mrd.p90 }) : '—'],
+        [rt('pfMrdWaiting', { n: d.mrd.waiting.length }), d.mrd.waiting.length ? h('div', { class: 'chips' }, d.mrd.waiting.map((x) => h('a', { class: 'tag' + (x.days > 30 ? ' warn' : ''), href: '#/registry/' + encodeURIComponent(x.r.code) + '/finance' }, x.r.code + ' · ' + rt('mrdWait', { n: x.days })))) : '—'],
+        [rt('pfMrdAfterTerm', { n: d.mrd.afterTerm.length }), d.mrd.afterTerm.length ? h('div', { class: 'chips' }, d.mrd.afterTerm.map((r) => h('a', { class: 'tag', href: '#/registry/' + encodeURIComponent(r.code) + '/finance' }, r.code))) : '—'],
+        [rt('pfMrdNoPcr', { n: d.mrd.noPcr.length }), d.mrd.noPcr.length ? h('div', { class: 'chips' }, d.mrd.noPcr.map((r) => h('a', { class: 'tag', href: '#/registry/' + encodeURIComponent(r.code) + '/finance' }, r.code))) : '—'],
+      ]), h('p', { class: 'muted small' }, rt('pfMrdHint', { n: d.mrd.sps }))) : null,
     h('div', { class: 'grid-2 section' },
       h('div', { class: 'card pad' }, h('h2', { class: 'card-title' }, rt('pfFewVisits', { n: d.fewVisits.length })), h('p', { class: 'muted small' }, rt('pfFewVisitsHint')),
         d.fewVisits.length ? h('div', { class: 'chips' }, d.fewVisits.map((r) => h('a', { class: 'tag', href: '#/registry/' + encodeURIComponent(r.code), title: (r.t || {}).name_uk || '' }, r.code))) : h('p', { class: 'muted small' }, '—')),
@@ -2444,3 +2569,185 @@ async function exportPortfolio(d) {
   const a = h('a', { href: URL.createObjectURL(blob), download: rt('pfXFile', { y: y === 'all' ? 'all' : y, date: today() }) + '.xlsx' });
   document.body.append(a); a.click(); a.remove();
 }
+
+// ---- the Mindev payments register ---------------------------------------------------------------
+//
+// Mindev's register of payments from the EIB loan (Ukreximbank project accounts, which the Treasury
+// does not show): per sub-project its contracts (works, supervision, consulting engineer: number,
+// dates, term, contractor, bank guarantee, when the tender results went to the EIB) and every payment
+// request with its way through Mindev and the Ministry of Finance or the bank. Uploaded in the browser
+// by a team member, kept in registry/{code}.mrd (it carries bank accounts and personal tax numbers:
+// private, like the table). Sheets differ by programme; columns are found by their headers.
+const MRD_COLS = [
+  ['code', /Шифр|ID Субпро|^шифр/i], ['purpose', /Призначення платежу/i],
+  ['eib', /Спеціальний фонд|спец\.?\s*фонд|Субвенція \(без ПДВ\)/i], ['vat', /загального фонду/i], ['local', /Місцевий бюдж|місцевого бюджету|Власні кошти/i],
+  ['number', /Номер договору/i], ['date', /Дата заключення/i], ['term', /Строк дії/i], ['org', /Організація/i], ['guarantee', /Банківська гарантія/i],
+  ['pcr', /результатів торгів/i], ['received', /Дата отримання від КБ/i], ['sent', /Дата нав?ленн|Дата направленн/i],
+  ['comment', /Коментарі|Примітка Мінрегіону/i], ['approved', /Підписання, повернення/i], ['paid', /Дата здійснення оплати/i], ['note', /^Примітка\s*$/i],
+];
+const mrdNum = (v) => (typeof v === 'number' ? v : v == null ? null : (/^-?\d[\d\s]*([.,]\d+)?/.exec(String(v).trim()) || [])[0] ? Number(/^-?\d[\d\s]*([.,]\d+)?/.exec(String(v).trim())[0].replace(/\s/g, '').replace(',', '.')) : null);
+function mrdDate(v) {
+  const ok = (y) => y >= 2015 && y <= 2031;
+  if (v instanceof Date && !isNaN(v)) { const d = cellValue(v); return ok(+d.slice(0, 4)) ? d : null; }
+  const all = [...String(v || '').matchAll(/(\d{1,2})\.(\d{1,2})\.(\d{4})/g)].map((m) => `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`).filter((d) => ok(+d.slice(0, 4)));
+  return all.sort().pop() || null;
+}
+const mrdRole = (p) => (/технічн/.test(p) ? 'ts' : /інженер|консульт/.test(p) ? 'csc' : /підряд|робіт/.test(p) ? 'works' : 'other');
+const mrdKind = (p) => (/закриття авансу/.test(p) ? 'advance_close' : /аванс|попередн/.test(p) ? 'advance' : /повернення/.test(p) ? 'refund' : /технічн/.test(p) ? 'ts' : /інженер|консульт/.test(p) ? 'csc' : /робот|робіт/.test(p) ? 'works' : 'other');
+function parseMrd(XLSX, wb) {
+  const out = new Map();
+  for (const name of wb.SheetNames) {
+    const ws = wb.Sheets[name];
+    if (!ws || !ws['!ref']) continue;
+    // Some sheets claim 16 384 columns: only the first 60 hold anything.
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    range.e.c = Math.min(range.e.c, 60);
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null, range });
+    if (rows.length < 4) continue;
+    const width = Math.max(...rows.slice(0, 3).map((r) => (r || []).length));
+    const heads = Array.from({ length: width }, (_, i) => [0, 1, 2].map((k) => String((rows[k] || [])[i] || '').replace(/\s+/g, ' ').trim()).filter(Boolean).join(' / '));
+    const col = {};
+    for (const [key, rx] of MRD_COLS) { const i = heads.findIndex((x) => rx.test(x)); if (i >= 0) col[key] = i; }
+    if (col.code == null || col.purpose == null || col.eib == null) continue;
+    for (const r of rows.slice(2)) {
+      if (!r) continue;
+      const code = codesOf(String(r[col.code] || '').replace(/\s+/g, ''))[0];
+      if (!code) continue;
+      const p = String(r[col.purpose] || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!p || /^загальна вартість/.test(p)) continue;
+      const at = (k) => (col[k] != null ? r[col[k]] : null);
+      const sp = out.get(code) || { sheet: name, contracts: [], payments: [] };
+      out.set(code, sp);
+      const eib = mrdNum(at('eib')), local = (mrdNum(at('local')) || 0) + (mrdNum(at('vat')) || 0);
+      if (/^вартість проекту/.test(p)) {
+        const g = at('guarantee');
+        const gp = typeof g === 'number' ? (g < 1 ? Math.round(g * 1000) / 10 : null) : (/(\d+(?:[.,]\d+)?)\s*%/.exec(String(g || '')) || [])[1];
+        const pcr = at('pcr');
+        sp.contracts.push({ role: mrdRole(p), number: String(at('number') || '').slice(0, 80), date: mrdDate(at('date')), term: mrdDate(at('term')),
+          org: String(at('org') || '').replace(/\s+/g, ' ').slice(0, 200), guarantee: gp != null ? Number(String(gp).replace(',', '.')) : null,
+          // null: the sheet has no such column (older pools); "": the column is there and empty.
+          pcr: col.pcr == null ? null : pcr instanceof Date ? cellValue(pcr) : String(pcr || '').replace(/\s+/g, ' ').slice(0, 60), eib: eib || 0, local: local || 0 });
+      } else if (eib || local) {
+        sp.payments.push({ kind: mrdKind(p), eib: eib || 0, local: local || 0, received: mrdDate(at('received')), sent: mrdDate(at('sent')), approved: mrdDate(at('approved')), paid: mrdDate(at('paid')),
+          comment: String(at('comment') || '').replace(/\s+/g, ' ').slice(0, 300), note: String(at('note') || '').replace(/\s+/g, ' ').slice(0, 200) });
+      }
+    }
+  }
+  // Repeated contract rows (the main contract and its addendum blocks) once each.
+  for (const sp of out.values()) {
+    const seen = new Set();
+    sp.contracts = sp.contracts.filter((c) => { const k = [c.role, c.number, Math.round(c.eib)].join('|'); if (seen.has(k)) return false; seen.add(k); return true; });
+    sp.payments = sp.payments.sort((a, b) => String(a.paid || a.received || '').localeCompare(String(b.paid || b.received || ''))).slice(-200);
+  }
+  return out;
+}
+async function importMrd(file) {
+  if (REG.busy) return;
+  REG.busy = 'mrd';
+  try {
+    setStatus(rt('importing'));
+    const XLSX = await loadXlsx();
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+    const found = parseMrd(XLSX, wb);
+    const regCode = (c) => (REG.rows.has(c) ? c : REG.rows.has(c.replace(/-A$/, '')) ? c.replace(/-A$/, '') : null);
+    const at = new Date().toISOString(), fileName = file.name.slice(0, 200);
+    // Several file codes of one sub-project ("-A" lines) go together.
+    const bySp = new Map();
+    let missing = 0;
+    for (const [code, sp] of found) {
+      const rc = regCode(code);
+      if (!rc) { missing++; continue; }
+      const cur = bySp.get(rc) || { at, file: fileName, sheet: sp.sheet, contracts: [], payments: [] };
+      cur.contracts.push(...sp.contracts.map((c) => Object.assign({ code }, c)));
+      cur.payments.push(...sp.payments.map((x) => Object.assign({ code }, x)));
+      bySp.set(rc, cur);
+    }
+    let n = 0, failed = 0;
+    for (const [rc, mrd] of bySp) {
+      n++;
+      if (n % 10 === 1) setStatus(rt('mrdSaving', { n, total: bySp.size }));
+      try { await cloud.updateRegistry(rc, { mrd }); } catch (e) { failed++; console.error('mrd', rc, e); if (e && e.code === 'permission-denied') throw e; }
+    }
+    const msg = rt('mrdDone', { n: bySp.size - failed, found: found.size, missing });
+    setStatus(msg, failed > 0);
+    toast(msg, { long: true });
+  } catch (e) {
+    console.error('mrd import', e);
+    const msg = (e && e.code === 'permission-denied') ? rt('denied') : (e && e.message) || String(e);
+    setStatus(msg, true);
+    toast(msg, { bad: true, sticky: true });
+  } finally {
+    REG.busy = null;
+  }
+}
+// What the register says is worth a look: payments waiting, slow ones, works paid after the
+// contract's term, works contracts whose tender results the EIB never got.
+function mrdFacts(r) {
+  const m = r.mrd;
+  if (!m) return null;
+  const pays = m.payments || [], works = (m.contracts || []).filter((c) => c.role === 'works');
+  const asOf = String(m.at || today()).slice(0, 10);
+  const lag = (x) => (x.received && x.paid ? dayDiff(x.received, x.paid) : null);
+  const waiting = pays.filter((x) => x.received && !x.paid && dayDiff(x.received, asOf) <= 180).map((x) => Object.assign({ days: dayDiff(x.received, asOf) }, x));
+  const year = pays.filter((x) => x.paid && x.paid >= addDays(asOf, -365) && lag(x) != null && lag(x) >= 0);
+  const slow = year.filter((x) => lag(x) > 30);
+  const term = works.map((c) => c.term).filter(Boolean).sort().pop() || null;
+  const afterTerm = term ? pays.filter((x) => x.kind === 'works' && x.paid && x.paid > term) : [];
+  const noPcr = works.length && pays.some((x) => x.paid) && works.every((c) => c.pcr === '');
+  const sum = (k, f) => pays.filter(f || (() => true)).reduce((a, x) => a + (x[k] || 0), 0);
+  const value = works.reduce((a, c) => a + (c.eib || 0) + (c.local || 0), 0);
+  const paidWorks = sum('eib', (x) => x.paid && ['works', 'advance'].includes(x.kind)) + sum('local', (x) => x.paid && ['works', 'advance'].includes(x.kind));
+  return { asOf, file: m.file, waiting, slow, year, term, afterTerm, noPcr, value, paidEib: sum('eib', (x) => x.paid), paidLocal: sum('local', (x) => x.paid),
+    paidPct: value ? Math.round((paidWorks / value) * 100) : null, last: pays.filter((x) => x.paid).map((x) => x.paid).sort().pop() || null, lag };
+}
+function mrdHints(r) {
+  const f = mrdFacts(r), out = {};
+  if (!f) return out;
+  const add = (k, level, text) => (out[k] = out[k] || []).push({ level, text });
+  const long = f.waiting.filter((x) => x.days > 14);
+  if (long.length) add('r4', long.some((x) => x.days > 30) ? 'high' : 'medium', rt('h_mrdWaiting', { n: long.length, days: Math.max(...long.map((x) => x.days)) }));
+  if (f.slow.length) add('r4', 'medium', rt('h_mrdSlow', { n: f.slow.length, of: f.year.length }));
+  if (f.afterTerm.length) add('rx', 'medium', rt('h_mrdAfterTerm', { n: f.afterTerm.length, date: fdate(f.term) }));
+  if (f.noPcr) add('rx', 'medium', rt('h_mrdNoPcr'));
+  return out;
+}
+function mrdCard(r) {
+  const f = mrdFacts(r), m = r.mrd;
+  const file = h('input', { type: 'file', accept: '.xlsx', hidden: true, onchange: () => file.files[0] && importMrd(file.files[0]) });
+  const upload = h('button', { class: 'btn btn-sm', onclick: () => file.click() }, icon('cloud'), rt('mrdUpload'));
+  if (!f) return h('div', { class: 'card pad section' }, h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('mrdTitle')), h('div', { class: 'row' }, upload, file)), h('p', { class: 'muted small' }, rt('mrdNone')));
+  const kindL = (k) => rt('mrdK_' + k);
+  const pays = (m.payments || []).slice().reverse();
+  return h('div', { class: 'card pad section' },
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('mrdTitle')), h('div', { class: 'row' }, h('span', { class: 'muted small' }, rt('mrdAsOf', { date: fdate(f.asOf), file: f.file || '' })), upload, file)),
+    kv([
+      [rt('mrdPaid'), join([rt('mrdEib', { sum: money(f.paidEib) }), rt('mrdLocal', { sum: money(f.paidLocal) }), f.paidPct != null ? rt('mrdPct', { pct: f.paidPct }) : null])],
+      [rt('mrdLast'), f.last ? fdate(f.last) : null],
+      [rt('mrdWaitingL'), f.waiting.length ? h('span', { class: f.waiting.some((x) => x.days > 14) ? 'bad' : '' }, rt('mrdWaitingV', { n: f.waiting.length, days: Math.max(...f.waiting.map((x) => x.days)) })) : rt('mrdNoWaiting')],
+      [rt('mrdSpeed'), f.year.length ? rt('mrdSpeedV', { med: median(f.year.map(f.lag)), n: f.year.length, slow: f.slow.length }) : null],
+      [rt('mrdTerm'), f.term ? h('span', { class: f.afterTerm.length ? 'bad' : '' }, join([fdate(f.term), f.afterTerm.length ? rt('mrdAfterTerm', { n: f.afterTerm.length }) : null])) : null],
+    ]),
+    h('h3', { class: 'card-sub', style: 'margin-top:14px' }, rt('mrdContracts')),
+    h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
+      h('thead', null, h('tr', null, [rt('pfKind'), rt('sheetContract'), rt('mrdOrg'), rt('mrdSum'), rt('mrdGuarantee'), rt('mrdPcr')].map((x) => h('th', null, x)))),
+      h('tbody', null, (m.contracts || []).map((c) => h('tr', null,
+        td(rt('pfKind'), null, rt('role_' + (c.role === 'other' ? 'other' : c.role))),
+        td(rt('sheetContract'), { class: 'num' }, join([c.number && '№ ' + c.number, c.date && fdate(c.date), c.term && rt('mrdTo', { date: fdate(c.term) })])),
+        td(rt('mrdOrg'), { class: 'w-party' }, c.org || '—'),
+        td(rt('mrdSum'), { class: 'num' }, join([money(c.eib), c.local ? '+ ' + money(c.local) : null])),
+        td(rt('mrdGuarantee'), { class: 'num' }, c.guarantee != null ? h('span', { class: c.guarantee > 5 ? 'bad' : '' }, ni.format(c.guarantee) + '%') : '—'),
+        td(rt('mrdPcr'), null, c.pcr ? c.pcr : c.pcr === '' && c.role === 'works' ? h('span', { class: 'warn-text' }, rt('mrdNoPcrShort')) : '—')))))),
+    h('h3', { class: 'card-sub', style: 'margin-top:14px' }, rt('mrdPayments', { n: pays.length })),
+    h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
+      h('thead', null, h('tr', null, [rt('mrdReceived'), rt('mrdPaidOn'), rt('mrdDays'), rt('mrdWhat'), rt('mrdEibCol'), rt('mrdLocalCol'), rt('mrdNote')].map((x) => h('th', null, x)))),
+      h('tbody', null, pays.slice(0, 60).map((x) => {
+        const d = f.lag(x), wait = !x.paid && x.received ? dayDiff(x.received, f.asOf) : null;
+        return h('tr', { class: !x.paid ? 'row-warn' : '' },
+          td(rt('mrdReceived'), { class: 'num' }, fdate(x.received)), td(rt('mrdPaidOn'), { class: 'num' }, x.paid ? fdate(x.paid) : h('span', { class: 'warn-text' }, rt('mrdWait', { n: wait != null ? wait : '?' }))),
+          td(rt('mrdDays'), { class: 'num' + (d > 30 ? ' bad' : '') }, d != null ? String(d) : '—'), td(rt('mrdWhat'), null, kindL(x.kind)),
+          td(rt('mrdEibCol'), { class: 'num' }, money(x.eib)), td(rt('mrdLocalCol'), { class: 'num' }, x.local ? money(x.local) : '—'),
+          td(rt('mrdNote'), { class: 'w-text small' }, join([x.note, x.comment && x.comment !== 'опрацьовано' ? x.comment : null])));
+      })))),
+    h('p', { class: 'muted small' }, rt('mrdHint')));
+}
+const median = (a) => { const s = a.filter((x) => x != null).sort((x, y) => x - y); return s.length ? s[Math.floor((s.length - 1) / 2)] : null; };
