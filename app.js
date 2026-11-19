@@ -2065,9 +2065,10 @@ function trackedPage(preset) {
   if (f.which && !tests[f.which]) f.which = '';
   // How the list is grouped: by what needs doing (default), or by sub-project, programme, region,
   // buyer, contractor; remembered on this device.
-  const GROUPS = ['action', 'subproject', 'programme', 'region', 'buyer', 'supplier', 'none'];
-  let groupBy = 'action';
-  try { groupBy = GROUPS.includes(localStorage.getItem('trGroup')) ? localStorage.getItem('trGroup') : 'action'; } catch (e) { /* private mode */ }
+  // By buyer unless one picked another way on this device.
+  const GROUPS = ['buyer', 'action', 'subproject', 'programme', 'region', 'supplier', 'none'];
+  let groupBy = 'buyer';
+  try { groupBy = GROUPS.includes(localStorage.getItem('trGroup')) ? localStorage.getItem('trGroup') : 'buyer'; } catch (e) { /* private mode */ }
   const closed = (r) => r.row && !isTender(r) && ['terminated', 'cancelled'].includes(r.row.status);
   function actionGroup(r) {
     if (!r.row) return 'pending';
