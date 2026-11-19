@@ -304,7 +304,7 @@ async function importFile(file) {
     const failed = (res && res.failed) || [];
     const msg = rt('importDone', { n: rows.length - failed.length, t: tenders }) + (failed.length ? ' · ' + rt('importFailed', { list: failed.slice(0, 10).join(', ') }) : '');
     setStatus(msg, failed.length > 0);
-    toast(msg, failed.length ? { sticky: true } : undefined);
+    toast(msg, failed.length ? { bad: true, sticky: true } : { long: true });
   } catch (e) {
     console.error('registry import', e);
     const msg = (e && e.code === 'permission-denied') ? rt('denied') : (e && e.message) || String(e);
@@ -430,7 +430,7 @@ async function trackAll(rows) {
   }
   if (added) nudgeSync();
   setStatus(rt('trackDone', { added, already, failed }), failed > 0);
-  toast(rt('trackDone', { added, already, failed }), { sticky: true });
+  toast(rt('trackDone', { added, already, failed }), { long: true });
 }
 
 async function refreshMany(rows) {
@@ -453,7 +453,7 @@ async function refreshMany(rows) {
   REG.busy = null;
   const msg = rt('refreshDone', { linked, auto, cand, none, noName }) + (failed ? ' · ' + rt('refreshFailed', { n: failed }) : '');
   setStatus(msg, !!failed);
-  toast(msg, { sticky: true });
+  toast(msg, { long: true });
 }
 
 // The works contract of a sub-project: the latest signed one of its linked procedures.

@@ -191,9 +191,10 @@ function toast(text, opts) {
   const el = h('div', { class: 'toast' + (opts.bad ? ' bad' : '') }, h('span', null, text),
     opts.action ? h('button', { class: 'toast-btn', onclick: () => { el.remove(); opts.action.run(); } }, opts.action.label) : null,
     opts.link ? h('a', { class: 'toast-btn', href: opts.link.href, target: '_blank', rel: 'noopener noreferrer' }, opts.link.label) : null,
-    opts.sticky ? h('button', { class: 'toast-x', 'aria-label': t('ui.close'), onclick: () => el.remove() }, '×') : null);
+    h('button', { class: 'toast-x', 'aria-label': t('ui.close'), onclick: () => el.remove() }, '×'));
   box.append(el);
-  if (!opts.sticky) setTimeout(() => el.remove(), opts.bad ? 7000 : opts.link ? 9000 : 3500);
+  // A result to read stays a little longer; only what waits for an answer (or work in progress) stays.
+  if (!opts.sticky) setTimeout(() => el.remove(), opts.long ? 12000 : opts.bad ? 7000 : opts.link ? 9000 : 3500);
   return el;
 }
 
