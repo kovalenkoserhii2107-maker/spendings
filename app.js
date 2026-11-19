@@ -2472,7 +2472,8 @@ function legalBlock(lg) {
   const e = lg.edr, ck = lg.checked || {};
   const fl = lg.flags || [];
   const stanBad = e && e.stan && !/^зареєстровано/.test(e.stan);
-  return [h('h3', { class: 'card-sub', style: 'margin-top:4px' }, t('lg.title')),
+  const asOf = [ck.edr_at, ck.sanctions_at].filter(Boolean).sort().pop();
+  return [h('h3', { class: 'card-sub', style: 'margin-top:4px' }, t('lg.title'), asOf ? h('span', { class: 'muted small', style: 'font-weight:500' }, ' (' + t('ui.asOf', { date: fdate(asOf.slice(0, 10)) }) + ')') : null),
     fl.length ? h('div', { class: 'chips' }, fl.map((f) => h('span', { class: 'sev ' + f.level }, t('lg.f.' + f.kind)))) : null,
     kv([
       [t('lg.edr'), e ? h('span', null, h('b', { class: stanBad ? 'bad' : '' }, e.stan || '—'),
@@ -2490,8 +2491,7 @@ function legalBlock(lg) {
       [t('lg.amcu'), lg.amcu == null ? h('span', { class: 'muted' }, t('lg.amcuNa'))
         : lg.amcu.length ? h('div', null, lg.amcu.map((x) => h('div', { class: 'small bad' }, join([x.decision, fdate(x.date), x.body, x.court]))))
         : h('span', null, t('lg.amcuClean'))],
-    ]),
-    h('p', { class: 'muted small' }, t('lg.hint', { edr: ck.edr_at ? fdate(ck.edr_at.slice(0, 10)) : '—', sanc: ck.sanctions_at ? fdate(ck.sanctions_at.slice(0, 10)) : '—' }))];
+    ])];
 }
 
 // Who is building: the contractor across Prozorro (volume by year, what it has on its hands, whom it
@@ -2521,11 +2521,11 @@ function contractorCard(s, c) {
         fl.newcomer ? h('span', { class: 'sev medium' }, t('cp.newcomer', { y: p.first_year })) : null,
         bad.length ? h('span', { class: 'sev ' + (bad.length >= 2 ? 'high' : 'medium') }, t('cp.troubled', { n: bad.length })) : null),
       legalBlock((s.undp || {}).legal),
-      h('h3', { class: 'card-sub', style: 'margin-top:12px' }, t('cp.market')),
+      h('h3', { class: 'card-sub', style: 'margin-top:12px' }, t('cp.market'), p.built_at ? h('span', { class: 'muted small', style: 'font-weight:500' }, ' (' + t('ui.asOf', { date: fdate(String(p.built_at).slice(0, 10)) }) + ')') : null),
       kv([
         [t('cp.total'), t('cp.totalV', { n: p.total, sum: money(p.value), y: p.first_year || '—' }) + (p.truncated ? ' ' + t('cp.truncated', { n: p.read }) : '')],
-        [t('cp.active'), h('span', null, t('cp.activeV', { n: p.active.n, sum: money(p.active.value), y: p.active.since }),
-          p.load != null ? h('span', { class: 'muted' }, ' · ' + t('cp.load', { x: p.load, avg: money(p.avg_year) })) : null)],
+        [t('cp.active'), p.active.n ? h('span', null, t('cp.activeV', { n: p.active.n, sum: money(p.active.value), y: p.active.since }),
+          p.load ? h('span', { class: 'muted' }, ' · ' + t('cp.load', { x: p.load, avg: money(p.avg_year) })) : null) : h('span', { class: 'muted' }, t('cp.activeNone', { y: p.active.since }))],
         [t('cp.buyers'), h('span', null, t('cp.buyersN', { n: p.buyers_n }),
           (p.buyers || []).slice(0, 3).map((b) => h('div', { class: 'small' }, b.name, h('span', { class: 'muted' }, ' — ' + b.n + ' · ' + money(b.value)))))],
       ]),
@@ -2537,7 +2537,7 @@ function contractorCard(s, c) {
           h('span', null, x.buyer || x.tid || '', x.value ? h('span', { class: 'faint small' }, ' · ' + money(x.value)) : null,
             (x.bad || []).length ? h('div', { class: 'small bad' }, x.bad.map((b) => (t('sigtype.' + b) !== 'sigtype.' + b ? t('sigtype.' + b) : udWhy(b))).join(' · ')) : null),
           h('span'))))] : h('p', { class: 'muted small' }, t('cp.noOthers')),
-      h('p', { class: 'muted small' }, t('cp.hint', { at: fdate(String(p.built_at || '').slice(0, 10)) })));
+    );
   })();
   return box;
 }

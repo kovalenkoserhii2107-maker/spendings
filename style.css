@@ -740,6 +740,14 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
 .work-form.g > :nth-child(1) { grid-area: k; } .work-form.g > :nth-child(2) { grid-area: b; } .work-form.g > :nth-child(3) { grid-area: n; }
 .work-form.g > :nth-child(4) { grid-area: a; } .work-form.g > :nth-child(5) { grid-area: u; } .work-form.g > :nth-child(6) { grid-area: x; justify-self: start; }
 .tag.mark { border: 0; cursor: pointer; font: inherit; font-size: 12px; }
+.x-modes { display: grid; gap: 8px; margin: 14px 0; }
+.x-mode { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 12px; border-radius: 12px; background: var(--soft); cursor: pointer; }
+.x-mode input { margin-top: 3px; }
+.x-mode:has(input:checked) { outline: 2px solid #000; background: #fff; }
+.x-actions { display: grid; gap: 8px; justify-items: start; }
+.x-actions .btn { white-space: normal; text-align: left; height: auto; min-height: 40px; padding-top: 8px; padding-bottom: 8px; max-width: 100%; }
+.x-status { margin-top: 14px; }
+.x-report { display: grid; gap: 4px; }
 .cp-years { display: flex; align-items: flex-end; gap: 10px; margin: 14px 0 12px; overflow-x: auto; }
 .cp-year { display: grid; justify-items: center; gap: 2px; min-width: 34px; font-size: 11px; }
 .cp-year i { display: block; width: 22px; border-radius: 5px 5px 2px 2px; background: var(--violet); opacity: .7; }
