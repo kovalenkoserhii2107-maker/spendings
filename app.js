@@ -49,6 +49,8 @@ const ICONS = {
   arrow: ['M5 12h14', 'M13 6l6 6-6 6'],
   check: ['M20 6 9 17l-5-5'],
   more: ['M5 12h.01', 'M12 12h.01', 'M19 12h.01'],
+  chevron: ['M6 9l6 6 6-6'],
+  upload: ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4', 'M17 8l-5-5-5 5', 'M12 3v12'],
   gear: ['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z'],
   drive: ['M12 2 2 19h20L12 2z', 'M7 12h10', 'M2 19l5-7', 'M22 19l-5-7'],
   db: ['M12 8c4.4 0 8-1.3 8-3s-3.6-3-8-3-8 1.3-8 3 3.6 3 8 3z', 'M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5', 'M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3'],
@@ -671,6 +673,33 @@ function shell(route, page) {
     h('nav', { class: 'tabbar', 'aria-label': t('nav.label'), style: '--tabs:' + navItems().length },
       navItems().map(([href, key, ico, label]) => h('a', { href, class: route === key ? 'on' : '' }, icon(ico), h('span', null, t(key === 'eib' ? 'eib.short' : label)), badgeFor(key)))),
   ];
+}
+
+// A button that opens a short list of actions (the less frequent ones of a page). Native <details>:
+// keyboard and screen readers work as they are; a click elsewhere or Escape closes it.
+// items: [label, onclick, icon, hint] or null.
+function actionMenu(label, items, ico) {
+  const pop = h('div', { class: 'menu-pop', role: 'menu' });
+  const d = h('details', { class: 'menu' }, h('summary', { class: 'btn', 'aria-haspopup': 'menu' }, ico ? icon(ico) : null, label, icon('chevron')), pop);
+  for (const it of items.filter(Boolean)) {
+    const [text, onclick, ic, hint] = it;
+    pop.append(h('button', { class: 'menu-item', role: 'menuitem', type: 'button', onclick: () => { d.open = false; onclick(); } },
+      ic ? icon(ic) : h('span', { class: 'ico' }), h('span', null, h('b', null, text), hint ? h('small', null, hint) : null)));
+  }
+  return d;
+}
+document.addEventListener('click', (e) => { document.querySelectorAll('details.menu[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; }); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('details.menu[open]').forEach((d) => { d.open = false; }); });
+
+// Search and its filter fields: in one row on a wide screen; on a phone the search and a "Filters (n)"
+// button, the fields opening under it.
+function filterBar(search, fields, active) {
+  const box = h('div', { class: 'filter-fields' }, fields);
+  const toggle = h('button', { class: 'btn filter-toggle', type: 'button', 'aria-expanded': 'false', onclick: () => {
+    const open = box.classList.toggle('open');
+    toggle.setAttribute('aria-expanded', String(open));
+  } }, t('ui.filters'), active ? h('em', { class: 'count' }, active) : null);
+  return h('div', { class: 'table-tools filters' }, search, toggle, box);
 }
 
 function pageHead(eyebrow, title, lead, side) {
@@ -2068,7 +2097,9 @@ function execObs(s) {
   return sig.map((g) => label('sigtype.', g.type)).filter((v, i, a) => a.indexOf(v) === i).join('; ');
 }
 
-const trackingHead = () => pageHead(t('tr.eyebrow'), titleGrad(t('tr.title1'), t('tr.title2')), null);
+// The page is named as its menu item: for the team "Contracts on control", for others "What I follow".
+const trackingHead = () => (isTeam() ? pageHead(t('tr.teamEyebrow'), titleGrad(t('tr.teamTitle1'), t('tr.teamTitle2')), null)
+  : pageHead(t('tr.eyebrow'), titleGrad(t('tr.title1'), t('tr.title2')), null));
 
 function trackedPage(preset) {
   if (preset === 'orgs') {
@@ -2180,7 +2211,7 @@ function trackedPage(preset) {
         h('div', { class: 'tl-meta' },
           join([groupBy === 'subproject' ? null : spCodeOf(x), groupBy === 'programme' ? null : (x && x.programme) || (x && x.eib ? t('eib.short') : null)]),
           newN ? h('span', { class: 'tl-new' }, t('tr.newN', { n: newN })) : null,
-          !r.mine ? h('span', { class: 'faint' }, t('tr.sharedBy', { who: p.fromName || '—' })) : null),
+          !r.mine && !r.team && p.fromName ? h('span', { class: 'faint' }, t('tr.sharedBy', { who: p.fromName })) : null),
         alerts.length ? h('div', { class: 'tl-alerts' }, alerts.slice(0, 3).map((a) => h('span', { class: HIGH.includes(a) ? 'high' : 'medium' }, t('tra.' + a))),
           alerts.length > 3 ? h('span', { class: 'more' }, '+' + (alerts.length - 3)) : null) : null,
         ev ? h('div', { class: 'tl-ev clamp1' }, h('span', { class: 'num' }, fdate(x.changed_at)), ' ', eventText(ev)) : null),
@@ -2230,7 +2261,7 @@ function trackedDossier(id) {
   const sharedPick = isSharedWithMe(id) ? state.mine.shared.get(id) : null;
   (async () => {
     let s = null;
-    if (pick && trackedRow(id)) {  // only one's own contracts and those shared with one
+    if ((pick || isTeam()) && trackedRow(id)) {  // one's own, those shared with one, and the team's
       try { s = await loadTracked(id); } catch (e) { /* not written yet */ }
     }
     if (!s) {
@@ -2298,7 +2329,11 @@ function trackedDossier(id) {
     fill(box,
       h('div', { class: 'org-head' },
         h('div', null,
-          h('div', { class: 'eyebrow' }, h('a', { href: sharedPick ? '#/tracked/shared' : '#/tracked', style: 'text-decoration:none' }, '← ' + (sharedPick ? t('tr.sharedTab') : t('nav.tracked')))),
+          (() => { const sp = typeof spOfTid === 'function' ? spOfTid(s.tid) : null;
+            return h('nav', { class: 'crumbs', 'aria-label': t('nav.tracked') },
+              sp ? [h('a', { href: '#/' }, t('nav.sps')), h('span', { 'aria-hidden': 'true' }, '/'), h('a', { href: '#/registry/' + encodeURIComponent(sp.code) + '/contracts' }, sp.code)]
+                : h('a', { href: sharedPick ? '#/tracked/shared' : '#/tracked' }, sharedPick ? t('tr.sharedTab') : t('nav.tracked')),
+              h('span', { 'aria-hidden': 'true' }, '/'), h('span', null, t('dos.crumb'))); })(),
           h('h1', { class: 'org-title' }, t('dos.heading', { n: c.number || '—', date: fdate(c.signed) })),
           h('div', { class: 'chips' },
             h('span', { class: 'pz-st ' + (c.status === 'active' ? 'ok' : 'run') }, label('pzc.', c.status)),
@@ -2330,8 +2365,17 @@ function trackedDossier(id) {
       h('div', { class: 'card pad section' }, trackedBar(tt, s.acts_sum),
         h('div', { class: 'bar-label' }, h('span', null, t('tr.paidOf', { paid: money(tt.paid_total || tt.paid), value: money(tt.value) })), h('span', null, s.acts_sum ? t('tr.actsSum', { sum: money(s.acts_sum) }) : '')),
         progressLine(s)),
-      partiesCard(t0, c),
-      contractorCard(s, c),
+      // The rest by tabs: who and how it goes, the procurement, the money, the checks, the papers.
+      dossierTabs([
+        ['overview', () => [partiesCard(t0, c), contractorCard(s, c),
+      h('div', { class: 'grid-2 section' },
+        h('div', { class: 'card pad' },
+          h('h2', { class: 'card-title' }, t('tr.stages')),
+          stageRows.length ? h('div', { class: 'explain' }, stageRows) : h('p', { class: 'muted small' }, t('pz.noTerms')),
+          delivery.length ? h('div', { class: 'explain', style: 'margin-top:8px' }, delivery.map((m) => h('div', null, h('span', null, h('b', null, label('pzm.type.', m.type) + '. '), milestoneText(m))))) : null),
+        h('div', { class: 'card pad' },
+          h('h2', { class: 'card-title' }, t('tr.history')), histPills, hist))]],
+        ['procurement', () => [
       procurementCard(s, c),
       rulesCard(s),
       s.related ? relatedCard(s.related, t0) : null,
@@ -2339,16 +2383,9 @@ function trackedDossier(id) {
         h('div', { class: 'qs-contracts' }, t0.other_contracts.map((oc) => h('div', { class: 'qs-contract' },
           h('div', null, h('b', null, t('dos.heading', { n: oc.number || '—', date: fdate(oc.signed) })),
             h('div', { class: 'cell-sub' }, join([(oc.suppliers || []).map((x) => x.name).join(', '), oc.value ? money(oc.value.amount, oc.value.currency) : null, label('pzc.', oc.status)]))),
-          oc.status !== 'cancelled' ? trackButton({ edrpou: t0.buyer, name: t0.buyer_name, role: 'buyer' }, Object.assign({}, t0, { tid: s.tid }), oc) : null)))) : null,
+          oc.status !== 'cancelled' ? trackButton({ edrpou: t0.buyer, name: t0.buyer_name, role: 'buyer' }, Object.assign({}, t0, { tid: s.tid }), oc) : null)))) : null]],
+        ['money', () => [
       fundingCard(s, t0),
-      complianceCard(s),
-      h('div', { class: 'grid-2 section' },
-        h('div', { class: 'card pad' },
-          h('h2', { class: 'card-title' }, t('tr.stages')),
-          stageRows.length ? h('div', { class: 'explain' }, stageRows) : h('p', { class: 'muted small' }, t('pz.noTerms')),
-          delivery.length ? h('div', { class: 'explain', style: 'margin-top:8px' }, delivery.map((m) => h('div', null, h('span', null, h('b', null, label('pzm.type.', m.type) + '. '), milestoneText(m))))) : null),
-        h('div', { class: 'card pad' },
-          h('h2', { class: 'card-title' }, t('tr.history')), histPills, hist)),
       h('div', { class: 'table-card section' },
         h('div', { class: 'table-tools' }, h('b', null, t('tr.payments'))),
         sure.length ? payTable(sure) : h('div', { class: 'empty' }, t('dos.noPayments')),
@@ -2358,7 +2395,9 @@ function trackedDossier(id) {
           h('span', null, t('kind.addendum') + ' № ' + (a.number || '—') + (a.type === 1 ? ' · ' + t('dos.priceUp') : a.type === 0 ? ' · ' + t('dos.priceDown') : '')),
           h('span', { class: 'num' }, a.amount ? money(a.amount) : ''))))) : null,
       (s.acts || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('kinds.act')),
-        h('div', { class: 'timeline' }, s.acts.map((a) => h('div', { class: 'ev act' }, h('span', { class: 'd num' }, fdate(a.date)), h('span', null, t('kind.act') + ' № ' + (a.number || '—'), a.published && a.published !== a.date ? h('span', { class: 'faint small' }, ' · ' + t('audit.publishedOn', { date: fdate(a.published) })) : null), h('span', { class: 'num' }, money(a.amount)))))) : null,
+        h('div', { class: 'timeline' }, s.acts.map((a) => h('div', { class: 'ev act' }, h('span', { class: 'd num' }, fdate(a.date)), h('span', null, t('kind.act') + ' № ' + (a.number || '—'), a.published && a.published !== a.date ? h('span', { class: 'faint small' }, ' · ' + t('audit.publishedOn', { date: fdate(a.published) })) : null), h('span', { class: 'num' }, money(a.amount)))))) : null]],
+        ['compliance', () => [complianceCard(s)]],
+        ['docs', () => [
       t0.treasury_only ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('dos.docs')), h('p', { class: 'muted small' }, t('dos.noProzorro')))
         : docsCard(id, c, t0, freshDocs),
       isTracked(id) ? shareCard(id) : null,
@@ -2367,16 +2406,32 @@ function trackedDossier(id) {
         h('div', { class: 'review-form' }, h('label', { class: 'field grow' }, note), saveNote),
         h('p', { class: 'muted small' }, join([pick && pick.addedAt ? t('tr.addedAt', { at: ftime(pick.addedAt) }) : null, s.payments_checked ? t('tr.checked', { at: fdate(s.payments_checked) }) : null])))
         : h('div', { class: 'card pad section' },
-          h('h2', { class: 'card-title' }, t('tr.sharedTab')),
-          h('p', { class: 'muted' }, sharedPick ? t('tr.sharedBy', { who: sharedPick.fromName || '—' }) + (sharedPick.at ? ' · ' + ftime(sharedPick.at) : '') : ''),
+          h('h2', { class: 'card-title' }, sharedPick ? t('tr.sharedTab') : t('tr.teamItem')),
+          h('p', { class: 'muted' }, sharedPick ? t('tr.sharedBy', { who: sharedPick.fromName || '—' }) + (sharedPick.at ? ' · ' + ftime(sharedPick.at) : '') : t('tr.teamItemText')),
           h('div', { class: 'row after' },
             trackButton(org || { edrpou: s.org }, { tid: s.tid, title: t0.title, buyer_name: t0.buyer_name }, c),
             sharedPick ? h('button', { class: 'btn btn-sm', onclick: async () => {
               if (!confirm(t('tr.removeSharedConfirm'))) return;
               try { await cloud.removeShared(id); location.hash = '#/tracked/shared'; } catch (e) { toast(e.message, { bad: true }); }
-            } }, t('tr.removeShared')) : null)));
+            } }, t('tr.removeShared')) : null))]],
+      ]));
   })();
   return box;
+}
+
+// The dossier's parts as tabs (the choice stays while one goes from contract to contract).
+let DTAB = 'overview';
+function dossierTabs(list) {
+  if (!list.some(([k]) => k === DTAB)) DTAB = list[0][0];
+  const body = h('div');
+  const nav = h('nav', { class: 'section-tabs pills sp-tabs', 'aria-label': t('dos.tabs') });
+  const draw = () => {
+    fill(nav, list.map(([k]) => h('a', { href: '#', class: k === DTAB ? 'on' : '', role: 'tab', 'aria-selected': k === DTAB,
+      onclick: (e) => { e.preventDefault(); DTAB = k; draw(); } }, t('dos.tab.' + k))));
+    fill(body, list.find(([k]) => k === DTAB)[1]());
+  };
+  draw();
+  return [nav, body];
 }
 
 const CHECK_KEYS = ['competition', 'documents', 'guarantees', 'price', 'reconciliation', 'oversight'];

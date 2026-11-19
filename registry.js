@@ -142,6 +142,21 @@ const RG = {
     pfXRating: "Оцінка",
     pfYes: "так", pfAnyBatch: "Усі пули",
     colStage: "Етап", riskShort: "ризик {n}",
+    pfHow: "Як рахуються показники",
+    dataMenu: "Дані",
+    uploadHint: "Compliance Working Table (.xlsx): оновлює реєстр, нічого не стирає",
+    exportHint: "Вписати дані монітора у вашу робочу таблицю",
+    fAttention: "Потребують уваги",
+    fLate: "Прострочені",
+    fSignals: "Нові сигнали",
+    fHigh: "Високий ризик",
+    anyStage: "Усі етапи",
+    sortBy: "Сортування",
+    sort_code: "За кодом",
+    sort_attention: "Спершу ті, що потребують уваги",
+    sort_risk: "За ризиком",
+    sort_late: "За простроченням",
+    sort_visit: "Давно не було виїзду",
     mrdUpload: "Реєстр оплат Мінрозвитку",
     mrdUploadHint: "Завантажити реєстр оплат з коштів позики ЄІБ (xlsx Мінрозвитку)",
     mrdSaving: "Зберігаю оплати: субпроєкт {n} з {total}…",
@@ -397,6 +412,21 @@ const RG = {
     pfXRating: "Rating",
     pfYes: "yes", pfAnyBatch: "All batches",
     colStage: "Stage", riskShort: "risk {n}",
+    pfHow: "How the indicators are counted",
+    dataMenu: "Data",
+    uploadHint: "Compliance Working Table (.xlsx): updates the registry, erases nothing",
+    exportHint: "Write the monitor's data into your working table",
+    fAttention: "Need attention",
+    fLate: "Late",
+    fSignals: "New signals",
+    fHigh: "High risk",
+    anyStage: "All stages",
+    sortBy: "Sort",
+    sort_code: "By code",
+    sort_attention: "Needing attention first",
+    sort_risk: "By risk",
+    sort_late: "By lateness",
+    sort_visit: "Longest without a visit",
     mrdUpload: "Mindev payments register",
     mrdUploadHint: "Upload the register of payments from the EIB loan (Mindev's xlsx)",
     mrdSaving: "Saving payments: sub-project {n} of {total}…",
@@ -1256,7 +1286,7 @@ function adequacyOfSp(r, last) {
 
 // ---- list ------------------------------------------------------------------------------------
 
-const REGF = { expert: null, programme: '', which: '', q: '', page: 0 };
+const REGF = { expert: null, programme: '', stage: '', which: '', sort: 'code', q: '', page: 0 };
 
 function registryPage() {
   if (REG.access === undefined) return [h('div', { class: 'card empty section' }, t('ui.loading'))];
@@ -1277,17 +1307,19 @@ function registryPage() {
   } });
   const drawRefresh = () => { const n = ofExpert().length; fill(refreshBtn, icon('refresh'), n ? rt('refreshN', { n }) : rt('refresh')); refreshBtn.title = n ? REGF.expert : rt('pickExpert'); };
   drawRefresh();
-  const head = pageHead(rt('eyebrow'), titleGrad(rt('title1'), rt('title2')),
-    meta ? rt('imported', { at: ftime(meta.at && meta.at.toDate ? meta.at.toDate().toISOString() : meta.at), by: meta.byName || '—', n: meta.rows }) : rt('noTable'),
-    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => file.click() }, icon('cloud'), rt('upload')), file,
-      rows.length ? h('button', { class: 'btn', onclick: () => exportDialog() }, icon('download'), rt('export')) : null,
-      h('button', { class: 'btn', onclick: () => addSpDialog(null) }, icon('plus'), rt('addSp')),
-      rows.length ? h('button', { class: 'btn', onclick: () => mrdFile.click(), title: rt('mrdUploadHint') }, icon('cloud'), rt('mrdUpload')) : null, mrdFile,
-      rows.length ? refreshBtn : null,
-      // Only an expert's own sub-projects, into their own tracking, whatever the filters show.
-      own.length && !AUTO_EXPERTS.includes(REG.access.expert) ? h('button', { class: 'btn btn-dark', onclick: () => { if (confirm(rt('trackConfirm', { n: own.length }))) trackAll(own); } }, icon('star'), rt('trackAll', { n: own.length })) : null, status));
-  const autoNote = autoRows().length ? h('p', { class: 'notice small section' }, rt('autoNote', { who: AUTO_EXPERTS.join(', ') }), ' ',
-    h('button', { class: 'btn btn-sm', onclick: () => autoTrack(true) }, rt('autoRun'))) : null;
+  // One visible action (Prozorro), the rest of the data work in one menu.
+  const dataMenu = actionMenu(rt('dataMenu'), [
+    [rt('upload'), () => file.click(), 'upload', rt('uploadHint')],
+    rows.length ? [rt('mrdUpload'), () => mrdFile.click(), 'upload', rt('mrdUploadHint')] : null,
+    rows.length ? [rt('export'), () => exportDialog(), 'download', rt('exportHint')] : null,
+    [rt('addSp'), () => addSpDialog(null), 'plus', null],
+    own.length && !AUTO_EXPERTS.includes(REG.access.expert) ? [rt('trackAll', { n: own.length }), () => { if (confirm(rt('trackConfirm', { n: own.length }))) trackAll(own); }, 'star', null] : null,
+  ], 'db');
+  const lead = h('span', null, meta ? rt('imported', { at: ftime(meta.at && meta.at.toDate ? meta.at.toDate().toISOString() : meta.at), by: meta.byName || '—', n: meta.rows }) : rt('noTable'),
+    autoRows().length ? h('span', { class: 'lead-sub' }, rt('autoNote', { who: AUTO_EXPERTS.join(', ') }), ' ',
+      h('button', { class: 'linkish', type: 'button', onclick: () => autoTrack(true) }, rt('autoRun'))) : null);
+  const head = pageHead(rt('eyebrow'), titleGrad(rt('title1'), rt('title2')), lead,
+    h('div', { class: 'head-actions' }, rows.length ? refreshBtn : null, dataMenu, file, mrdFile, status));
   const orphans = Object.entries((meta && meta.orphans) || {});
   // Payments the table's Payments sheet has under codes its SPs sheet has no row for.
   const orphanNote = orphans.length ? h('details', { class: 'notice small section orphans' },
@@ -1297,36 +1329,64 @@ function registryPage() {
   if (!rows.length) return [head];
   const experts = [...new Set(rows.map((r) => (r.t || {}).expert).filter(Boolean))].sort();
   const progs = [...new Set(rows.map((r) => (r.t || {}).programme).filter(Boolean))].sort();
+  // What each row is, worked out once per drawing: stage, news, risk, the expert's work.
+  const facts = new Map(rows.map((r) => {
+    const st = spStage(r), news = spNews(spTracked(r)), wk = spWork(r), f = mrdFacts(r);
+    const overdueTask = wk.next && wk.next.due && wk.next.due < today();
+    const waiting = f ? f.waiting.filter((x) => x.days > 14).length : 0;
+    return [r.code, { st, news, wk, rating: overallRating(scoresOf(r).scores), overdueTask, waiting,
+      attention: !!(st.late || news.signals.length || overdueTask || waiting) }];
+  }));
+  const F = (r) => facts.get(r.code);
   const tests = {
-    nolink: (r) => !spTids(r).length, linked: (r) => spTids(r).length > 0,
-    risk: (r) => ['high', 'medium'].includes(worst(allRisk(r))), nocontract: (r) => !mainContract(r),
+    attention: (r) => F(r).attention, late: (r) => !!F(r).st.late, signals: (r) => F(r).news.signals.length > 0,
+    high: (r) => F(r).rating === 3, nolink: (r) => !spTids(r).length, nocontract: (r) => ['prep', 'tender', 'retender'].includes(F(r).st.stage),
   };
-  function filtered() {
+  const SORTS = {
+    code: (a, b) => a.code.localeCompare(b.code),
+    attention: (a, b) => (F(b).attention - F(a).attention) || ((F(b).rating || 0) - (F(a).rating || 0)) || a.code.localeCompare(b.code),
+    risk: (a, b) => ((F(b).rating || 0) - (F(a).rating || 0)) || a.code.localeCompare(b.code),
+    late: (a, b) => ((F(b).st.late || 0) - (F(a).st.late || 0)) || a.code.localeCompare(b.code),
+    visit: (a, b) => String(F(a).wk.lastVisit || '').localeCompare(String(F(b).wk.lastVisit || '')) || a.code.localeCompare(b.code),
+  };
+  if (!SORTS[REGF.sort]) REGF.sort = 'code';
+  // The filters of the fields first; the quick chips count within them.
+  function base() {
     const words = REGF.q.toLowerCase().split(/\s+/).filter(Boolean);
     return rows.filter((r) => {
       const tt = r.t || {};
       if (REGF.expert && tt.expert !== REGF.expert) return false;
       if (REGF.programme && tt.programme !== REGF.programme) return false;
-      if (REGF.which && !tests[REGF.which](r)) return false;
+      if (REGF.stage && F(r).st.stage !== REGF.stage) return false;
       if (words.length) {
         const m = mainContract(r);
         const text = [r.code, tt.name_uk, tt.name_en, tt.beneficiary, tt.contractor, m && (m.c.suppliers || []).map((s) => s.name + ' ' + s.code).join(' ')].join(' ').toLowerCase();
         if (!words.every((w) => text.includes(w))) return false;
       }
       return true;
-    }).sort((a, b) => a.code.localeCompare(b.code));
+    });
   }
-  const list = h('div');
-  const draw = () => pagedList(list, filtered(), REGF.page, { noSum: true }, (p) => { REGF.page = p; draw(); }, registryTable);
+  const list = h('div'), chipsBox = h('div', { class: 'chips-row' });
+  const draw = () => {
+    const pool = base();
+    if (REGF.which && !tests[REGF.which]) REGF.which = '';
+    const shown = (REGF.which ? pool.filter(tests[REGF.which]) : pool).sort(SORTS[REGF.sort]);
+    const count = (k) => pool.filter(tests[k]).length;
+    fill(chipsBox, pills([['', rt('all'), pool.length], ['attention', rt('fAttention'), count('attention')], ['late', rt('fLate'), count('late')], ['signals', rt('fSignals'), count('signals')],
+      ['high', rt('fHigh'), count('high')], ['nolink', rt('fNoLink'), count('nolink')], ['nocontract', rt('fNoContract'), count('nocontract')]]
+      .filter((p) => p[0] === '' || p[2] || p[0] === REGF.which), REGF.which, (v) => { REGF.which = v; REGF.page = 0; draw(); }));
+    pagedList(list, shown, REGF.page, { noSum: true }, (p) => { REGF.page = p; draw(); }, registryTable);
+  };
   const set = (k) => (e) => { REGF[k] = e.target.value; REGF.page = 0; draw(); if (k === 'expert') drawRefresh(); };
-  const q = h('input', { class: 'input', type: 'search', value: REGF.q, placeholder: rt('search'), 'aria-label': rt('search'), oninput: () => { REGF.q = q.value; REGF.page = 0; draw(); } });
+  const q = h('input', { class: 'input grow', type: 'search', value: REGF.q, placeholder: rt('search'), 'aria-label': rt('search'), oninput: () => { REGF.q = q.value; REGF.page = 0; draw(); } });
   draw();
-  return [head, autoNote, orphanNote, h('div', { class: 'table-card section' },
-    h('div', { class: 'table-tools' },
-      pills([['', rt('all')], ['nolink', rt('fNoLink')], ['linked', rt('fLinked')], ['nocontract', rt('fNoContract')], ['risk', rt('fRisk')]], REGF.which, (v) => { REGF.which = v; REGF.page = 0; draw(); }),
+  return [head, orphanNote, h('div', { class: 'table-card section' },
+    filterBar(q, [
+      select([['', rt('anyStage')]].concat(STAGES.map((x) => [x, rt('stage_' + x)])), REGF.stage, set('stage'), rt('colStage')),
       select([['', rt('anyExpert')]].concat(experts.map((x) => [x, x])), REGF.expert, set('expert'), rt('colExpert')),
       select([['', rt('anyProgramme')]].concat(progs.map((x) => [x, x])), REGF.programme, set('programme'), 'Programme'),
-      q),
+      select(Object.keys(SORTS).map((k) => [k, rt('sort_' + k)]), REGF.sort, set('sort'), rt('sortBy'))], [REGF.stage, REGF.expert, REGF.programme].filter(Boolean).length),
+    chipsBox,
     list)];
 }
 
@@ -1428,18 +1488,18 @@ function registryCard(code, tab) {
   if (!REG.access) return registryPage();
   if (!r) return [h('div', { class: 'card empty section' }, REG.rows.size ? t('pz.notFound') : t('ui.loading'))];
   const tt = r.t || {};
-  const back = h('a', { class: 'btn btn-sm', href: '#/' }, '← ' + rt('nav'));
   tab = SP_TABS.includes(tab) ? tab : 'overview';
   const st = spStage(r), tracked = spTracked(r), news = spNews(tracked);
   const head = h('div', { class: 'org-head section' },
     h('div', null,
-      h('div', { class: 'eyebrow' }, join([r.code, tt.programme, tt.batch && 'Batch ' + tt.batch, tt.office])),
+      // Where one is: the list, then this sub-project (a breadcrumb, not a back button far away).
+      h('nav', { class: 'crumbs', 'aria-label': rt('nav') }, h('a', { href: '#/' }, rt('nav')), h('span', { 'aria-hidden': 'true' }, '/'), h('span', null, join([r.code, tt.programme, tt.batch && 'Batch ' + tt.batch, tt.office]))),
       h('h1', { class: 'org-title' + (String(tt.name_uk || tt.name_en || '').length > 90 ? ' long' : '') }, tt.name_uk || tt.name_en || r.code),
       tt.name_uk && tt.name_en ? h('p', { class: 'muted' }, tt.name_en) : null,
       h('div', { class: 'chips' }, stageChip(st), tt.expert ? h('span', { class: 'tag' }, tt.expert) : null, tt.funding ? h('span', { class: 'tag' }, tt.funding) : null,
         overallRating(scoresOf(r).scores) ? h('span', { class: 'sev ' + ['', 'low', 'medium', 'high'][overallRating(scoresOf(r).scores)] }, rt('overall', { n: overallRating(scoresOf(r).scores) })) : null,
         tt.manual ? h('span', { class: 'tag warn' }, rt('manualTag')) : null)),
-    h('div', { class: 'org-actions' }, h('div', { class: 'row' }, back, tt.manual ? h('button', { class: 'btn btn-sm', onclick: () => addSpDialog(r) }, rt('editSp')) : null, spDream(r) ? ext(dreamUrl(spDream(r)), 'DREAM', 'btn') : null)));
+    h('div', { class: 'org-actions' }, h('div', { class: 'row' }, spDream(r) ? ext(dreamUrl(spDream(r)), 'DREAM', 'btn') : null, tt.manual ? h('button', { class: 'btn', onclick: () => addSpDialog(r) }, rt('editSp')) : null)));
   // One sub-project, its parts as tabs: where it stands, its procurements, its contracts, its money,
   // the expert's work. The address keeps the tab (#/registry/CODE/contracts).
   const count = { procurement: spTids(r).length || (r.tenders || []).length, contracts: spContracts(r).length, work: ((r.work || {}).tasks || []).filter((x) => !x.done).length };
@@ -1470,7 +1530,7 @@ function stageCard(r, st) {
   ];
   const at = { prep: 0, tender: 1, retender: 1, contract: 2, works: 3, done: 4 }[st.stage];
   return h('div', { class: 'card pad section' },
-    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('stageTitle')), stageChip(st)),
+    h('h2', { class: 'card-title' }, rt('stageTitle')),
     h('ol', { class: 'sp-road' }, steps.map(([k, text, done], i) => h('li', { class: (done || (at != null && i < at) ? 'done' : '') + (i === at ? ' now' : '') + (k === 'done' && st.late ? ' late' : '') },
       h('b', null, rt('step_' + k)), text ? h('span', { class: 'small muted' }, text) : null))),
     ['suspended', 'withdrawn'].includes(st.stage) ? h('p', { class: 'notice small' }, rt('stage_' + st.stage)) : null,
@@ -2494,7 +2554,7 @@ function portfolioBody(d) {
       tile('k23', k.k23.n, '', rt('pfSub23'), n('k23'), null),
       tile('k22', v22, '%', rt('pfSub22', { n: k.k22.n, of: k.k22.of }), KPI_TARGET.k22, v22 == null ? null : v22 >= KPI_TARGET.k22),
       tile('k21', v21, '%', rt('pfSub21', { n: k.k21.n, of: k.k21.of }), t21, v21 == null ? null : v21 >= t21)),
-    h('p', { class: 'muted small' }, rt('pfHint')),
+    h('details', { class: 'howto section' }, h('summary', null, rt('pfHow')), h('p', { class: 'muted small' }, rt('pfHint'))),
     h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, rt('pfOverview')),
       kv([
         [rt('pfSps'), String(d.rows.length)],
@@ -2746,7 +2806,8 @@ function mrdCard(r) {
   const kindL = (k) => rt('mrdK_' + k);
   const pays = (m.payments || []).slice().reverse();
   return h('div', { class: 'card pad section' },
-    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('mrdTitle')), h('div', { class: 'row' }, h('span', { class: 'muted small' }, join([rt('mrdAsOf', { date: fdate(f.asOf), file: f.file || '' }), m.by ? rt('mrdBy', { who: m.by }) : null])), upload, file)),
+    // Loading a new register is in the list's "Data" menu; here only when there is none yet.
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('mrdTitle')), h('span', { class: 'muted small' }, join([rt('mrdAsOf', { date: fdate(f.asOf), file: f.file || '' }), m.by ? rt('mrdBy', { who: m.by }) : null]))),
     kv([
       [rt('mrdPaid'), join([rt('mrdEib', { sum: money(f.paidEib) }), rt('mrdLocal', { sum: money(f.paidLocal) }), f.paidPct != null ? rt('mrdPct', { pct: f.paidPct }) : null])],
       [rt('mrdLast'), f.last ? fdate(f.last) : null],
