@@ -48,6 +48,7 @@ SANCTIONS = {
 }
 UA = "Mozilla/5.0"
 EDR_EVERY = timedelta(days=7)
+EDR_MAX_S = 420         # a slow line from abroad must not hold the run up
 DAY = timedelta(days=1)
 
 
@@ -138,7 +139,7 @@ def scan_edr(codes, log=print):
     wanted = {c.encode() for c in codes}
     found = {}
     started = time.time()
-    with _open(EDR_URL, timeout=180) as res:
+    with _open(EDR_URL, timeout=60) as res:
         head = res.read(30)
         sig, _, flag, method, _, _, _, _, _, nl, el = struct.unpack("<IHHHHHIIIHH", head)
         if sig != 0x04034B50 or method != 8:
@@ -150,6 +151,8 @@ def scan_edr(codes, log=print):
             if not chunk:
                 break
             read += len(chunk)
+            if time.time() - started > EDR_MAX_S:
+                raise RuntimeError("ЄДР: за %d с прочитано лише %.0f МБ — спробуємо завтра" % (EDR_MAX_S, read / 1e6))
             buf += dec.decompress(chunk)
             cut = buf.rfind(b"</SUBJECT>")
             if cut < 0:
