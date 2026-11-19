@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import analysis  # noqa: E402
 import contractor  # noqa: E402
+import legal  # noqa: E402
 import eib  # noqa: E402
 import prozorro  # noqa: E402
 import tracked  # noqa: E402
@@ -373,6 +374,17 @@ def sync_tracked(mode="full"):
                         budget_s=240 if mode == "full" else 90, log=lambda m: print(m, flush=True))
     except Exception:  # noqa: BLE001 - profiles are extra, the snapshots stand
         traceback.print_exc()
+    # Legal standing of the contractors, the other bidders and the buyers.
+    if mode == "full":
+        try:
+            codes = set()
+            for r in rows:
+                codes |= {r.get("supplier"), r.get("org")}
+                snap = read_json(os.path.join(TRACKED_DIR, r["key"] + ".json"), None) or {}
+                codes |= set((snap.get("tender") or {}).get("bidder_codes") or [])
+            legal.sync(codes, DATA, log=lambda m: print(m, flush=True))
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
     rows.sort(key=lambda r: (r.get("changed_at") or "", r["key"]), reverse=True)
     write_json(os.path.join(TRACKED_DIR, "index.json"), {"generated_at": now_iso(), "items": rows})
     return rows

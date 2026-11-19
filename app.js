@@ -1736,6 +1736,7 @@ function eventText(e) {
     case 'bids': return t('ev.bids', { old: e.old != null ? e.old : '—', new: e.new });
     case 'subvention': return t('ev.subvention', { old: e.old != null ? ni.format(e.old) : '—', new: e.new != null ? ni.format(e.new) : t('ud.subvDropped'), date: fdate(String(e.edition || '').replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')) });
     case 'matrix': return t('ev.matrix', { old: e.old || '—', new: e.new });
+    case 'legal': return t('ev.legal', { what: t('lg.f.' + e.kind) });
     case 'collusion': return t('ev.collusion', { what: t('co.k.' + e.kind) }) + (e.a ? ' · ' + e.a + (e.b ? ' / ' + e.b : '') : '');
     case 'funding': return t('ev.funding', { old: t('fa.st.' + e.old), new: t('fa.st.' + e.new) }) + (e.gap > 0 ? ' · ' + t('fa.gap') + ' ' + money(e.gap) : '');
     case 'completion_overdue': return t('ev.completionOverdue', { date: fdate(e.end) });
@@ -1747,7 +1748,7 @@ function eventText(e) {
 const eventClass = (e) => ({ payment: 'pay', change: 'add', value: 'add', end: 'add', doc: 'act', act: 'act', due: 'add', complaint: 'bad', complaint_status: 'add', sasu: 'bad', sasu_status: 'bad', matrix: 'bad', subvention: 'add', completion_overdue: 'bad' }[e.type] || '');
 // Kinds of change a user filters by.
 const EVENT_GROUPS = { pay: ['payment', 'due'], docs: ['doc', 'act'], terms: ['change', 'value', 'end', 'timeline', 'bids'], status: ['status', 'tender_status'],
-  control: ['complaint', 'complaint_status', 'sasu', 'sasu_status', 'matrix', 'subvention', 'funding', 'collusion', 'completion_overdue'] };
+  control: ['complaint', 'complaint_status', 'sasu', 'sasu_status', 'matrix', 'subvention', 'funding', 'collusion', 'legal', 'completion_overdue'] };
 const eventGroup = (e) => Object.keys(EVENT_GROUPS).find((g) => EVENT_GROUPS[g].includes(e.type)) || '';
 function eventPills(events, value, onpick) {
   const n = (g) => events.filter((e) => eventGroup(e) === g).length;
@@ -1862,7 +1863,7 @@ function trackedPage(preset) {
           x && x.subproject ? h('span', { class: 'tag eib' }, x.subproject) : null,
           x && x.programme ? h('span', { class: 'tag' }, x.programme) : x && x.eib ? h('span', { class: 'tag eib' }, t('eib.short')) : null,
           tender ? h('span', { class: 'tag' }, t('stage.tender')) : x ? h('span', { class: 'pz-st ' + (x.status === 'active' ? 'ok' : x.status === 'terminated' ? 'off' : 'run') }, label('pzc.', x.status)) : h('span', { class: 'chip warn' }, h('i'), t('tr.pending')),
-          ((x && x.alerts) || []).map((a) => h('span', { class: 'sev ' + (['risk', 'sasu', 'late', 'collusion'].includes(a) ? 'high' : 'medium') }, t('tra.' + a))),
+          ((x && x.alerts) || []).map((a) => h('span', { class: 'sev ' + (['risk', 'sasu', 'late', 'collusion', 'legal'].includes(a) ? 'high' : 'medium') }, t('tra.' + a))),
           newN ? h('span', { class: 'tag pz' }, t('tr.newN', { n: newN })) : null),
         h('b', { class: 'tl-title' }, tender ? t('tr.tenderHeading', { tid: (x && x.tid) || p.tid })
           : (x ? x.number : p.number) && (x ? x.number : p.number) !== '—' ? t('dos.heading', { n: x ? x.number : p.number, date: fdate(x && x.signed) }) : t('pz.draftContract')),
@@ -2444,6 +2445,34 @@ function collusionBlock(list) {
     h('p', { class: 'muted small' }, t('co.hint'))];
 }
 
+// The contractor's legal standing: the state register, sanctions lists, AMCU bid-rigging decisions.
+function legalBlock(lg) {
+  if (!lg) return null;
+  const e = lg.edr, ck = lg.checked || {};
+  const fl = lg.flags || [];
+  const stanBad = e && e.stan && !/^зареєстровано/.test(e.stan);
+  return [h('h3', { class: 'card-sub', style: 'margin-top:4px' }, t('lg.title')),
+    fl.length ? h('div', { class: 'chips' }, fl.map((f) => h('span', { class: 'sev ' + f.level }, t('lg.f.' + f.kind)))) : null,
+    kv([
+      [t('lg.edr'), e ? h('span', null, h('b', { class: stanBad ? 'bad' : '' }, e.stan || '—'),
+        e.registered ? h('span', { class: 'muted' }, ' · ' + t('lg.since', { date: fdate(e.registered) })) : null,
+        e.terminating ? h('div', { class: 'small bad' }, join([fdate(e.terminating.date), e.terminating.reason])) : null,
+        e.bankruptcy ? h('div', { class: 'small bad' }, join([fdate(e.bankruptcy.date), e.bankruptcy.reason])) : null)
+        : h('span', { class: 'muted' }, ck.edr_at ? t('lg.notFound') : t('lg.notYet'))],
+      [t('lg.owners'), e ? join([e.capital != null ? t('lg.capital', { sum: money(e.capital) }) : null,
+        e.founders ? t('lg.founders', { n: e.founders }) : null,
+        e.ubo_absent ? t('lg.uboAbsent') : e.beneficiaries ? t('lg.ubo', { n: e.beneficiaries }) : null,
+        (e.citizenship || []).length ? t('lg.foreign', { list: e.citizenship.join(', ') }) : null]) : null],
+      [t('lg.sanctions'), lg.sanctions == null ? h('span', { class: 'muted' }, t('lg.notYet'))
+        : lg.sanctions.length ? h('div', null, lg.sanctions.map((x) => h('div', { class: 'small bad' }, h('b', null, x.list), ' — ', x.name, x.what ? h('span', { class: 'muted' }, ' · ' + x.what.slice(0, 140)) : null)))
+        : h('span', null, t('lg.clean'))],
+      [t('lg.amcu'), lg.amcu == null ? h('span', { class: 'muted' }, t('lg.amcuNa'))
+        : lg.amcu.length ? h('div', null, lg.amcu.map((x) => h('div', { class: 'small bad' }, join([x.decision, fdate(x.date), x.body, x.court]))))
+        : h('span', null, t('lg.amcuClean'))],
+    ]),
+    h('p', { class: 'muted small' }, t('lg.hint', { edr: ck.edr_at ? fdate(ck.edr_at.slice(0, 10)) : '—', sanc: ck.sanctions_at ? fdate(ck.sanctions_at.slice(0, 10)) : '—' }))];
+}
+
 // Who is building: the contractor across Prozorro (volume by year, what it has on its hands, whom it
 // works for), its other EIB contracts and contracts on control, with what went wrong there.
 function contractorCard(s, c) {
@@ -2453,7 +2482,7 @@ function contractorCard(s, c) {
   (async () => {
     let p = null;
     try { p = await getJSON('data/contractors/' + code + '.json', ver()); } catch (e) { /* not built yet */ }
-    if (!p) { fill(box, h('h2', { class: 'card-title' }, t('cp.title')), h('p', { class: 'muted small' }, t('cp.none'))); return; }
+    if (!p) { fill(box, h('h2', { class: 'card-title' }, t('cp.title')), legalBlock((s.undp || {}).legal), h('p', { class: 'muted small' }, t('cp.none'))); return; }
     // Its other contracts with a serious signal, without the one at hand; one line per contract.
     const seen = new Set(), others = [];
     for (const x of [...(p.tracked || []).filter((x) => x.key !== s.key), ...(p.eib || []).filter((x) => x.tid !== s.tid)]) {
@@ -2470,6 +2499,8 @@ function contractorCard(s, c) {
         fl.overloaded ? h('span', { class: 'sev ' + fl.overloaded }, t('cp.overloaded', { x: p.load })) : null,
         fl.newcomer ? h('span', { class: 'sev medium' }, t('cp.newcomer', { y: p.first_year })) : null,
         bad.length ? h('span', { class: 'sev ' + (bad.length >= 2 ? 'high' : 'medium') }, t('cp.troubled', { n: bad.length })) : null),
+      legalBlock((s.undp || {}).legal),
+      h('h3', { class: 'card-sub', style: 'margin-top:12px' }, t('cp.market')),
       kv([
         [t('cp.total'), t('cp.totalV', { n: p.total, sum: money(p.value), y: p.first_year || '—' }) + (p.truncated ? ' ' + t('cp.truncated', { n: p.read }) : '')],
         [t('cp.active'), h('span', null, t('cp.activeV', { n: p.active.n, sum: money(p.active.value), y: p.active.since }),

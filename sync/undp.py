@@ -17,6 +17,7 @@ import re
 from datetime import date
 
 import contractor
+import legal
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 OPEN_COMPLAINT = {"draft", "claim", "answered", "pending", "accepted"}
@@ -295,6 +296,67 @@ def contractor_record(code, own_key):
             "flags": (prof or {}).get("flags") or None, "load": (prof or {}).get("load")}.items() if v is not None}
 
 
+# ---- legal standing ---------------------------------------------------------------------------
+
+_LEGAL = [None]
+
+
+def _legal():
+    if _LEGAL[0] is None:
+        _LEGAL[0] = legal.load(DATA)
+    return _LEGAL[0]
+
+
+def legal_card(code, signed, today):
+    """What the registers say of the contractor: state, sanctions, AMCU bid-rigging decisions."""
+    data = _legal()
+    rec = (data.get("items") or {}).get(code)
+    if not rec:
+        return None
+    e = rec.get("edr") or {}
+    return {k: v for k, v in {
+        "flags": [{"kind": k, "level": lv} for k, lv in legal.flags(rec, today, signed)],
+        "edr": {k: v for k, v in {"stan": e.get("stan"), "registered": e.get("registered"), "capital": e.get("capital"),
+                                  "terminating": e.get("terminating"), "bankruptcy": e.get("bankruptcy"), "terminated": e.get("terminated"),
+                                  "ubo_absent": e.get("ubo_absent"), "citizenship": e.get("citizenship"),
+                                  "founders": len(e.get("founders") or []) + len(e.get("founder_codes") or []) or None,
+                                  "beneficiaries": len(e.get("beneficiaries") or []) or None}.items() if v is not None} if e else None,
+        "sanctions": rec.get("sanctions"), "amcu": rec.get("amcu"),
+        "checked": {k: data.get(k) for k in ("edr_at", "sanctions_at", "amcu_at") if data.get(k)},
+    }.items() if v is not None}
+
+
+def owner_links(t, c):
+    """The same founder, beneficiary or manager behind two bidders, or behind the winner and the
+    buyer (the ЄДР's people, compared by hash)."""
+    items = _legal().get("items") or {}
+
+    def people(code):
+        e = (items.get(code) or {}).get("edr") or {}
+        return set(e.get("founders") or []) | set(e.get("beneficiaries") or []) | set(e.get("signers") or []), set(e.get("founder_codes") or [])
+
+    def name(code):
+        e = (items.get(code) or {}).get("edr") or {}
+        return (e.get("short") or e.get("name") or code)[:160]
+
+    out = []
+    codes = [x for x in t.get("bidder_codes") or [] if x in items]
+    for i, a in enumerate(codes):
+        pa, ca = people(a)
+        for b in codes[i + 1:]:
+            pb, cb = people(b)
+            if pa & pb or a in cb or b in ca or ca & cb:
+                out.append({"kind": "shared_owner", "level": "high", "a": a, "b": b, "a_name": name(a), "b_name": name(b)})
+    sup = ((c or {}).get("suppliers") or [{}])[0].get("code")
+    buyer = t.get("buyer")
+    if sup and buyer and sup in items and buyer in items:
+        ps, _ = people(sup)
+        bs = set(((items.get(buyer) or {}).get("edr") or {}).get("signers") or [])
+        if ps & bs:
+            out.append({"kind": "buyer_owner", "level": "high", "a": sup, "a_name": name(sup)})
+    return out
+
+
 # ---- the risk matrix --------------------------------------------------------------------------
 
 def overall(sc):
@@ -313,7 +375,7 @@ def overall(sc):
     return 1
 
 
-def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contract_stage, fund=None, coll=None):
+def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contract_stage, fund=None, coll=None, lg=None):
     """Ratings 1–3 with the reasons, where there is something to judge by; 6 (the contractor's
     legal status) stays with the expert."""
     types = {x["type"] for x in signals or []}
@@ -366,6 +428,16 @@ def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contr
         fl = {f["kind"]: f["level"] for f in (record.get("flags") or [])}
         lvl = 3 if n >= 2 or fl.get("overloaded") == "high" else 2 if n or fl else 1
         put("r5", lvl, "troubled:%d" % n if n else None, "overloaded" if "overloaded" in fl else None, "newcomer" if "newcomer" in fl else None)
+    if lg is not None:
+        fl = lg.get("flags") or []
+        hi = [f["kind"] for f in fl if f["level"] == "high"]
+        md = [f["kind"] for f in fl if f["level"] == "medium"]
+        if hi:
+            put("r6", 3, *["legal_" + k for k in hi])
+        elif md:
+            put("r6", 2, *["legal_" + k for k in md])
+        elif lg.get("edr") or lg.get("sanctions") is not None:
+            put("r6", 1)
     if audit is not None:
         if any(m.get("violation") for m in audit):
             put("r7", 3, "sasu_violation")
@@ -392,7 +464,8 @@ def card(t, c, tc, signals, totals, acts_sum, paid, audit, advance, own_key, tod
     comp = complaints(t)
     subv = subvention(t)
     lot = (c or {}).get("lot")
-    coll = [f for f in t.get("collusion") or [] if not f.get("lot") or not lot or f.get("lot") == lot]
+    coll = [f for f in t.get("collusion") or [] if not f.get("lot") or not lot or f.get("lot") == lot] + owner_links(t, c)
+    lg = legal_card(((c or {}).get("suppliers") or [{}])[0].get("code"), (c or {}).get("signed"), today) if contract_stage else None
     record = contractor_record(((c or {}).get("suppliers") or [{}])[0].get("code"), own_key) if contract_stage else None
     value = ((c or {}).get("value") or {}).get("amount") or (t.get("value") or {}).get("amount")
     fund = funding(subv, value, paid, acts, eib_paid, (c or {}).get("start") or (c or {}).get("signed"), today) if contract_stage else None
@@ -402,7 +475,8 @@ def card(t, c, tc, signals, totals, acts_sum, paid, audit, advance, own_key, tod
         "subvention": subv, "contractor": record,
         "funding": fund,
         "collusion": coll if t.get("collusion") is not None else None,
-        "matrix": matrix(c, signals, totals, pr, subv, record, audit, comp, advance, contract_stage, fund, coll),
+        "legal": lg,
+        "matrix": matrix(c, signals, totals, pr, subv, record, audit, comp, advance, contract_stage, fund, coll, lg),
     }.items() if v is not None}
 
 
@@ -436,6 +510,10 @@ def events(old, new, event):
     for f in new.get("collusion") or []:
         if (f.get("kind"), f.get("a"), f.get("b")) not in was and f.get("level") != "low" and old.get("collusion") is not None:
             out.append(event("collusion", kind=f.get("kind"), level=f.get("level"), a=f.get("a_name") or f.get("a"), b=f.get("b_name") or f.get("b")))
+    ol = {f["kind"] for f in (old.get("legal") or {}).get("flags") or []}
+    for f in (new.get("legal") or {}).get("flags") or []:
+        if f["kind"] not in ol and old.get("legal") is not None:
+            out.append(event("legal", kind=f["kind"], level=f["level"]))
     of_, nf = (old.get("funding") or {}).get("status"), (new.get("funding") or {}).get("status")
     if nf and of_ and nf != of_:
         out.append(event("funding", old=of_, new=nf, gap=(new.get("funding") or {}).get("gap")))
