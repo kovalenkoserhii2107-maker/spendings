@@ -380,7 +380,7 @@ def legal_card(code, signed, today):
                                   "ubo_absent": e.get("ubo_absent"), "citizenship": e.get("citizenship"),
                                   "founders": len(e.get("founders") or []) + len(e.get("founder_codes") or []) or None,
                                   "beneficiaries": len(e.get("beneficiaries") or []) or None}.items() if v is not None} if e else None,
-        "sanctions": rec.get("sanctions"), "amcu": rec.get("amcu"),
+        "sanctions": rec.get("sanctions"), "amcu": rec.get("amcu"), "edr_missing": bool(rec.get("edr_missing")) or None,
         "checked": {k: data.get(k) for k in ("edr_at", "sanctions_at", "amcu_at") if data.get(k)},
     }.items() if v is not None}
 

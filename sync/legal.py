@@ -50,6 +50,7 @@ UA = "Mozilla/5.0"
 EDR_EVERY = timedelta(days=7)
 EDR_MAX_S = 420         # a slow line from abroad must not hold the run up
 DAY = timedelta(days=1)
+HOUR = timedelta(hours=1)
 
 
 def _open(url, timeout=120):
@@ -257,16 +258,21 @@ def sync(codes, data_dir, log=print):
     items = {c: dict(v) for c, v in (old.get("items") or {}).items() if c in codes}
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     ago = lambda key, delta: (old.get(key) or "") < time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - delta.total_seconds()))
-    new = {c for c in codes if "edr" not in items.get(c, {})}
+    new = {c for c in codes if "edr" not in items.get(c, {}) and "edr_missing" not in items.get(c, {})}
     out = dict(old, items=items)
-    # data.gov.ua turns automated clients away at times: a failed try waits a day.
-    if codes and (ago("edr_at", EDR_EVERY) or (new and ago("edr_at", DAY))) and ago("edr_tried", DAY):
+    # Weekly, or within the hour for companies not yet looked up; a failed try waits a day.
+    failed = (old.get("edr_tried") or "") > (old.get("edr_at") or "")
+    due = ago("edr_at", EDR_EVERY) or (new and ago("edr_tried", HOUR))
+    if codes and due and (not failed or ago("edr_tried", DAY)):
         out["edr_tried"] = now
         try:
             found = scan_edr(codes, log)
             for c in codes:
                 if c in found:
                     items.setdefault(c, {})["edr"] = found[c]
+                    items[c].pop("edr_missing", None)
+                else:
+                    items.setdefault(c, {})["edr_missing"] = now
             out["edr_at"] = now
         except Exception as e:  # noqa: BLE001 - keep last week's
             log("  ! ЄДР: %s" % e)

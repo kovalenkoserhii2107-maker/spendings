@@ -2779,77 +2779,88 @@ function collusionBlock(list) {
 }
 
 // The contractor's legal standing: the state register, sanctions lists, AMCU bid-rigging decisions.
-function legalBlock(lg) {
-  if (!lg) return null;
+function legalBox(lg) {
+  lg = lg || {};
   const e = lg.edr, ck = lg.checked || {};
-  const fl = lg.flags || [];
   const stanBad = e && e.stan && !/^зареєстровано/.test(e.stan);
   const asOf = [ck.edr_at, ck.sanctions_at].filter(Boolean).sort().pop();
-  return [h('h3', { class: 'card-sub', style: 'margin-top:4px' }, t('lg.title'), asOf ? h('span', { class: 'muted small', style: 'font-weight:500' }, ' (' + t('ui.asOf', { date: fdate(asOf.slice(0, 10)) }) + ')') : null),
-    fl.length ? h('div', { class: 'chips' }, fl.map((f) => h('span', { class: 'sev ' + f.level }, t('lg.f.' + f.kind)))) : null,
+  return h('div', { class: 'cp-box' },
+    h('h3', { class: 'card-sub' }, t('lg.title'), asOf ? h('span', { class: 'cp-asof' }, t('ui.asOf', { date: fdate(asOf.slice(0, 10)) })) : null),
     kv([
       [t('lg.edr'), e ? h('span', null, h('b', { class: stanBad ? 'bad' : '' }, e.stan || '—'),
         e.registered ? h('span', { class: 'muted' }, ' · ' + t('lg.since', { date: fdate(e.registered) })) : null,
         e.terminating ? h('div', { class: 'small bad' }, join([fdate(e.terminating.date), e.terminating.reason])) : null,
         e.bankruptcy ? h('div', { class: 'small bad' }, join([fdate(e.bankruptcy.date), e.bankruptcy.reason])) : null)
-        : h('span', { class: 'muted' }, ck.edr_at ? t('lg.notFound') : t('lg.notYet'))],
+        : h('span', { class: 'muted' }, lg.edr_missing ? t('lg.notFound') : t('lg.notYet'))],
       [t('lg.owners'), e ? join([e.capital != null ? t('lg.capital', { sum: money(e.capital) }) : null,
         e.founders ? t('lg.founders', { n: e.founders }) : null,
         e.ubo_absent ? t('lg.uboAbsent') : e.beneficiaries ? t('lg.ubo', { n: e.beneficiaries }) : null,
         (e.citizenship || []).length ? t('lg.foreign', { list: e.citizenship.join(', ') }) : null]) : null],
       [t('lg.sanctions'), lg.sanctions == null ? h('span', { class: 'muted' }, t('lg.notYet'))
-        : lg.sanctions.length ? h('div', null, lg.sanctions.map((x) => h('div', { class: 'small bad' }, h('b', null, x.list), ' — ', x.name, x.what ? h('span', { class: 'muted' }, ' · ' + x.what.slice(0, 140)) : null)))
-        : h('span', null, t('lg.clean'))],
+        : lg.sanctions.length ? h('div', null, lg.sanctions.map((x) => h('div', { class: 'small bad' }, h('b', null, x.list), ' — ', x.name)))
+        : h('span', null, t('lg.cleanShort'), h('div', { class: 'cell-sub' }, t('lg.lists')))],
       [t('lg.amcu'), lg.amcu == null ? h('span', { class: 'muted' }, t('lg.amcuNa'))
-        : lg.amcu.length ? h('div', null, lg.amcu.map((x) => h('div', { class: 'small bad' }, join([x.decision, fdate(x.date), x.body, x.court]))))
-        : h('span', null, t('lg.amcuClean'))],
-    ])];
+        : lg.amcu.length ? h('div', null, lg.amcu.map((x) => h('div', { class: 'small bad' }, join([x.decision, fdate(x.date), x.body]))))
+        : t('lg.amcuClean')],
+    ]));
 }
+// Kept for the places that still ask for it by its old name.
+const legalBlock = (lg) => (lg ? legalBox(lg) : null);
 
 // Who is building: the contractor across Prozorro (volume by year, what it has on its hands, whom it
 // works for), its other EIB contracts and contracts on control, with what went wrong there.
 function contractorCard(s, c) {
-  const code = ((c.suppliers || [])[0] || {}).code;
+  const sup = (c.suppliers || [])[0] || {};
+  const code = sup.code;
   if (!code || !/^\d{8}$/.test(code)) return null;
   const box = h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('cp.title')), h('p', { class: 'muted small' }, t('ui.loading')));
   (async () => {
     let p = null;
     try { p = await getJSON('data/contractors/' + code + '.json', ver()); } catch (e) { /* not built yet */ }
-    if (!p) { fill(box, h('h2', { class: 'card-title' }, t('cp.title')), legalBlock((s.undp || {}).legal), h('p', { class: 'muted small' }, t('cp.none'))); return; }
+    const lg = (s.undp || {}).legal;
     // Its other contracts with a serious signal, without the one at hand; one line per contract.
     const seen = new Set(), others = [];
-    for (const x of [...(p.tracked || []).filter((x) => x.key !== s.key), ...(p.eib || []).filter((x) => x.tid !== s.tid)]) {
+    for (const x of [...((p || {}).tracked || []).filter((x) => x.key !== s.key), ...((p || {}).eib || []).filter((x) => x.tid !== s.tid)]) {
       const k = x.number || x.tid || x.key;
       if (seen.has(k)) continue;
       seen.add(k); others.push(x);
     }
     const bad = others.filter((x) => (x.bad || []).length);
-    const fl = Object.fromEntries((p.flags || []).map((f) => [f.kind, f.level]));
-    const maxY = Math.max(1, ...(p.years || []).map((y) => y.value));
-    fill(box,
-      h('h2', { class: 'card-title' }, t('cp.title')), h('p', { class: 'small' }, h('b', null, p.name || ((c.suppliers || [])[0] || {}).name || code), h('span', { class: 'muted' }, ' · ' + code)),
-      h('div', { class: 'chips' },
-        fl.overloaded ? h('span', { class: 'sev ' + fl.overloaded }, t('cp.overloaded', { x: p.load })) : null,
-        fl.newcomer ? h('span', { class: 'sev medium' }, t('cp.newcomer', { y: p.first_year })) : null,
-        bad.length ? h('span', { class: 'sev ' + (bad.length >= 2 ? 'high' : 'medium') }, t('cp.troubled', { n: bad.length })) : null),
-      legalBlock((s.undp || {}).legal),
-      h('h3', { class: 'card-sub', style: 'margin-top:12px' }, t('cp.market'), p.built_at ? h('span', { class: 'muted small', style: 'font-weight:500' }, ' (' + t('ui.asOf', { date: fdate(String(p.built_at).slice(0, 10)) }) + ')') : null),
+    const fl = Object.fromEntries(((p || {}).flags || []).map((f) => [f.kind, f.level]));
+    // Everything to look at, in one row under the name.
+    const chips = [
+      ...((lg || {}).flags || []).map((f) => h('span', { class: 'sev ' + f.level }, t('lg.f.' + f.kind))),
+      fl.overloaded ? h('span', { class: 'sev ' + fl.overloaded }, t('cp.overloaded', { x: p.load })) : null,
+      fl.newcomer ? h('span', { class: 'sev medium' }, t('cp.newcomer', { y: p.first_year })) : null,
+      bad.length ? h('span', { class: 'sev ' + (bad.length >= 2 ? 'high' : 'medium') }, t('cp.troubled', { n: bad.length })) : null,
+    ].filter(Boolean);
+    const market = p ? h('div', { class: 'cp-box' },
+      h('h3', { class: 'card-sub' }, t('cp.market'), p.built_at ? h('span', { class: 'cp-asof' }, t('ui.asOf', { date: fdate(String(p.built_at).slice(0, 10)) })) : null),
       kv([
-        [t('cp.total'), t('cp.totalV', { n: p.total, sum: money(p.value), y: p.first_year || '—' }) + (p.truncated ? ' ' + t('cp.truncated', { n: p.read }) : '')],
-        [t('cp.active'), p.active.n ? h('span', null, t('cp.activeV', { n: p.active.n, sum: money(p.active.value), y: p.active.since }),
-          p.load ? h('span', { class: 'muted' }, ' · ' + t('cp.load', { x: p.load, avg: money(p.avg_year) })) : null) : h('span', { class: 'muted' }, t('cp.activeNone', { y: p.active.since }))],
-        [t('cp.buyers'), h('span', null, t('cp.buyersN', { n: p.buyers_n }),
-          (p.buyers || []).slice(0, 3).map((b) => h('div', { class: 'small' }, b.name, h('span', { class: 'muted' }, ' — ' + b.n + ' · ' + money(b.value)))))],
+        [t('cp.total'), h('span', null, t('cp.totalShort', { n: p.total, sum: money(p.value) }), h('div', { class: 'cell-sub' }, t('cp.since', { y: p.first_year || '—' }) + (p.truncated ? ' · ' + t('cp.truncated', { n: p.read }) : '')))],
+        [t('cp.active'), p.active.n ? h('span', null, t('cp.activeShort', { n: p.active.n, sum: money(p.active.value) }),
+          h('div', { class: 'cell-sub' }, join([t('cp.signedSince', { y: p.active.since }), p.load ? t('cp.load', { x: p.load, avg: money(p.avg_year) }) : null])))
+          : h('span', { class: 'muted' }, t('cp.activeNone', { y: p.active.since }))],
+        [t('cp.buyers'), h('span', null, t('cp.buyersShort', { n: p.buyers_n }),
+          h('div', { class: 'cp-buyers' }, (p.buyers || []).slice(0, 3).map((b) => h('div', null, h('span', { class: 'clamp1' }, b.name), h('span', { class: 'num muted' }, b.n + ' · ' + mshort(b.value))))))],
       ]),
-      (p.years || []).length ? h('div', { class: 'cp-years' }, p.years.slice().reverse().map((y) => h('div', { class: 'cp-year', title: money(y.value) },
-        h('i', { style: 'height:' + Math.max(3, Math.round(y.value / maxY * 56)) + 'px' }), h('b', null, y.y), h('small', null, y.n)))) : null,
-      others.length ? [h('h3', { class: 'card-sub', style: 'margin-top:12px' }, t('cp.others', { n: others.length })),
+      (p.years || []).length ? (() => {
+        const maxY = Math.max(1, ...p.years.map((y) => y.value));
+        return h('div', { class: 'cp-years' }, p.years.slice().reverse().map((y) => h('div', { class: 'cp-year', title: money(y.value) },
+          h('i', { style: 'height:' + Math.max(3, Math.round(y.value / maxY * 44)) + 'px' }), h('b', null, y.y), h('small', null, y.n))));
+      })() : null)
+      : h('div', { class: 'cp-box' }, h('h3', { class: 'card-sub' }, t('cp.market')), h('p', { class: 'muted small' }, t('cp.none')));
+    fill(box,
+      h('div', { class: 'card-head' }, h('div', null, h('h2', { class: 'card-title' }, t('cp.title')),
+        h('div', { class: 'cp-name' }, h('b', null, (p && p.name) || sup.name || code), h('span', { class: 'muted num' }, ' · ' + code)))),
+      chips.length ? h('div', { class: 'chips', style: 'margin-top:8px' }, chips) : null,
+      h('div', { class: 'cp-grid' }, legalBox(lg), market),
+      others.length ? [h('h3', { class: 'card-sub', style: 'margin-top:14px' }, t('cp.others', { n: others.length })),
         h('div', { class: 'ev-feed' }, others.slice(0, 10).map((x) => h(x.key ? 'a' : 'div', Object.assign({ class: 'ev-row' + ((x.bad || []).length ? ' bad' : '') }, x.key ? { href: '#/tracked/' + x.key } : {}),
           h('span', { class: 'd num' }, x.number || '—'),
           h('span', null, x.buyer || x.tid || '', x.value ? h('span', { class: 'faint small' }, ' · ' + money(x.value)) : null,
             (x.bad || []).length ? h('div', { class: 'small bad' }, x.bad.map((b) => (t('sigtype.' + b) !== 'sigtype.' + b ? t('sigtype.' + b) : udWhy(b))).join(' · ')) : null),
-          h('span'))))] : h('p', { class: 'muted small' }, t('cp.noOthers')),
-    );
+          h('span'))))] : h('p', { class: 'muted small', style: 'margin-top:12px' }, t('cp.noOthers')));
   })();
   return box;
 }
