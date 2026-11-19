@@ -542,7 +542,7 @@ def card(t, c, tc, signals, totals, acts_sum, paid, audit, advance, own_key, tod
     code = ((c or {}).get("suppliers") or [{}])[0].get("code")
     rl = rules.check(t, c, related=related, advance=advance, acts=acts, paid_total=paid, legal_items=_legal().get("items") or {},
                      profile=contractor.load(code, DATA) if code else None,
-                     docs=list((c or {}).get("docs") or []) + list(t.get("docs") or []), contract_stage=contract_stage)
+                     docs=list((c or {}).get("docs") or []) + list(t.get("docs") or []), contract_stage=contract_stage, subv=subv)
     return {k: v for k, v in {
         "timeline": tl, "bidders": bidders(t, c), "complaints": comp, "price": pr,
         "progress": progress(value, acts_sum, paid, (c or {}).get("end"), today, (c or {}).get("status")) if contract_stage else None,
@@ -591,8 +591,8 @@ def events(old, new, event):
         if f["kind"] not in ol and old.get("legal") is not None:
             out.append(event("legal", kind=f["kind"], level=f["level"]))
     if old.get("rules") is not None:
-        was = {x["key"] for x in old.get("rules") or [] if x.get("st") == "bad"}
-        for x in new.get("rules") or []:
+        was = {x["key"] for x in rules.items(old.get("rules")) if x.get("st") == "bad"}
+        for x in rules.items(new.get("rules")):
             if x.get("st") == "bad" and x["key"] not in was:
                 out.append(event("rule", key=x["key"], level=x.get("level")))
     of_, nf = (old.get("funding") or {}).get("status"), (new.get("funding") or {}).get("status")

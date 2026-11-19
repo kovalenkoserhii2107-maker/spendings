@@ -2769,7 +2769,9 @@ function priceCheckBlock(pc) {
 // The programme's own rules (ПВУ III guidelines, the Procurement Manual and the model tender
 // documents): what the data show broken, what to look at, what to see in the documents, what holds.
 function rulesCard(s) {
-  const list = (s.undp || {}).rules;
+  const rl = (s.undp || {}).rules;
+  const meta = rl && !Array.isArray(rl) ? rl : {};
+  const list = Array.isArray(rl) ? rl : (rl || {}).items;
   if (!list || !list.length) return null;
   const pct = (x) => (x == null ? '—' : ni.format(x) + '%');
   const eur = (x) => (x == null ? '—' : '≈ ' + money(Math.round(x), 'EUR'));
@@ -2781,11 +2783,12 @@ function rulesCard(s) {
       amount: money(p.amount), pct: pct(p.pct), award: fdate(p.award), signed: fdate(p.signed), tids: (p.tids || []).join(', '),
       name: p.name || '—', tid: p.tid || '', registered: fdate(p.registered), years: p.years != null ? ni.format(p.years) : '—',
       best: p.best != null ? money(p.best) : '—', cid: p.cid || '', need: money(p.need), on: fdate(p.on), n: p.n, total: money(p.total),
-      avg: money(p.avg), code: p.code || '', sum: money(p.sum), closed: fdate(p.closed), until: fdate(p.until), covered: p.covered != null ? p.covered : '—' };
+      avg: money(p.avg), code: p.code || '', sum: money(p.sum), within: p.within, years_l: p.years,
+      progs: p.urp3 ? t('rl.progs3') : t('rl.progs2'), closed: fdate(p.closed), until: fdate(p.until), covered: p.covered != null ? p.covered : '—' };
     let key = k + '.' + st;
     if (k === 'method') key = st === 'ok' ? (p.limit && p.eur >= p.limit ? 'method.okIntl' : p.eur != null ? 'method.ok' : 'method.okNoEur')
       : (['negotiation', 'negotiation.quick', 'reporting'].includes(p.method) ? (p.small ? 'method.direct' : 'method.nonComp') : 'method.intl');
-    else if (k === 'bid_security' && st !== 'ok') key = p.amount ? 'bid_security.over' : 'bid_security.none';
+    else if (k === 'bid_security' && (st !== 'ok' || p.optional)) key = p.amount ? 'bid_security.over' : p.optional ? 'bid_security.optional' : 'bid_security.none';
     else if (k === 'standstill' && st !== 'ok') key = p.late ? 'standstill.late' : p.single ? 'standstill.single' : 'standstill.early';
     else if (/_independent$/.test(k)) {
       const sts = (p.who || []).map((w) => w.st);
@@ -2793,10 +2796,10 @@ function rulesCard(s) {
       v.name = who(key === 'indep.ok' ? null : [key.slice(6)]);
     }
     else if (/_share$/.test(k)) key = 'share.' + st;
-    else if (k === 'similar' && st !== 'ok') key = p.best != null ? 'similar.check' : 'similar.none';
-    else if (k === 'overload') key = p.n ? 'overload.found' : 'overload.none';
+    else if (k === 'similar' && st !== 'ok') key = p.count_only ? 'similar.count' : p.best != null ? 'similar.check' : 'similar.none';
+    else if (k === 'overload') { key = p.n ? 'overload.found' : 'overload.none'; v.years = p.years || 5; }
     else if (k === 'pacts' && st !== 'ok') { v.missing = [p.integrity ? null : t('rl.pact.integrity'), p.es ? null : t('rl.pact.es')].filter(Boolean).join(t('rl.and')); }
-    else if (k === 'advance_guarantee') key = p.closed ? 'advance_guarantee.closed' : 'advance_guarantee.open';
+    else if (k === 'advance_guarantee') key = p.by_contract ? 'advance_guarantee.contract' : p.closed ? 'advance_guarantee.closed' : 'advance_guarantee.open';
     let out = t('rl.d.' + key, v);
     if (k === 'overload' && p.avg != null && p.total && p.avg < p.need) out += ' ' + t('rl.d.overload.low', v);
     return out;
@@ -2807,7 +2810,7 @@ function rulesCard(s) {
     return h('div', { class: 'chk ' + cls },
       h('span', { class: 'chk-ico' }, x.st === 'ok' ? '✓' : x.st === 'bad' ? '!' : x.level === 'low' ? '·' : '?'),
       h('div', null, h('b', null, t('rl.k.' + x.key)), h('div', { class: 'small muted' }, text(x)),
-        p.older ? h('div', { class: 'small faint' }, t('rl.older')) : null,
+        p.older ? h('div', { class: 'small faint' }, t('rl.older', { date: fdate(p.older) })) : null,
         x.key === 'overload' && (p.list || []).length ? h('div', { class: 'small', style: 'margin-top:4px' }, p.list.map((c) => h('div', { class: 'num' },
           h('a', { href: pzUrl(c.tid), target: '_blank', rel: 'noopener noreferrer' }, c.tid), ' · ', join([c.number ? '№ ' + c.number : null, fdate(c.signed), money(c.value)])))) : null));
   };
@@ -2819,7 +2822,8 @@ function rulesCard(s) {
       h('div', { class: 'row' }, bad.length ? h('span', { class: 'sev high' }, t('rl.nBad', { n: bad.length })) : null,
         look.length ? h('span', { class: 'sev medium' }, t('rl.nLook', { n: look.length })) : null,
         !bad.length && !look.length ? h('span', { class: 'sev ok' }, t('rl.allOk')) : null)),
-    h('p', { class: 'muted small' }, t('rl.sub')),
+    h('p', { class: 'muted small' }, meta.edition ? join([meta.programme ? t('rl.prog.' + meta.programme) + (meta.tranche ? ', ' + t('rl.tranche', { t: meta.tranche }) : '') : null, t('rl.ed.' + meta.edition)], ' · ') : t('rl.ed.urp3_2026')),
+    meta.edition && !meta.programme ? h('p', { class: 'notice small' }, t('rl.progUnknown')) : null,
     group(t('rl.g.bad'), bad), group(t('rl.g.look'), look), group(t('rl.g.low'), low),
     ok.length ? h('details', { class: 'rules-ok', style: 'margin-top:14px' }, h('summary', { class: 'drive-part-title' }, t('rl.g.ok', { n: ok.length })),
       h('div', { class: 'checklist' }, ok.map(row))) : null,

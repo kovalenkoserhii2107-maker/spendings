@@ -1,7 +1,15 @@
-"""The programme's own rules for a procurement and its contract: «Програма відновлення України ІІІ»,
-its Implementation Guidelines with the Procurement Manual (national procedures) and the model
-tender documents for works, technical supervision (TS) and the consulting engineer (CSC), as
-approved on 2 November 2026 (Mindev letter 18417/31/14-26).
+"""The programme's own rules for a procurement and its contract, by the edition of the
+Implementation Guidelines (PIG, with its Procurement Manual for national procedures) it falls under:
+
+  - urp3_2026: «Програма відновлення України ІІІ», all pools, the edition and model tender documents
+    approved on 2 November 2026 (Mindev letter 18417/31/14-26);
+  - urp3_2024: ПВУ ІІІ, the first edition (2024, FI 97043, Law 3905-IX);
+  - urp_2024:  «Програма з відновлення України» (ПВУ) and «Надзвичайна кредитна програма для
+    відновлення України» (НКПВУ), the edition approved by the EIB on 3 May 2024.
+
+The programme is read from the procurement (its title, plan and funding sources) or the Cabinet's
+subvention line; without it, the most lenient edition's figures are used and nothing is called
+broken, only worth checking.
 
 Each check is {key, st, level, p}: st "ok" (the rule is kept), "bad" (it is not, by the data),
 "check" (the data point at something the expert has to see in the documents), "na" (does not
@@ -31,10 +39,20 @@ SIMILAR_SHARE = 0.30                                             # model TD: a s
 LOAD_SHARE = 0.50                                                # model TD 6.2.4: turnover ≥50% of open contracts
 FINAL_PCT = 95                                                   # PIG 5.8.4: interim payments up to 95%
 GUARANTEE_DAYS = 30                                              # PIG 5.8.3: after the advance is closed
-# The edition these rules come from. Earlier procurements were run under earlier editions of the
-# guidelines, whose figures may differ: there a broken programme rule is shown as one to check.
-EDITION = "2026-11-02"
-LAW = {"standstill", "bid_security_pct"}                         # the law's own rules hold for any date
+
+# What differs between the editions. "from": procurements announced before it were run under an
+# earlier edition still, so there a broken rule is only one to check.
+EDITIONS = {
+    "urp3_2026": {"from": "2026-11-02", "years": 2, "similar": {"n": 1, "within": 7, "share": 0.30}, "turnover": "3of7",
+                  "load": {"years": 5, "urp3": True}, "bid_security": True, "csc_max": 2.0, "advance_30": True, "tranche_b": True},
+    "urp3_2024": {"from": "2024-08-20", "years": 4, "similar": {"n": 2, "within": 7}, "turnover": "4",
+                  "load": {"years": 5, "urp3": False}, "bid_security": True, "csc_max": 2.0},
+    "urp_2024": {"from": "2024-05-03", "years": 4, "similar": {"n": 2, "within": 5}, "turnover": "5",
+                 "load": {"years": 2, "urp3": False}, "bid_security": False, "csc_max": 3.0},
+}
+URP3_TEXT = re.compile(r"(відновлення\s+україни\s*(ІІІ|III|3)(?![\wІ])|\bПВУ\s*(ІІІ|III)(?![\wІ])|3121690|\b7367\b|97\s?043|3905-IX|4611-IX|URP\s*III)", re.I)
+UERP_TEXT = re.compile(r"(надзвичайн\w*\s+кредитн\w*\s+програм|НКПВУ|\bUERP\b|\bERP\b)", re.I)
+URP_TEXT = re.compile(r"(програм\w*\s+з\s+відновлення\s+україни|\bПВУ\b|\bURP\b)", re.I)
 
 ES_PACT = re.compile(r"(екологічн\w*\s+(і|та)\s+соціальн|соціальн\w*\s+(і|та)\s+екологічн|\bE\s*&\s*S\b|environmental\s+and\s+social)", re.I)
 INTEGRITY = re.compile(r"(професійн\w*\s+чесн|доброчесн|integrity|covenant)", re.I)
@@ -52,6 +70,42 @@ def _d(x):
 def _days(a, b):
     a, b = _d(a), _d(b)
     return (b - a).days if a and b else None
+
+
+def _texts(t):
+    out = [t.get("title") or "", t.get("rationale") or ""]
+    for pl in t.get("plan_info") or []:
+        for src in (pl.get("sources") if isinstance(pl, dict) else None) or []:
+            out += [str(src.get("text") or ""), str(src.get("program") or "")]
+    return " ".join(out)
+
+
+def programme(t, subv=None):
+    """(programme, tranche): "urp3" | "urp" | "uerp" | None, and "A" | "B" | None for ПВУ ІІІ."""
+    text = _texts(t)
+    tranche = "B" if "4611" in text else "A" if "3905" in text else None
+    if URP3_TEXT.search(text):
+        return "urp3", tranche
+    if UERP_TEXT.search(text):
+        return "uerp", None
+    if URP_TEXT.search(text):
+        return "urp", None
+    if subv and subv.get("level") == "project":
+        return {"URP III": "urp3", "URP": "urp", "UERP": "uerp"}.get(subv.get("programme")), None
+    return None, None
+
+
+def edition(t, subv=None):
+    """The edition a procurement falls under: (key, programme, tranche, strict)."""
+    prog, tranche = programme(t, subv)
+    day = t.get("date") or ""
+    if prog == "urp3":
+        key = "urp3_2026" if day >= EDITIONS["urp3_2026"]["from"] else "urp3_2024"
+    elif prog in ("urp", "uerp"):
+        key = "urp_2024"
+    else:  # unknown: the newest edition for new procurements, else the most lenient figures
+        key = "urp3_2026" if day >= EDITIONS["urp3_2026"]["from"] else "urp_2024"
+    return key, prog, tranche, bool(prog) and day >= EDITIONS[key]["from"]
 
 
 def kind(t):
@@ -128,12 +182,15 @@ def _eib_rows():
     return _EIB[0]
 
 
-def open_programme_contracts(code, on_day, own_tid):
+def open_programme_contracts(code, on_day, own_tid, with_urp3=True):
     """The supplier's recovery-programme contracts signed before `on_day` and not finished then, at
-    their initial price (its winning bid), as the model TD's form in Annex 10 lists them."""
+    their initial price (its winning bid), as the model TD's form in Annex 10 lists them. The earlier
+    editions count only НКПВУ and ПВУ contracts (with_urp3=False)."""
     out = []
     for t in _eib_rows():
         if t.get("tid") == own_tid or NOT_PROGRAMME.search(t.get("title") or ""):
+            continue
+        if not with_urp3 and programme(t)[0] == "urp3":
             continue
         for c in t.get("contracts") or []:
             if code not in [s.get("code") for s in c.get("suppliers") or []]:
@@ -173,18 +230,25 @@ def _people(items, code):
     return set(e.get("founders") or []) | set(e.get("beneficiaries") or []) | set(e.get("signers") or []), set(e.get("founder_codes") or [])
 
 
-def check(t, c=None, related=None, advance=None, acts=None, paid_total=None, legal_items=None, profile=None, docs=None, contract_stage=True):
-    """The programme's rules for procurement `t` and contract `c`: [{key, st, level, p}]."""
+def items(rl):
+    """The checks of a card's "rules" (a list in snapshots made before the editions were told apart)."""
+    return (rl.get("items") if isinstance(rl, dict) else rl) or []
+
+
+def check(t, c=None, related=None, advance=None, acts=None, paid_total=None, legal_items=None, profile=None, docs=None,
+          contract_stage=True, subv=None):
+    """The programme's rules for procurement `t` and contract `c`:
+    {edition, programme, tranche, strict, items: [{key, st, level, p}]}."""
     k = kind(t)
     if not k:
         return None
     out = []
-
-    strict = (t.get("date") or "") >= EDITION
+    ed_key, prog, tranche, strict = edition(t, subv)
+    ed = EDITIONS[ed_key]
 
     def put(key, st, level="medium", law=False, **p):
         if st == "bad" and not strict and not law:
-            st, p["older"] = "check", EDITION
+            st, p["older" if prog else "unknown"] = "check", ed["from"]
         out.append({"key": key, "st": st, "level": level if st in ("bad", "check") else None, "p": {x: v for x, v in p.items() if v is not None}})
 
     method, lot = t.get("method") or "", (c or {}).get("lot")
@@ -211,7 +275,8 @@ def check(t, c=None, related=None, advance=None, acts=None, paid_total=None, leg
     if k == "works" and method in OPEN and not (t.get("lots") and "lot_guarantee" not in t):
         g, base = _guarantee(t, lot)
         if not g:
-            put("bid_security", "bad", "medium", max=BID_SECURITY_MAX)
+            # Mandatory under ПВУ ІІІ; under ПВУ and НКПВУ the buyer's choice.
+            put("bid_security", "bad" if ed["bid_security"] else "ok", "medium", max=BID_SECURITY_MAX, optional=not ed["bid_security"] or None)
         else:
             pct = round(g / base * 100, 2) if base else None
             put("bid_security", "bad" if pct and pct > BID_SECURITY_MAX + 0.005 else "ok", "medium", law=True, amount=g, pct=pct, max=BID_SECURITY_MAX)
@@ -246,11 +311,12 @@ def check(t, c=None, related=None, advance=None, acts=None, paid_total=None, leg
                     put(key + "_present", "check" if key == "ts" else "bad", "medium", eur=works_eur, limit=CSC_FROM_EUR if key == "csc" else None)
                 continue
             put(key + "_present", "ok", tids=[r.get("tid") for r in mine][:3], eur=works_eur)
-            # 6. Its price: at most 1.5% (TS) or 2% (CSC) of the construction cost (chapters 1–9).
+            # 6. Its price: at most 1.5% (TS) or 2% (CSC; 3% under ПВУ and НКПВУ) of chapters 1–9 of the estimate.
             v = sum(((r.get("value") or {}).get("amount") or 0) for r in mine)
             if works_value and v and contract_stage:
                 pct = round(v / works_value * 100, 2)
-                put(key + "_share", "check" if pct > SHARE_MAX[key] else "ok", "medium", amount=round(v, 2), pct=pct, max=SHARE_MAX[key])
+                top = SHARE_MAX[key] if key == "ts" else ed["csc_max"]
+                put(key + "_share", "check" if pct > top else "ok", "medium", amount=round(v, 2), pct=pct, max=top)
             # 7. Independent of the contractor: not the same company, no shared founder or beneficiary.
             if code and contract_stage:
                 who = {}
@@ -261,7 +327,7 @@ def check(t, c=None, related=None, advance=None, acts=None, paid_total=None, leg
                         continue
                     if sc == code:
                         st_ = "same"
-                    elif sc in items and code in items:
+                    elif (items.get(sc) or {}).get("edr") and (items.get(code) or {}).get("edr"):
                         pa, ca = _people(items, sc)
                         pb, cb = _people(items, code)
                         st_ = "linked" if (pa & pb or sc in cb or code in ca or ca & cb) else "ok"
@@ -275,32 +341,37 @@ def check(t, c=None, related=None, advance=None, acts=None, paid_total=None, leg
 
     if k == "works" and contract_stage and code:
         on_day = t.get("deadline") or (c or {}).get("signed") or day
-        # 8. Experience: two years in construction, a similar contract of at least 30% of the expected value.
+        # 8. Experience: years in construction (2, or 4 under the earlier editions) and similar contracts.
         reg = ((items.get(code) or {}).get("edr") or {}).get("registered")
         if reg and on_day:
             yrs = round(_days(reg, on_day) / 365.25, 1) if _days(reg, on_day) is not None else None
             if yrs is not None:
-                put("age", "check" if yrs < 2 else "ok", "medium", years=yrs, registered=reg)
+                put("age", "check" if yrs < ed["years"] else "ok", "medium", years=yrs, registered=reg, min=ed["years"])
         base = expected.get("amount")
-        if profile and profile.get("top") is not None and base:
+        sim = ed["similar"]
+        if not sim.get("share"):
+            # The earlier editions ask for N similar contracts in so many years, at any price.
+            put("similar", "check", "low", n=sim["n"], within=sim["within"], count_only=True)
+        elif profile and profile.get("top") is not None and base:
             lo = (_d(on_day) - timedelta(days=7 * 365)).isoformat() if _d(on_day) else ""
             prior = [x for x in profile["top"] if not str(x.get("cid") or "").startswith(t.get("tid") or "~")
                      and (x.get("day") or "") >= lo and (x.get("day") or "") <= on_day and x.get("status") != "cancelled"]
             best = max(prior, key=lambda x: x.get("value") or 0, default=None)
-            need = round(base * SIMILAR_SHARE, 2)
+            need = round(base * sim["share"], 2)
             ok = best and (best.get("value") or 0) >= need
             put("similar", "ok" if ok else "check", "medium", need=need, best=(best or {}).get("value"), cid=(best or {}).get("cid"))
-        # 9. Overload: average turnover of 5 years ≥ 50% of the initial price of open programme contracts.
+        # 9. Overload: average turnover (5 years; 2 under ПВУ/НКПВУ) ≥ 50% of the initial price of open
+        # programme contracts (НКПВУ and ПВУ; ПВУ ІІІ too in the 2026 edition).
         if on_day:
-            open_ = open_programme_contracts(code, on_day, t.get("tid"))
+            open_ = open_programme_contracts(code, on_day, t.get("tid"), ed["load"]["urp3"])
             total = round(sum(x["value"] for x in open_), 2)
             need = round(total * LOAD_SHARE, 2)
             avg = (profile or {}).get("avg_year")
             low = bool(total) and avg is not None and avg < need
             put("overload", "check", "medium" if low else "low", n=len(open_), total=total, need=need, avg=avg,
-                on=on_day, list=open_[:12] or None)
+                on=on_day, years=ed["load"]["years"], urp3=ed["load"]["urp3"] or None, list=open_[:12] or None)
         # Tranche B: participants registered in the EU, Ukraine, the Western Balkans, Georgia, Moldova, the EEA.
-        if not re.fullmatch(r"\d{8}|\d{10}", code):
+        if tranche != "A" and prog in ("urp3", None) and not re.fullmatch(r"\d{8}|\d{10}", code):
             put("eligibility", "check", "medium", code=code)
 
     if contract_stage and c:
@@ -317,17 +388,19 @@ def check(t, c=None, related=None, advance=None, acts=None, paid_total=None, leg
                 if got >= advance["sum"] - 1:
                     closed = x.get("date")
                     break
-            until = (_d(closed) + timedelta(days=GUARANTEE_DAYS)).isoformat() if _d(closed) else None
+            # The 2026 edition: valid until the advance is closed and 30 days more; before, as the contract says.
+            until = (_d(closed) + timedelta(days=GUARANTEE_DAYS)).isoformat() if _d(closed) and ed.get("advance_30") else None
             put("advance_guarantee", "check", "low", sum=advance["sum"], pct=advance.get("pct"), closed=closed, until=until,
-                covered=round(min(got, advance["sum"]) / advance["sum"] * 100) if advance["sum"] else None)
+                covered=round(min(got, advance["sum"]) / advance["sum"] * 100) if advance["sum"] else None, by_contract=not ed.get("advance_30") or None)
         # 12. The last 5%: only after the declaration of readiness is registered.
         if value and paid_total and paid_total / value * 100 >= FINAL_PCT:
             put("final_payment", "check", "medium", pct=round(paid_total / value * 100, 1))
-    return out
+    return {"edition": ed_key, "programme": prog, "tranche": tranche, "strict": strict, "items": out}
 
 
-def worst(checks):
+def worst(rl):
     """For the matrix: (high reasons, medium reasons) from the checks the data show as broken."""
-    hi = sorted({"rule_" + x["key"] for x in checks or [] if x["st"] == "bad" and x["level"] == "high"})
-    md = sorted({"rule_" + x["key"] for x in checks or [] if x["st"] == "bad" and x["level"] == "medium"})
+    checks = items(rl)
+    hi = sorted({"rule_" + x["key"] for x in checks if x["st"] == "bad" and x["level"] == "high"})
+    md = sorted({"rule_" + x["key"] for x in checks if x["st"] == "bad" and x["level"] == "medium"})
     return hi, md
