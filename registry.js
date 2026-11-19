@@ -44,7 +44,8 @@ const RG = {
     xWorking: 'Заповнюю таблицю…', xReading: 'Читаю дані договорів на контролі…', xDone: 'Готово: вписано клітинок — {n}. Файл завантажено.',
     xRows: 'Субпроєктів у файлі: {sp}; закупівель із даними Prozorro: {tn}; тижнів журналу: {w}.', xKept: 'Не змінено: заповнених вами — {kept}, з формулами — {formula}.',
     xMissing: 'Немає у файлі ({n}): {list}', xNoWeek: 'Записів журналу без свого тижня в таблиці: {n}.',
-    mark_td: 'ТД перевірено', mark_assist: 'Супровід', mark_monitor: 'Моніторинг', markHint: 'Відмітка команди (стовпці TD Checking / Tender Assistance / Tender Monitoring)', xJournal: 'Журнал', xTasks: 'Завдання', overall: 'Загальна оцінка: {n}', overallHint: 'За формулою робочої таблиці (стовпець M)', acceptHints: 'Прийняти підказки ({n})', from_own: 'оцінка експерта', from_table: 'з таблиці', from_hint: 'підказка — не прийнята', from_none: 'немає даних', orphans: 'Виплати в Payments без рядка в SPs: {list}', thousand: 'тис. грн', subvTitle: 'Субвенція за розпорядженням КМУ', subvBudgetTitle: 'Субвенція громаді за програмою {prog}', subvBudgetNote: 'Цю програму КМУ розподіляє лише по громадах: сума — на всі її проєкти в громаді.', subvOrder: 'Розпорядження № {n}', subvResolution: 'Постанова № {n}', subvOriginal: 'Початково, {date}', subvEdition: 'Ред. {date}',
+    mark_td: 'ТД перевірено', mark_assist: 'Супровід', mark_monitor: 'Моніторинг', markHint: 'Відмітка команди (стовпці TD Checking / Tender Assistance / Tender Monitoring)', xJournal: 'Журнал', xTasks: 'Завдання', overall: 'Загальна оцінка: {n}', overallHint: 'За формулою робочої таблиці (стовпець M)', acceptHints: 'Прийняти підказки ({n})', from_own: 'оцінка експерта', from_table: 'з таблиці', from_hint: 'підказка — не прийнята', from_none: 'немає даних', orphans: 'Виплати в Payments без рядка в SPs: {list}', orphansTitle: 'Оплати без субпроєкту: {n} кодів на {sum}', orphansText: 'На аркуші Payments є суми оплат за цими кодами, але на аркуші SPs рядка з таким кодом немає, тож монітор не може віднести їх до жодного субпроєкту. Можливо, субпроєкт прибрали з SPs або код записано інакше (наприклад, «_A» замість «-A»). Варто додати рядок у SPs або виправити код у Payments.',
+    linkTitle: 'Прив’язати закупівлю вручну', linkHint: 'Вставте ідентифікатор або посилання Prozorro — можна кілька. Монітор перевірить, що закупівля існує, прив’яже її й одразу завантажить дані.', linkPh: 'UA-2026-01-01-000000-a або посилання prozorro.gov.ua', linkBad: 'Не бачу ідентифікатора виду UA-2026-01-01-000000-a', linkEmpty: 'Вставте ідентифікатор закупівлі', linkChecking: 'Перевіряю в Prozorro…', linkNotFound: 'не знайдено в Prozorro: {list}', linkLoading: 'Прив’язано, завантажую дані…', linkDone: 'Прив’язано: {list}', thousand: 'тис. грн', subvTitle: 'Субвенція за розпорядженням КМУ', subvBudgetTitle: 'Субвенція громаді за програмою {prog}', subvBudgetNote: 'Цю програму КМУ розподіляє лише по громадах: сума — на всі її проєкти в громаді.', subvOrder: 'Розпорядження № {n}', subvResolution: 'Постанова № {n}', subvOriginal: 'Початково, {date}', subvEdition: 'Ред. {date}',
     adeqTitle: 'Достатність субвенції цього року', adeqTable: 'у таблиці: {s}', adeqTableNeed: 'Додаткова потреба за таблицею', adeqNoTracked: 'У таблиці: {s}. Щоб монітор оцінив сам, відстежуйте договори субпроєкту.',
     adeqDiff: 'Таблиця каже «{table}», за даними монітора — «{ours}». Варто перевірити.', adeqHint: 'Сума за відстежуваними договорами субпроєкту ({n}): прогноз робіт до 31 грудня на частку кредиту проти залишку субвенції.',
     subvTableEmpty: 'У таблиці субвенцію на рік не заповнено; за чинною редакцією розпорядження — {order}.',
@@ -94,7 +95,8 @@ const RG = {
     xWorking: 'Filling in the table…', xReading: 'Reading the contracts on control…', xDone: 'Done: {n} cells written. The file is downloaded.',
     xRows: 'Sub-projects in the file: {sp}; procurements with Prozorro data: {tn}; journal weeks: {w}.', xKept: 'Left as they are: filled in by you {kept}, with formulas {formula}.',
     xMissing: 'Not in the file ({n}): {list}', xNoWeek: 'Journal entries with no week of their own in the table: {n}.',
-    mark_td: 'TD checked', mark_assist: 'Assistance', mark_monitor: 'Monitoring', markHint: "The team's mark (TD Checking / Tender Assistance / Tender Monitoring columns)", xJournal: 'Journal', xTasks: 'Tasks', overall: 'Overall rating: {n}', overallHint: 'By the working table formula (column M)', acceptHints: 'Accept hints ({n})', from_own: "expert's rating", from_table: 'from the table', from_hint: 'hint — not accepted', from_none: 'no data', orphans: 'Payments with no row in SPs: {list}', thousand: 'thousand UAH', subvTitle: 'Subvention by the CMU order', subvBudgetTitle: 'Subvention to the community under {prog}', subvBudgetNote: 'The CMU spreads this programme by community only: the amount covers all its projects there.', subvOrder: 'Order No. {n}', subvResolution: 'Resolution No. {n}', subvOriginal: 'Original, {date}', subvEdition: 'Ed. {date}',
+    mark_td: 'TD checked', mark_assist: 'Assistance', mark_monitor: 'Monitoring', markHint: "The team's mark (TD Checking / Tender Assistance / Tender Monitoring columns)", xJournal: 'Journal', xTasks: 'Tasks', overall: 'Overall rating: {n}', overallHint: 'By the working table formula (column M)', acceptHints: 'Accept hints ({n})', from_own: "expert's rating", from_table: 'from the table', from_hint: 'hint — not accepted', from_none: 'no data', orphans: 'Payments with no row in SPs: {list}', orphansTitle: 'Payments with no sub-project: {n} codes, {sum}', orphansText: 'The Payments sheet has payments under these codes, but the SPs sheet has no row with such a code, so the monitor cannot put them to any sub-project. The sub-project may have been taken off SPs or the code is written differently (e.g. “_A” instead of “-A”). Add the row to SPs or correct the code in Payments.',
+    linkTitle: 'Link a procurement by hand', linkHint: 'Paste a Prozorro ID or link, several at once if needed. The monitor checks the procurement exists, links it and loads its data at once.', linkPh: 'UA-2026-01-01-000000-a or a prozorro.gov.ua link', linkBad: 'No ID like UA-2026-01-01-000000-a found', linkEmpty: 'Paste a procurement ID', linkChecking: 'Checking in Prozorro…', linkNotFound: 'not found in Prozorro: {list}', linkLoading: 'Linked, loading the data…', linkDone: 'Linked: {list}', thousand: 'thousand UAH', subvTitle: 'Subvention by the CMU order', subvBudgetTitle: 'Subvention to the community under {prog}', subvBudgetNote: 'The CMU spreads this programme by community only: the amount covers all its projects there.', subvOrder: 'Order No. {n}', subvResolution: 'Resolution No. {n}', subvOriginal: 'Original, {date}', subvEdition: 'Ed. {date}',
     adeqTitle: "This year's subvention adequacy", adeqTable: 'table: {s}', adeqTableNeed: 'Additional needs per the table', adeqNoTracked: 'Table: {s}. Track the sub-project\'s contracts for the monitor to estimate it.',
     adeqDiff: 'The table says “{table}”, the monitor\'s data say “{ours}”. Worth checking.', adeqHint: "Sum over the sub-project's tracked contracts ({n}): works forecast to 31 December times the loan share, against the subvention left.",
     subvTableEmpty: 'The table has no subvention for the year; the order in force has {order}.',
@@ -139,7 +141,8 @@ function loadXlsx() {
 
 const LATIN = { А: 'A', В: 'B', С: 'C', Е: 'E', Н: 'H', І: 'I', К: 'K', М: 'M', О: 'O', Р: 'P', Т: 'T', Х: 'X' };
 // "OD05В_01" (Cyrillic В) and "OD05B_01" are the same sub-project.
-const normCode = (s) => String(s || '').trim().toUpperCase().replace(/[АВСЕНІКМОРТХ]/g, (c) => LATIN[c]);
+// "KV05A_06_A" is the "-A" line of KV05A_06 written with an underscore.
+const normCode = (s) => String(s || '').trim().toUpperCase().replace(/[АВСЕНІКМОРТХ]/g, (c) => LATIN[c]).replace(/^([A-Z]{2}\d{2}[A-Z]?_\d{2})_([A-Z])$/, '$1-$2');
 const codesOf = (s) => String(s || '').split(/[\s,;]+/).map(normCode).filter((x) => /^[A-Z]{2}\d{2}[A-Z]?_\d{2}/.test(x));
 const PZ_ID = /UA-\d{4}-\d{2}-\d{2}-\d{6}-[a-z]/g;
 
@@ -762,7 +765,11 @@ function registryPage() {
       // Only an expert's own sub-projects, into their own tracking, whatever the filters show.
       own.length ? h('button', { class: 'btn btn-dark', onclick: () => { if (confirm(rt('trackConfirm', { n: own.length }))) trackAll(own); } }, icon('star'), rt('trackAll', { n: own.length })) : null, status));
   const orphans = Object.entries((meta && meta.orphans) || {});
-  const orphanNote = orphans.length ? h('p', { class: 'notice small section' }, rt('orphans', { list: orphans.map(([c, v]) => c + ' — ' + money(v)).join(', ') })) : null;
+  // Payments the table's Payments sheet has under codes its SPs sheet has no row for.
+  const orphanNote = orphans.length ? h('details', { class: 'notice small section orphans' },
+    h('summary', null, rt('orphansTitle', { n: orphans.length, sum: money(orphans.reduce((a, [, v]) => a + v, 0)) })),
+    h('p', null, rt('orphansText')),
+    h('ul', null, orphans.sort((a, b) => a[0].localeCompare(b[0])).map(([c, v]) => h('li', null, h('b', null, c), ' — ' + money(v))))) : null;
   if (!rows.length) return [head];
   const experts = [...new Set(rows.map((r) => (r.t || {}).expert).filter(Boolean))].sort();
   const progs = [...new Set(rows.map((r) => (r.t || {}).programme).filter(Boolean))].sort();
@@ -933,7 +940,31 @@ function pzCard(r) {
         h('button', { class: 'btn btn-sm', onclick: () => save(linkIds.filter((x) => x !== tid), [...new Set(off.concat(tid))]) }, rt('unlink'))));
   };
   const find = h('div');
-  const idInput = h('input', { class: 'input', placeholder: 'UA-2026-01-01-000000-a', 'aria-label': rt('addId') });
+  const idInput = h('input', { class: 'input', placeholder: rt('linkPh'), 'aria-label': rt('linkTitle') });
+  const linkMsg = h('div', { class: 'small' });
+  const linkBtn = h('button', { class: 'btn btn-dark', onclick: async () => {
+    const ids = [...new Set(String(idInput.value).match(PZ_ID) || [])].filter((x) => !tids.includes(x));
+    if (!ids.length) { fill(linkMsg, h('span', { class: 'bad' }, String(idInput.value).trim() ? rt('linkBad') : rt('linkEmpty'))); return; }
+    linkBtn.disabled = true;
+    fill(linkMsg, rt('linkChecking'));
+    try {
+      // Only procedures that Prozorro knows go in.
+      const ok = [], bad = [];
+      for (const id of ids) {
+        try { const d = await pzProxy({ action: 'tender', tid: id }); (d && d.tender && !d.tender.error ? ok : bad).push(id); } catch (e) { bad.push(id); }
+      }
+      if (!ok.length) { fill(linkMsg, h('span', { class: 'bad' }, rt('linkNotFound', { list: bad.join(', ') }))); return; }
+      await save([...new Set(linkIds.concat(ok))], off.filter((y) => !ok.includes(y)));
+      fill(linkMsg, rt('linkLoading'));
+      await refreshSp(Object.assign({}, r, { link: { tids: [...new Set(linkIds.concat(ok))], off: off.filter((y) => !ok.includes(y)) } }));
+      idInput.value = '';
+      fill(linkMsg, h('span', null, rt('linkDone', { list: ok.join(', ') }), bad.length ? h('span', { class: 'bad' }, ' · ' + rt('linkNotFound', { list: bad.join(', ') })) : null));
+    } catch (e) {
+      fill(linkMsg, h('span', { class: 'bad' }, (e && e.message) || String(e)));
+    } finally { linkBtn.disabled = false; }
+  } }, rt('link'));
+  idInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') linkBtn.click(); });
+  const linkForm = h('div', { class: 'link-form' + (tids.length ? '' : ' empty') }, h('b', null, rt('linkTitle')), h('div', { class: 'small muted' }, rt('linkHint')), idInput, linkBtn, h('div', { class: 'small', style: 'grid-column:1/-1' }, linkMsg));
   const searchByName = async () => {
     const tt = r.t || {};
     const q = objectName(tt.name_uk || '').split(/\s+/).slice(0, 12).join(' ');
@@ -949,7 +980,7 @@ function pzCard(r) {
     } catch (e) { fill(find, h('p', { class: 'small bad' }, e.message)); }
   };
   const cands = (pz.cand || []).filter((x) => !tids.includes(x.tid));
-  fill(box, tids.length ? h('div', { class: 'qs-list' }, tids.map(tenderBlock)) : h('p', { class: 'muted small' }, rt('notLinked')),
+  fill(box, tids.length ? h('div', { class: 'qs-list' }, tids.map(tenderBlock)) : h('p', { class: 'muted small' }, rt('notLinked')), linkForm,
     cands.length ? [h('h3', { class: 'card-sub', style: 'margin-top:14px' }, rt('candTitle')), h('p', { class: 'muted small' }, rt('candHint')),
       h('div', { class: 'qs-list' }, cands.map((x) => h('div', { class: 'qs-row' },
         h('div', null, h('span', { class: 'tag' }, t('rel.role.' + x.role)), ' ', h('b', null, x.title),
@@ -962,11 +993,7 @@ function pzCard(r) {
     h('p', { class: 'muted small' }, rt('pzHint')),
     box,
     h('div', { class: 'row', style: 'margin-top:12px' },
-      h('button', { class: 'btn btn-sm', onclick: searchByName }, icon('search'), rt('findByName')),
-      idInput, h('button', { class: 'btn btn-sm', onclick: () => {
-        const id = (idInput.value.match(PZ_ID) || [])[0];
-        if (id) save([...new Set(linkIds.concat(id))], off.filter((y) => y !== id));
-      } }, rt('addId'))),
+      h('button', { class: 'btn btn-sm', onclick: searchByName }, icon('search'), rt('findByName'))),
     find);
 }
 

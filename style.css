@@ -437,7 +437,13 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
 .toasts { position: fixed; bottom: calc(20px + var(--safe-b)); left: 50%; z-index: 60; display: flex; flex-direction: column; align-items: center; gap: 8px; width: max-content; max-width: calc(100vw - 24px); transform: translateX(-50%); }
 .toast { display: flex; align-items: center; gap: 12px; max-width: 100%; padding: 10px 10px 10px 18px; border-radius: 999px; background: #000; color: #fff; font-size: 14px; font-weight: 600; box-shadow: var(--shadow-up); animation: fade .25s ease; }
 .toast > span { padding-right: 8px; }
-.toast.bad { background: var(--red); }
+.toast.bad { background: var(--red); color: #fff; }
+.toast-x { flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%; background: rgba(255,255,255,.18); color: inherit; font-size: 16px; line-height: 1; cursor: pointer; }
+.link-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 12px; text-align: left; padding: 12px; border-radius: 14px; background: var(--soft); }
+.link-form > b, .link-form > .small { grid-column: 1 / -1; }
+.link-form.empty { background: var(--yellow); }
+.orphans summary { cursor: pointer; font-weight: 700; }
+.orphans ul { margin: 8px 0 0; padding-left: 18px; columns: 2 260px; }
 .toast-btn { flex: none; padding: 6px 14px; border: 0; border-radius: 999px; background: #fff; color: #000; font-size: 13px; font-weight: 800; text-decoration: none; cursor: pointer; }
 
 /* ---------- мова, акаунт, підвал ---------- */

@@ -190,7 +190,8 @@ function toast(text, opts) {
   if (!box) document.body.append((box = h('div', { class: 'toasts', role: 'status', 'aria-live': 'polite' })));
   const el = h('div', { class: 'toast' + (opts.bad ? ' bad' : '') }, h('span', null, text),
     opts.action ? h('button', { class: 'toast-btn', onclick: () => { el.remove(); opts.action.run(); } }, opts.action.label) : null,
-    opts.link ? h('a', { class: 'toast-btn', href: opts.link.href, target: '_blank', rel: 'noopener noreferrer' }, opts.link.label) : null);
+    opts.link ? h('a', { class: 'toast-btn', href: opts.link.href, target: '_blank', rel: 'noopener noreferrer' }, opts.link.label) : null,
+    opts.sticky ? h('button', { class: 'toast-x', 'aria-label': t('ui.close'), onclick: () => el.remove() }, '×') : null);
   box.append(el);
   if (!opts.sticky) setTimeout(() => el.remove(), opts.bad ? 7000 : opts.link ? 9000 : 3500);
   return el;
@@ -4030,7 +4031,12 @@ window.addEventListener('hashchange', render);
 // Re-render only when nothing is being edited or read in a sheet.
 function softRender() {
   const busy = document.querySelector('.sheet') || (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName));
-  if (!busy) render();
+  if (busy) return;
+  // New data on the same page: it stays where the reader is.
+  const y = window.scrollY;
+  render();
+  window.scrollTo(0, y);
+  requestAnimationFrame(() => window.scrollTo(0, y));
 }
 
 // Before v0.10 lists were shared: move the user's own contract picks into their list, once.
