@@ -142,6 +142,22 @@ const RG = {
     pfXRating: "Оцінка",
     pfYes: "так", pfAnyBatch: "Усі пули",
     colStage: "Етап", riskShort: "ризик {n}",
+    sg_newRisk: "Новий ризик: {what}",
+    sg_subvDown: "Субвенцію зменшено: {from} → {to}",
+    sg_subvUp: "Субвенцію змінено: {from} → {to}",
+    sg_eibPaid: "Оплата ЄІБ {sum}",
+    sg_eibParts: "кредит {eib}, місцевий бюджет {local}",
+    sg_termPassed: "Минув строк завершення робіт ({date})",
+    sg_termPct: "Виконано {pct}% на цей день.",
+    sgToday: "Сьогодні",
+    sgYesterday: "Вчора",
+    sgDays: "{n} днів",
+    sgFresh: "Ще не бачили",
+    sgAllChanges: "Усі зміни",
+    sgc_risks: "Ризики",
+    sgNone: "За {n} днів змін немає.",
+    sgNoneHint: "Монітор стежить за договорами на контролі ({n}), реєстром Мінрозвитку і редакціями субвенції. Щойно щось зміниться — з’явиться тут.",
+    sgFoot: "Джерела: договори на контролі ({n}) — Prozorro та Казначейство; реєстр оплат Мінрозвитку; розпорядження КМУ про субвенцію. Ризики, що вже були, коли договір узяли на контроль, сюди не потрапляють — вони в картці договору.",
     fTitle: "Фінансування",
     fCost: "Вартість субпроєкту",
     fEibShare: "ЄІБ {sum} ({pct}%)",
@@ -222,7 +238,7 @@ const RG = {
     updNote: "Дані Prozorro: {at} · платежі й акти Казначейства оновлюються самі кожні кілька годин",
     sgTitle1: "Сигнали",
     sgTitle2: "по субпроєктах",
-    sgLead: "Відкриті питання — що зараз потребує дій у субпроєктах (незалежно від того, коли з’явилось), і нове на договорах за останні 30 днів.",
+    sgLead: "Лише те, що змінилося: оплати, акти, зміни договорів, нові ризики, нові редакції субвенції, оплати ЄІБ, минулий строк робіт. Що ви ще не бачили — позначено «нове». Поточний стан субпроєкту — у його картці.",
     sgMine: "Мої субпроєкти",
     sgAll: "Уся команда",
     sgMineHint: "Субпроєкти, де менеджер — {who}: ті, що монітор оновлює у вашому застосунку.",
@@ -574,6 +590,22 @@ const RG = {
     pfXRating: "Rating",
     pfYes: "yes", pfAnyBatch: "All batches",
     colStage: "Stage", riskShort: "risk {n}",
+    sg_newRisk: "New risk: {what}",
+    sg_subvDown: "Subvention cut: {from} → {to}",
+    sg_subvUp: "Subvention changed: {from} → {to}",
+    sg_eibPaid: "EIB payment {sum}",
+    sg_eibParts: "loan {eib}, local budget {local}",
+    sg_termPassed: "Works end date passed ({date})",
+    sg_termPct: "{pct}% done by then.",
+    sgToday: "Today",
+    sgYesterday: "Yesterday",
+    sgDays: "{n} days",
+    sgFresh: "Not seen yet",
+    sgAllChanges: "All changes",
+    sgc_risks: "Risks",
+    sgNone: "No changes in {n} days.",
+    sgNoneHint: "The monitor follows the contracts on control ({n}), Mindev's register and the subvention editions. Anything that changes shows here.",
+    sgFoot: "Sources: contracts on control ({n}) — Prozorro and the Treasury; Mindev's payment register; the Cabinet's subvention orders. Risks a contract already had when taken on control are not listed here — they are in its card.",
     fTitle: "Funding",
     fCost: "Sub-project cost",
     fEibShare: "EIB {sum} ({pct}%)",
@@ -654,7 +686,7 @@ const RG = {
     updNote: "Prozorro data: {at} · Treasury payments and acts update themselves every few hours",
     sgTitle1: "Signals",
     sgTitle2: "by sub-project",
-    sgLead: "Open issues — what needs doing in the sub-projects now (whenever it came up) — and the news on the contracts over the last 30 days.",
+    sgLead: "Only what changed: payments, acts, contract amendments, new risks, new subvention editions, EIB payments, a works end date passed. What you have not seen yet is marked “new”. Where a sub-project stands now is in its card.",
     sgMine: "My sub-projects",
     sgAll: "The whole team",
     sgMineHint: "Sub-projects managed by {who}: the ones the monitor keeps up to date in your app.",
@@ -2390,13 +2422,13 @@ function marksRow(r, tid) {
     onclick: () => saveWork(r, (w) => { w.marks[tid] = Object.assign({}, w.marks[tid], { [k]: !m[k] }); }),
   }, (m[k] ? '✓ ' : '') + rt('mark_' + k))));
 }
-// Tasks due for me (mine or nobody's) by today: for the bell.
+// Tasks due for me (given to me, or to nobody on my sub-projects) by today: for the bell.
 function dueTasks(within = 0) {
   if (!REG.access) return [];
   const me = myExpert(), until = addDays(today(), within), out = [];
   for (const r of REG.rows.values()) {
     for (const x of ((r.work || {}).tasks || [])) {
-      if (!x.done && x.due && x.due <= until && (!x.who || x.who === me)) out.push(Object.assign({ code: r.code, name: (r.t || {}).name_uk || (r.t || {}).name_en || '' }, x));
+      if (!x.done && x.due && x.due <= until && (x.who ? x.who === me : isMine(r))) out.push(Object.assign({ code: r.code, name: (r.t || {}).name_uk || (r.t || {}).name_en || '' }, x));
     }
     // A guarantee ending within 30 days (or already ended and not closed) is a task of the sub-project's expert.
     if (spManager(r) && spManager(r) !== myManager()) continue;
@@ -3298,101 +3330,127 @@ const median = (a) => { const s = a.filter((x) => x != null).sort((x, y) => x - 
 
 // ---- signals by sub-project ----------------------------------------------------------------------
 //
-// Two layers. Open issues: where each sub-project stands now — late works, EIB payments waiting,
-// broken rules and State Audit findings, missing acts, overdue tasks — whenever they came up (the
-// state, not news). News: what changed on the contracts the monitor follows in the last 30 days
-// (payments, acts, amendments, new signals since it started following them). "Mine" is the
-// sub-projects whose manager is the signed-in user; "the team" is all of them.
-const SIGF = { scope: 'mine', cat: '' };
-const SIG_CAT = { proc: 'checks', contract: 'docs', fin: 'money' };
-function spSignalItems(r) {
-  const out = [], st = spStage(r), wk = spWork(r), f = mrdFacts(r), m = mainContract(r);
+// Only what changed, never the standing state: the history of the contracts the monitor follows
+// (payments, acts, amendments, new risks, lateness that began, a broken rule), the signals that showed
+// up after a contract was taken on control (not those it already had), the Cabinet's new editions of the
+// subvention, the EIB payments of Mindev's register, the works' end date passing. Each change has its
+// date; the window is 7, 30 or 90 days. What one has not seen yet is marked "new" and counted on the
+// menu; opening the page sees it. Where a sub-project stands now is in its card, not here.
+const SIGF = { scope: 'mine', cat: '', days: 30, prev: null };
+const SG_CATS = ['money', 'docs', 'risks'];
+const EV_CAT = { payment: 'money', due: 'money', subvention: 'money', funding: 'money',
+  rule: 'risks', matrix: 'risks', sasu: 'risks', sasu_status: 'risks', complaint: 'risks', complaint_status: 'risks', legal: 'risks', collusion: 'risks', completion_overdue: 'risks' };
+const EV_IMP = new Set(['rule', 'sasu', 'complaint', 'legal', 'collusion', 'completion_overdue']);
+const sgDate = (x) => String(x || '').replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3').slice(0, 10);
+function spSignalItems(r, since) {
+  const out = [];
   const tab = (k) => '#/registry/' + encodeURIComponent(r.code) + '/' + k;
-  if (st.late) {
-    const sup = m ? ((m.c.suppliers || [])[0] || {}).name : (r.t || {}).contractor;
-    out.push({ sev: 'high', cat: 'late', at: st.end, title: rt('sg_late', { n: st.late }),
-      text: rt('sg_lateText', { date: fdate(st.end), pct: st.pct != null ? st.pct : '—', who: sup || '—' }), href: tab('overview') });
-  }
-  if (f) {
-    const wait = f.waiting.filter((x) => x.days > 14);
-    if (wait.length) out.push({ sev: wait.some((x) => x.days > 30) ? 'high' : 'medium', cat: 'money', at: wait.map((x) => x.received).sort()[0],
-      title: rt('sg_wait', { n: wait.length }), text: rt('sg_waitText', { days: Math.max(...wait.map((x) => x.days)), sum: money(wait.reduce((a, x) => a + (x.eib || 0), 0)), date: fdate(wait.map((x) => x.received).sort()[0]) }), href: tab('finance') });
-    if (f.afterTerm.length) out.push({ sev: 'medium', cat: 'money', at: f.afterTerm.map((x) => x.paid).sort().pop(), title: rt('sg_afterTerm'), text: rt('h_mrdAfterTerm', { n: f.afterTerm.length, date: fdate(f.term) }), href: tab('finance') });
-    if (f.noPcr) out.push({ sev: 'medium', cat: 'checks', at: f.last, title: rt('sg_noPcr'), text: rt('h_mrdNoPcr'), href: tab('finance') });
-  }
-  if (wk.next && wk.next.due && wk.next.due < today()) out.push({ sev: 'medium', cat: 'tasks', at: wk.next.due, title: rt('sg_task'), text: wk.next.text, href: tab('work') });
-  // The contracts the monitor follows: their signals (each kind once per contract), broken rules, recent changes.
-  const since = addDays(today(), -30);
-  for (const row of spTracked(r)) {
+  const add = (x) => { if (x.at && x.at >= since && x.at <= today()) out.push(x); };
+  const tracked = spTracked(r);
+  for (const row of tracked) {
     const who = row.number ? '№ ' + row.number : row.tid, href = '#/tracked/' + row.key;
-    const seen = new Set();
-    for (const g of row.signals || []) {
-      if (seen.has(g.type)) continue;
-      seen.add(g.type);
-      let text = '';
-      try { text = signalText(g); } catch (e) { text = ''; }
-      out.push({ sev: g.severity || 'low', cat: SIG_CAT[sigGroup(g.type)] || 'checks', at: String(g.since || '').slice(0, 10), title: t('sig.' + g.type + '.title'), text, who, href, fresh: !g.base });
-    }
-    const bad = ((row.rules || {}).bad) || [];
-    if (bad.length) out.push({ sev: 'high', cat: 'checks', at: String(row.changed_at || '').slice(0, 10), title: rt('sg_rules'), text: bad.map((k) => t('rl.k.' + k)).join(', '), who, href });
     for (const e of row.events || []) {
-      if (String(e.at || '') < since) continue;
-      let text = '';
-      try { text = eventText(e); } catch (er) { text = e.type; }
-      out.push({ sev: 'news', cat: 'news', at: String(e.at || '').slice(0, 10), title: text, text: '', who, href });
+      if (e.type === 'tracked') continue;
+      let title = '';
+      try { title = eventText(e); } catch (er) { title = e.type; }
+      const imp = EV_IMP.has(e.type) || (e.type === 'matrix' && Number(e.new) > Number(e.old || 0)) || (e.type === 'subvention' && (e.new == null || Number(e.new) < Number(e.old || 0)));
+      add({ src: 'ev', type: e.type, cat: EV_CAT[e.type] || 'docs', imp, at: sgDate(e.at), title, text: e.type === 'payment' && e.purpose ? e.purpose : '', who, href });
     }
+    // A signal counts as a change only when it appeared after the contract was taken on control.
+    for (const g of row.signals || []) {
+      if (g.base || !g.since) continue;
+      let text = '';
+      try { text = signalText(g); } catch (er) { text = ''; }
+      add({ src: 'sig', type: g.type, cat: 'risks', imp: g.severity === 'high', at: sgDate(g.since), title: rt('sg_newRisk', { what: t('sig.' + g.type + '.title') }), text, who, href });
+    }
+  }
+  // The Cabinet's latest edition changed this sub-project's subvention (unless a contract already said so).
+  const sv = subvMatch(r);
+  if (sv && !out.some((x) => x.type === 'subvention')) {
+    const am = sv.amounts || {}, eds = (sv.editions || Object.keys(am)).slice().sort();
+    for (let i = 1; i < eds.length; i++) {
+      const a = Number(am[eds[i - 1]] || 0), b = Number(am[eds[i]] || 0);
+      if (Math.abs(a - b) < 0.5) continue;
+      add({ src: 'sv', type: 'subvention', cat: 'money', imp: b < a, at: sgDate(eds[i]), title: rt(b < a ? 'sg_subvDown' : 'sg_subvUp', { from: fmtK(a), to: fmtK(b) }), text: sv.nreg || '', href: tab('finance') });
+    }
+  }
+  // EIB payments of Mindev's register, one line a day: the parts of one payment come as several rows.
+  const byDay = {};
+  for (const p of ((r.mrd || {}).payments || [])) if (p.paid) (byDay[sgDate(p.paid)] = byDay[sgDate(p.paid)] || []).push(p);
+  for (const [d, ps] of Object.entries(byDay)) {
+    const eib = ps.reduce((a, x) => a + (x.eib || 0), 0), local = ps.reduce((a, x) => a + (x.local || 0), 0);
+    add({ src: 'mrd', type: 'eib_pay', cat: 'money', imp: false, at: d, title: rt('sg_eibPaid', { sum: money(eib + local) }),
+      text: join([[...new Set(ps.map((x) => x.kind).filter(Boolean))].map((k) => rt('mrdK_' + k)).join(', '), local ? rt('sg_eibParts', { eib: money(eib), local: money(local) }) : null]), href: tab('finance') });
+  }
+  // The works' end date passed with the works not done (when no contract followed says it already).
+  const st = spStage(r);
+  if (st.late && st.end && !out.some((x) => x.type === 'completion_overdue')) {
+    add({ src: 'st', type: 'term', cat: 'risks', imp: true, at: addDays(st.end, 1), title: rt('sg_termPassed', { date: fdate(st.end) }), text: st.pct != null ? rt('sg_termPct', { pct: st.pct }) : '', href: tab('overview') });
   }
   // A procurement followed and the contract it turned into can say the same thing: once.
-  const seenKey = new Set();
-  return out.filter((x) => { const k = [x.cat, x.title, x.who, x.text].join('|'); if (seenKey.has(k)) return false; seenKey.add(k); return true; }).map((x) => Object.assign({ r }, x));
+  const seen = new Set();
+  return out.filter((x) => { const k = [x.type, x.at, x.title, x.who].join('|'); if (seen.has(k)) return false; seen.add(k); return true; })
+    .map((x) => Object.assign({ r, id: [r.code, x.src, x.type, x.at, x.who || '', x.title].join('|') }, x));
 }
-function spSignalPool(scope) {
-  return [...REG.rows.values()].filter((r) => scope === 'all' || isMine(r)).flatMap(spSignalItems);
+function spSignalPool(scope, days) {
+  const since = addDays(today(), -(days || 30));
+  return [...REG.rows.values()].filter((r) => scope === 'all' || isMine(r)).flatMap((r) => spSignalItems(r, since));
 }
+// What one has seen: the ids of the changes, kept in this browser.
+function sgSeenGet() { try { return new Set(JSON.parse(localStorage.getItem('spSigSeen') || '[]')); } catch (e) { return new Set(); } }
+function sgSeenPut(set) { try { localStorage.setItem('spSigSeen', JSON.stringify([...set].slice(-3000))); } catch (e) { /* not kept */ } }
 function spSignalCount() {
   if (!REG.access || !REG.rows.size) return 0;
-  return spSignalPool('mine').filter((x) => x.sev === 'high').length;
+  const seen = sgSeenGet();
+  return spSignalPool('mine', 30).filter((x) => !seen.has(x.id)).length;
 }
-const SEV_ORDER = { high: 0, medium: 1, low: 2, news: 3 };
+window.addEventListener('hashchange', () => { if (!/^#\/signals/.test(location.hash)) SIGF.prev = null; });
 function spSignalsPage() {
   if (REG.access === undefined) return [h('div', { class: 'card empty section' }, t('ui.loading'))];
+  // The first draw of a visit remembers what was seen before it; then everything shown counts as seen.
+  if (!SIGF.prev) SIGF.prev = sgSeenGet();
   const box = h('div');
   const draw = () => {
-    const pool = spSignalPool(SIGF.scope);
-    const issues = pool.filter((x) => x.sev !== 'news');
-    const cats = ['late', 'money', 'checks', 'docs', 'tasks', 'news'];
-    const count = (c) => (c === 'news' ? pool.filter((x) => x.cat === 'news').length : issues.filter((x) => x.cat === c && x.sev !== 'low').length);
-    const shown = SIGF.cat ? pool.filter((x) => x.cat === SIGF.cat) : pool;
-    // Within a section the rows of one sub-project stay together (its newest first); its name once.
-    const sortSection = (list) => {
-      const latest = {};
-      for (const x of list) if (String(x.at || '') > (latest[x.r.code] || '')) latest[x.r.code] = String(x.at || '');
-      return list.sort((a, b) => (latest[b.r.code] || '').localeCompare(latest[a.r.code] || '') || a.r.code.localeCompare(b.r.code) || String(b.at || '').localeCompare(String(a.at || '')));
-    };
-    const row = (x, i, list) => h('a', { class: 'sg-row sev-' + x.sev + (i && list[i - 1].r.code === x.r.code ? ' same' : ''), href: x.href },
-      h('span', { class: 'sg-dot', 'aria-hidden': 'true' }),
-      i && list[i - 1].r.code === x.r.code ? h('span') : h('span', { class: 'sg-sp' }, h('b', null, x.r.code), h('span', { class: 'clamp1' }, (x.r.t || {}).name_uk || (x.r.t || {}).name_en || ''),
-        SIGF.scope === 'all' ? h('small', null, spManager(x.r) || '—') : null),
-      h('span', { class: 'sg-what' },
-        h('span', { class: 'sg-head' }, h('span', { class: 'sg-cat' }, rt('sgc_' + x.cat)), x.fresh ? h('span', { class: 'sg-new' }, rt('sg_new')) : null, h('b', null, x.title)),
-        x.text ? h('span', { class: 'sg-text clamp' }, x.text) : null,
-        x.who ? h('small', { class: 'faint' }, x.who) : null),
-      // A signal that was there when the monitor began following the contract: the day it was seen, not of the event.
-      h('span', { class: 'sg-at num' }, x.at ? (x.fresh === false ? h('small', null, rt('sg_seen', { date: fdate(x.at) })) : fdate(x.at)) : '—'),
-      icon('arrow'));
-    const section = (title, list, open = true) => (list.length ? h('details', { class: 'card pad section fold sg-section', open: open || null },
-      h('summary', null, h('h2', { class: 'card-title' }, title, h('span', { class: 'count-inline' }, list.length))),
-      h('div', { class: 'sg-list' }, sortSection(list).map(row))) : null);
-    const high = shown.filter((x) => x.sev === 'high'), mid = shown.filter((x) => x.sev === 'medium'), low = shown.filter((x) => x.sev === 'low'), news = shown.filter((x) => x.sev === 'news');
+    const pool = spSignalPool(SIGF.scope, SIGF.days);
+    const seenNow = new Set(SIGF.prev);
+    for (const x of pool) seenNow.add(x.id);
+    sgSeenPut(seenNow);
+    const isNew = (x) => !SIGF.prev.has(x.id);
+    const shown = (SIGF.cat ? pool.filter((x) => x.cat === SIGF.cat) : pool)
+      .sort((a, b) => b.at.localeCompare(a.at) || Number(b.imp) - Number(a.imp) || a.r.code.localeCompare(b.r.code));
+    const fresh = pool.filter(isNew).length;
     const mineN = [...REG.rows.values()].filter(isMine).length;
+    const followed = [...REG.rows.values()].filter((r) => SIGF.scope === 'all' || isMine(r)).reduce((a, r) => a + spTracked(r).length, 0);
+    const dayName = (d) => (d === today() ? rt('sgToday') : d === addDays(today(), -1) ? rt('sgYesterday') : fdate(d));
+    const row = (x, i, list) => {
+      const same = i && list[i - 1].r.code === x.r.code && list[i - 1].at === x.at;
+      return h('a', { class: 'sg-row' + (x.imp ? ' sev-high' : isNew(x) ? ' sev-news' : '') + (same ? ' same' : ''), href: x.href },
+        h('span', { class: 'sg-dot', 'aria-hidden': 'true' }),
+        same ? h('span') : h('span', { class: 'sg-sp' }, h('b', null, x.r.code), h('span', { class: 'clamp1' }, (x.r.t || {}).name_uk || (x.r.t || {}).name_en || ''),
+          SIGF.scope === 'all' ? h('small', null, spManager(x.r) || '—') : null),
+        h('span', { class: 'sg-what' },
+          h('span', { class: 'sg-head' }, h('span', { class: 'sg-cat' }, rt('sgc_' + x.cat)), isNew(x) ? h('span', { class: 'sg-new' }, rt('sg_new')) : null, h('b', null, x.title)),
+          x.text ? h('span', { class: 'sg-text clamp' }, x.text) : null,
+          x.who ? h('small', { class: 'faint' }, x.who) : null),
+        icon('arrow'));
+    };
+    const days = [...new Set(shown.map((x) => x.at))];
     fill(box,
-      h('div', { class: 'sg-scope section' }, pills([['mine', rt('sgMine', { who: myManager() }), mineN], ['all', rt('sgAll'), REG.rows.size]], SIGF.scope, (v) => { SIGF.scope = v; draw(); }),
-        h('span', { class: 'muted small' }, rt(SIGF.scope === 'mine' ? 'sgMineHint' : 'sgAllHint', { who: myManager() }))),
-      h('div', { class: 'sg-tiles section' }, cats.map((c) => h('button', { class: 'sg-tile' + (SIGF.cat === c ? ' on' : '') + (c !== 'news' && issues.some((x) => x.cat === c && x.sev === 'high') ? ' hot' : ''), type: 'button',
-        onclick: () => { SIGF.cat = SIGF.cat === c ? '' : c; draw(); } }, h('small', null, rt('sgc_' + c)), h('b', { class: 'num' }, count(c))))),
-      SIGF.cat ? h('p', { class: 'small' }, rt('sgFiltered', { cat: rt('sgc_' + SIGF.cat) }), ' ', h('button', { class: 'linkish', type: 'button', onclick: () => { SIGF.cat = ''; draw(); } }, rt('sgClear'))) : null,
-      !shown.length ? h('div', { class: 'card empty section' }, rt('sigNone')) : null,
-      section(rt('sgHigh'), high), section(rt('sgMid'), mid), section(rt('sgNews'), news), section(rt('sgLow'), low, false));
+      h('div', { class: 'sg-scope section' },
+        pills([['mine', rt('sgMine', { who: myManager() }), mineN], ['all', rt('sgAll'), REG.rows.size]], SIGF.scope, (v) => { SIGF.scope = v; draw(); }),
+        pills([[7, rt('sgDays', { n: 7 })], [30, rt('sgDays', { n: 30 })], [90, rt('sgDays', { n: 90 })]], SIGF.days, (v) => { SIGF.days = Number(v); draw(); })),
+      h('div', { class: 'sg-tiles section' },
+        h('div', { class: 'sg-tile static' + (fresh ? ' hot' : '') }, h('small', null, rt('sgFresh')), h('b', { class: 'num' }, fresh)),
+        [''].concat(SG_CATS).map((c) => h('button', { class: 'sg-tile' + (SIGF.cat === c ? ' on' : ''), type: 'button', 'aria-pressed': SIGF.cat === c ? 'true' : 'false',
+          onclick: () => { SIGF.cat = c; draw(); } }, h('small', null, c ? rt('sgc_' + c) : rt('sgAllChanges')), h('b', { class: 'num' }, c ? pool.filter((x) => x.cat === c).length : pool.length)))),
+      !shown.length ? h('div', { class: 'card empty section' }, h('b', null, rt('sgNone', { n: SIGF.days })), h('p', { class: 'muted small' }, rt('sgNoneHint', { n: followed })))
+        : days.map((d) => {
+          const list = shown.filter((x) => x.at === d);
+          return h('div', { class: 'card pad section sg-section' },
+            h('h2', { class: 'card-title' }, dayName(d), h('span', { class: 'count-inline' }, list.length)),
+            h('div', { class: 'sg-list' }, list.map(row)));
+        }),
+      h('p', { class: 'muted small section' }, rt('sgFoot', { n: followed })));
   };
   draw();
   return [pageHead(rt('sigEyebrow'), titleGrad(rt('sgTitle1'), rt('sgTitle2')), rt('sgLead')), box];

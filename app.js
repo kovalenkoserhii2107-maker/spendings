@@ -39,6 +39,7 @@ const ICONS = {
   file: ['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z', 'M14 2v6h6', 'M8 13h8', 'M8 17h5'],
   bank: ['M3 21h18', 'M3 10h18', 'M12 3 3 8h18z', 'M5 10v8', 'M9.5 10v8', 'M14.5 10v8', 'M19 10v8'],
   building: ['M3 21h18', 'M5 21V7l7-4 7 4v14', 'M9 10h.01', 'M15 10h.01', 'M9 14h.01', 'M15 14h.01'],
+  pulse: ['M22 12h-4l-3 9L9 3l-3 9H2'],
   bell: ['M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9', 'M13.7 21a2 2 0 0 1-3.4 0'],
   search: ['M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z', 'M21 21l-4.3-4.3'],
   book: ['M4 19.5A2.5 2.5 0 0 1 6.5 17H20', 'M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'],
@@ -630,13 +631,14 @@ function scopeLine() {
 
 function badgeFor(key) {
   if (key === 'tracked') { const n = riskCount(); return n ? h('em', { class: 'count red' }, n) : null; }
-  if (key === 'signals' && typeof spSignalCount === 'function') { const n = spSignalCount(); return n ? h('em', { class: 'count red' }, n) : null; }
+  if (key === 'signals' && typeof spSignalCount === 'function') { const n = spSignalCount(); return n ? h('em', { class: 'count', title: t('nav.sigUnseen') }, n) : null; }
   return null;
 }
 
 function bellButton(route) {
   const n = bellCount();
-  return h('a', { class: 'bell' + (route === 'feed' ? ' on' : ''), href: '#/feed', title: t('ntf.title'), 'aria-label': t('ntf.title') + (n ? ' (' + n + ')' : '') },
+  const label = isTeam() ? t('ntf.remindTip') : t('ntf.title');
+  return h('a', { class: 'bell' + (route === 'feed' ? ' on' : ''), href: '#/feed', title: label, 'aria-label': label + (n ? ' (' + n + ')' : '') },
     icon('bell'), n ? h('em', { class: 'count' }, n > 99 ? '99+' : n) : null);
 }
 
@@ -650,7 +652,7 @@ function accountButton() {
 // The sections: the sub-project registry only for the people on its access list.
 // For the team the sub-project leads: sub-projects → contracts on control → the portfolio; search stays.
 const navItems = () => (typeof hasRegistry === 'function' && hasRegistry()
-  ? [['#/', 'home', 'building', 'nav.sps'], ['#/signals', 'signals', 'bell', 'nav.signals'], ['#/registry/summary', 'portfolio', 'chart', 'nav.portfolio'], ['#/search', 'search', 'search', 'nav.search']]
+  ? [['#/', 'home', 'building', 'nav.sps'], ['#/signals', 'signals', 'pulse', 'nav.signals'], ['#/registry/summary', 'portfolio', 'chart', 'nav.portfolio'], ['#/search', 'search', 'search', 'nav.search']]
   : NAV);
 function shell(route, page) {
   const last = state.index.runs && state.index.runs[0];
@@ -3458,15 +3460,49 @@ function trackedEvents() {
 const newTrackedEvents = () => { const seen = getTrackedSeen(); return trackedEvents().filter(({ e }) => e.at > seen).length; };
 // Registry tasks of mine due by today count too.
 const myDueTasks = () => (typeof dueTasks === 'function' ? dueTasks(0) : []);
-const bellCount = () => newTrackedEvents() + unreadCount() + myDueTasks().length;
+// For the team the bell is reminders: my tasks and guarantees that are due (changes are under «Сигнали»).
+const bellCount = () => (isTeam() ? myDueTasks().length : newTrackedEvents() + unreadCount() + myDueTasks().length);
 function markAllSeen() {
   setTrackedSeen(new Date().toISOString().slice(0, 10) + 'T99');
   if (state.feed.items.length) setSeen(state.feed.items[0].first_seen_at);
   render();
 }
 
+// The team's bell: reminders. My tasks and the guarantees of my sub-projects, overdue, due today and
+// within a week, each opening the sub-project's Work tab; the Treasury's new records folded in a tab.
+function remindersPage(preset) {
+  const tab = { which: preset === 'portal' ? 'portal' : 'tasks' };
+  const box = h('div');
+  const list = typeof dueTasks === 'function' ? dueTasks(7) : [];
+  const drawTasks = () => {
+    const groups = [['bad', t('ntf.overdue'), list.filter((x) => x.due < today())], ['', t('ntf.today'), list.filter((x) => x.due === today())], ['', t('ntf.week'), list.filter((x) => x.due > today())]];
+    return h('div', { class: 'card pad' }, list.length ? groups.filter((g) => g[2].length).map(([cls, title, items]) => h('div', { class: 'rm-group ' + cls },
+      h('h3', null, title + ' · ' + items.length),
+      h('div', { class: 'ev-feed' }, items.map((x) => h('a', { class: 'ev-row' + (x.due < today() ? ' bad' : x.due === today() ? ' new' : ''), href: '#/registry/' + encodeURIComponent(x.code) + '/work' },
+        h('span', { class: 'd num' }, fdate(x.due)),
+        h('span', null, h('b', null, x.code), h('span', { class: 'faint small' }, ' · ' + x.name.slice(0, 90)), h('div', null, x.text)))))))
+      : h('div', { class: 'empty' }, h('b', null, t('ntf.noTasks')), h('p', { class: 'muted small' }, t('ntf.noTasksHint'))));
+  };
+  const drawPortal = () => {
+    const f = { page: 0 };
+    const out = h('div');
+    const draw = () => pagedList(out, state.feed.items, f.page, { showOrg: true, marks: true, noSum: true, emptyTitle: t('feed.empty'), emptyText: t('feed.emptyText') }, (p) => { f.page = p; draw(); });
+    draw();
+    return h('div', { class: 'table-card' }, h('p', { class: 'muted small', style: 'padding:14px 16px 0' }, t('ntf.portalHint')), out);
+  };
+  const show = () => fill(box, tab.which === 'portal' ? drawPortal() : drawTasks());
+  const tabs = pills([['tasks', t('ntf.remind'), list.length || null], ['portal', t('ntf.portal2'), unreadCount() || null]], tab.which, (v) => { tab.which = v; show(); });
+  show();
+  return [
+    pageHead(t('ntf.remind'), titleGrad(t('ntf.rTitle1'), t('ntf.rTitle2')), t('ntf.rLead'),
+      h('div', { class: 'row' }, tabs, unreadCount() ? h('button', { class: 'btn', onclick: () => { if (state.feed.items.length) setSeen(state.feed.items[0].first_seen_at); render(); }, title: t('ntf.portal2') }, icon('check'), t('feed.markRead')) : null)),
+    box,
+  ];
+}
+
 // Behind the bell: what changed in one's contracts on control, and what is new on the portal.
 function feedPage(preset) {
+  if (isTeam()) return remindersPage(preset);
   const seen = getTrackedSeen();
   const tab = { which: preset === 'portal' ? 'portal' : 'tracked' };
   const box = h('div');
