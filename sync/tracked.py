@@ -553,6 +553,20 @@ def sync_tender(req, old, log=print, tender=None):
     return snap
 
 
+def stamp_signals(snap, old, now):
+    """When each signal first showed. Those there when the contract was taken on control (or, for
+    contracts kept before this was recorded, on the first run since) are the starting state, seen in
+    the dossier but not news; one that goes away and comes back is new again."""
+    prev = (old or {}).get("signal_seen")
+    seen = {}
+    for x in snap.get("signals") or []:
+        k = x.get("type") or ""
+        if k in seen:
+            continue
+        seen[k] = {"at": now, "base": True} if prev is None else (prev.get(k) or {"at": now})
+    snap["signal_seen"] = seen
+
+
 def index_row(s):
     c, t = s["contract"] or {}, s["tender"]
     sup = (c.get("suppliers") or [{}])[0]
@@ -570,7 +584,10 @@ def index_row(s):
         "eib": s.get("eib") or ("funder" if any(f.get("code") == "33000" for f in t.get("funders") or []) else ""),
         "eib_tx": bool(s.get("eib_tx")),
         "flags": s.get("flags") or [],
-        "signals": [{k: x.get(k) for k in ("type", "severity", "params", "amount")} for x in s.get("signals") or []],
+        "signals": [dict({k: x.get(k) for k in ("type", "severity", "params", "amount")},
+                         since=((s.get("signal_seen") or {}).get(x.get("type")) or {}).get("at"),
+                         base=bool(((s.get("signal_seen") or {}).get(x.get("type")) or {}).get("base")))
+                    for x in s.get("signals") or []],
         "sasu": sasu.summary(s.get("sasu")),
         "checks": {x["key"]: x["status"] for x in s.get("checklist") or []},
         "viewers": s.get("viewers") or [],  # hashes; the Drive script copies the contracts it sees itself in

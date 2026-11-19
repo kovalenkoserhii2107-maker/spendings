@@ -361,6 +361,7 @@ def sync_tracked(mode="full"):
             snap.pop("note", None)
         else:
             snap.pop("error", None)
+            tracked.stamp_signals(snap, old, now_iso())
         snap["synced_at"] = now_iso()
         write_json(path, snap)
         rows.append(dict(tracked.index_row(snap), error=snap.get("error")))

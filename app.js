@@ -315,11 +315,26 @@ function groupPills(list, value, onpick) {
     .filter((p) => p[0] === '' || p[2] || p[0] === value), value, onpick);
 }
 // Signals of one's contracts on control, as cards of the signals page.
+// Only what came up after the contract was taken on control (by this user, for one shared later):
+// what was there already is in the dossier, not news.
 function trackedSignals() {
   return (state.trackedIndex.items || []).filter((r) => isTracked(r.key) || isSharedWithMe(r.key))
-    .flatMap((r) => (r.signals || []).map((x) => Object.assign({}, x, {
-      tracked: r.key, org_edrpou: r.buyer || r.org, org_name: r.buyer_name, party: r.supplier_name, date: r.signed, contract: null, ext_ids: [],
-    })));
+    .flatMap((r) => {
+      const pick = state.mine.tracked.get(r.key) || state.mine.shared.get(r.key) || {};
+      const from = pickTime(pick);
+      return (r.signals || []).filter((x) => x.since && !x.base && (!from || x.since >= from)).map((x) => Object.assign({}, x, {
+        tracked: r.key, org_edrpou: r.buyer || r.org, org_name: r.buyer_name, party: r.supplier_name, date: x.since.slice(0, 10), contract: null, ext_ids: [],
+      }));
+    });
+}
+// When a pick was made, as an ISO time (Firestore time, milliseconds or a string).
+function pickTime(p) {
+  const v = p.addedAt || p.at || p.sharedAt;
+  if (!v) return '';
+  if (typeof v === 'number') return new Date(v).toISOString();
+  if (v.toDate) return v.toDate().toISOString();
+  if (v.seconds) return new Date(v.seconds * 1000).toISOString();
+  return String(v);
 }
 const PAY_FLAGS = ['overpaid', 'paid_before', 'paid_over_acts'];
 const payFlags = (c) => c.flags.filter((f) => PAY_FLAGS.includes(f));
@@ -2084,6 +2099,12 @@ function trackedPage(preset) {
     const x = r.row || {}, p = r.pick;
     return { subproject: x.subproject, programme: x.programme, region: x.region, buyer: x.buyer_name || p.buyer, supplier: x.supplier_name || p.supplier }[groupBy] || '';
   };
+  // A sub-project's group: its code and name (the team's table, else the procurement's object).
+  const spTitle = (code) => {
+    const reg = typeof hasRegistry === 'function' && hasRegistry() ? REG.rows.get(code) : null;
+    const name = reg ? ((reg.t || {}).name_uk || (reg.t || {}).name_en || '') : objectName(((inScope().find((r) => r.row && r.row.subproject === code) || {}).row || {}).title || '', 20);
+    return h('span', null, h('b', null, code), name ? h('span', { class: 'tr-group-sub' }, ' — ' + name) : null);
+  };
   const byRisk = (a, b) => ((b.row && b.row.risk) || 0) - ((a.row && a.row.risk) || 0) || byDate(a, b);
   function draw() {
     const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -2102,7 +2123,7 @@ function trackedPage(preset) {
     fill(list, order.map((g) => {
       const rows = groups.get(g).sort(byRisk);
       if (groupBy === 'none') return h('div', { class: 'tr-rows' }, rows.map(trackedLine));
-      const title = groupBy === 'action' ? t('trg.' + g) : g || t('trg.other');
+      const title = groupBy === 'action' ? t('trg.' + g) : groupBy === 'subproject' && g ? spTitle(g) : g || t('trg.other');
       const worst = Math.max(0, ...rows.map((r) => (r.row && r.row.risk) || 0));
       return h('details', { class: 'tr-group', open: !(groupBy === 'action' && g === 'closed') || null },
         h('summary', null, h('span', { class: 'tr-group-title' }, title), h('em', { class: 'count' + (g === 'attention' ? ' red' : '') }, rows.length),
@@ -2117,27 +2138,34 @@ function trackedPage(preset) {
     const tender = isTender(r);
     const newN = x ? (x.events || []).filter((e) => e.at > seen).length : 0;
     const bar = (v, cls) => h('span', { class: 'mini-bar ' + cls }, h('i', { style: 'width:' + Math.max(0, Math.min(100, v || 0)) + '%' }));
+    // The problems, quietly: a coloured dot and a word, at most three; the risk itself is the circle.
+    const alerts = ((x && x.alerts) || []).filter((a) => a !== 'risk');
+    const HIGH = ['sasu', 'late', 'collusion', 'legal'];
+    const status = tender ? t('stage.tender') : x ? label('pzc.', x.status) : t('tr.pending');
+    const buyer = (x && x.buyer_name) || p.buyer, supplier = (x && x.supplier_name) || p.supplier;
+    const parties = groupBy === 'buyer' ? supplier || '' : groupBy === 'supplier' ? buyer || '' : join([buyer, supplier], ' → ');
+    const ev = x && x.last_event && x.last_event.type && x.last_event.type !== 'tracked' ? x.last_event : null;
     return h('a', { class: 'tr-line risk-' + ((x && x.risk) || 0) + (fresh ? ' new' : ''), href: '#/tracked/' + r.id },
       h('div', { class: 'tl-risk' }, x && x.risk ? h('b', { title: t('ud.overall', { n: x.risk }) }, x.risk) : h('span', { class: 'faint' }, '–')),
       h('div', { class: 'tl-main' },
-        h('div', { class: 'chips', style: 'margin:0 0 2px' },
-          x && x.subproject ? h('span', { class: 'tag eib' }, x.subproject) : null,
-          x && x.programme ? h('span', { class: 'tag' }, x.programme) : x && x.eib ? h('span', { class: 'tag eib' }, t('eib.short')) : null,
-          tender ? h('span', { class: 'tag' }, t('stage.tender')) : x ? h('span', { class: 'pz-st ' + (x.status === 'active' ? 'ok' : x.status === 'terminated' ? 'off' : 'run') }, label('pzc.', x.status)) : h('span', { class: 'chip warn' }, h('i'), t('tr.pending')),
-          ((x && x.alerts) || []).map((a) => h('span', { class: 'sev ' + (['risk', 'sasu', 'late', 'collusion', 'legal'].includes(a) ? 'high' : 'medium') }, t('tra.' + a))),
-          newN ? h('span', { class: 'tag pz' }, t('tr.newN', { n: newN })) : null),
-        h('b', { class: 'tl-title' }, tender ? t('tr.tenderHeading', { tid: (x && x.tid) || p.tid })
+        h('div', { class: 'tl-head' }, h('b', { class: 'tl-title' }, tender ? t('tr.tenderHeading', { tid: (x && x.tid) || p.tid })
           : (x ? x.number : p.number) && (x ? x.number : p.number) !== '—' ? t('dos.heading', { n: x ? x.number : p.number, date: fdate(x && x.signed) }) : t('pz.draftContract')),
-        h('div', { class: 'cell-sub clamp1' }, join([(x && x.buyer_name) || p.buyer, (x && x.supplier_name) || p.supplier], ' → ')),
-        !r.mine ? h('div', { class: 'faint small' }, t('tr.sharedBy', { who: p.fromName || '—' })) : null),
+          h('span', { class: 'tl-status st-' + (tender ? 'tender' : (x && x.status) || 'pending') }, status)),
+        parties ? h('div', { class: 'cell-sub clamp1' }, parties) : null,
+        h('div', { class: 'tl-meta' },
+          join([groupBy === 'subproject' ? null : x && x.subproject, groupBy === 'programme' ? null : (x && x.programme) || (x && x.eib ? t('eib.short') : null)]),
+          newN ? h('span', { class: 'tl-new' }, t('tr.newN', { n: newN })) : null,
+          !r.mine ? h('span', { class: 'faint' }, t('tr.sharedBy', { who: p.fromName || '—' })) : null),
+        alerts.length ? h('div', { class: 'tl-alerts' }, alerts.slice(0, 3).map((a) => h('span', { class: HIGH.includes(a) ? 'high' : 'medium' }, t('tra.' + a))),
+          alerts.length > 3 ? h('span', { class: 'more' }, '+' + (alerts.length - 3)) : null) : null,
+        ev ? h('div', { class: 'tl-ev clamp1' }, h('span', { class: 'num' }, fdate(x.changed_at)), ' ', eventText(ev)) : null),
       h('div', { class: 'tl-money num' }, h('b', null, mshort(tt.value)),
         tender ? h('div', { class: 'cell-sub' }, x && x.opening ? t('trl.opening', { date: fdate(x.opening) }) : label('pzs.', x && x.tender_status)) : null),
       !tender && x ? h('div', { class: 'tl-progress' },
         h('div', { class: 'tl-bar' }, h('small', null, t('trl.acts')), bar(x.acts_pct, 'acts'), h('span', { class: 'num' }, x.acts_pct != null ? Math.round(x.acts_pct) + '%' : '—')),
         h('div', { class: 'tl-bar' }, h('small', null, t('trl.paid')), bar(x.paid_pct != null ? x.paid_pct : (tt.value ? (tt.paid_total || tt.paid) / tt.value * 100 : 0), 'paid'),
           h('span', { class: 'num' }, x.paid_pct != null ? Math.round(x.paid_pct) + '%' : tt.value ? Math.round(((tt.paid_total || tt.paid) / tt.value) * 100) + '%' : '—'))) : h('div', { class: 'tl-progress' }),
-      h('div', { class: 'tl-end' }, x && x.end ? [h('small', null, t('trl.end')), h('div', { class: 'num' + (x.late_days ? ' bad' : '') }, fdate(x.end))] : null),
-      h('div', { class: 'tl-news small muted' }, x && x.last_event && x.last_event.type ? [h('span', { class: 'num faint' }, fdate(x.changed_at)), ' ', eventText(x.last_event)] : null));
+      h('div', { class: 'tl-end' }, x && x.end ? [h('small', null, t('trl.end')), h('div', { class: 'num' + (x.late_days ? ' bad' : '') }, fdate(x.end))] : null));
   }
   const q = h('input', { class: 'input', type: 'search', placeholder: t('tr.searchHint'), 'aria-label': t('ui.search'), oninput: () => { f.q = q.value; draw(); } });
   const n = (k) => inScope().filter(tests[k]).length;
