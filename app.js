@@ -2624,8 +2624,13 @@ function guaranteesBlock(t0, gs, adv) {
 function matrixBlock(s) {
   const mx = (s.undp || {}).matrix;
   if (!mx) return null;
+  // Under a sub-project of the registry its matrix is the one that counts; this one feeds it.
+  const sp = spOfTid(s.tid);
+  const spOverall = sp && typeof overallRating === 'function' ? overallRating(scoresOf(sp).scores) : null;
   return h('div', null,
     h('div', { class: 'drive-part-title' }, t('ud.matrix')),
+    sp ? h('p', { class: 'notice small' }, t('ud.spMatrix', { code: sp.code }), spOverall ? ' ' + t('ud.spOverall', { n: spOverall }) : '', ' ',
+      h('a', { href: '#/registry/' + encodeURIComponent(sp.code) + '/overview' }, t('ud.spOpen'))) : null,
     h('div', { class: 'checklist' }, UD_KEYS.map((k) => {
       const v = (mx.scores || {})[k];
       return h('div', { class: 'chk ' + (v === 3 ? 'bad' : v === 2 ? 'warn' : v === 1 ? 'ok' : 'na') },

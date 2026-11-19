@@ -876,3 +876,5 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
 .sp-road li.now::before { background: #E5A000; }
 .sp-road li b { font-size: 13.5px; }
 @media (max-width: 900px) { .sp-road { grid-template-columns: 1fr; } }
+.sp-road li.late { outline: 2px solid var(--red); background: var(--red-bg); }
+.sp-road li.late::before { background: var(--red); content: '!'; }

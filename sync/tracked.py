@@ -627,6 +627,8 @@ def _list_fields(s):
         alerts.append("subvention")
     return {k: v for k, v in {
         "risk": mx.get("overall"), "subproject": (t.get("subproject") or {}).get("code"),
+        # The ratings with their reasons: hints to the sub-project's own matrix.
+        "matrix": {"scores": {k: v for k, v in (mx.get("scores") or {}).items() if v is not None}, "why": mx.get("why") or {}} if mx else None,
         "programme": sv.get("programme"), "region": t.get("region"),
         "acts_pct": pg.get("acts_pct"), "paid_pct": pg.get("paid_pct"), "late_days": pg.get("overdue_days"),
         "opening": tl.get("opening") if s.get("kind") == "tender" else None, "auction": tl.get("auction") if s.get("kind") == "tender" else None,

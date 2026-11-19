@@ -19,7 +19,7 @@ const RG = {
     fromTable: 'З таблиці', finance: 'Фінансування', progress: 'Прогрес', procurement: 'Закупівлі в таблиці', weekly: 'Останні дії експертів',
     pz: 'Prozorro', pzHint: 'Закупівлі цього субпроєкту в Prozorro. Ідентифікатори з таблиці підтягуються самі; інші можна знайти за назвою й прив’язати.',
     findByName: 'Шукати за назвою', addId: 'Додати UA-…', link: 'Прив’язати', unlink: 'Відв’язати', linked: 'Прив’язано',
-    risks: 'Підказки до матриці ризиків', risksHint: 'Підказки з Prozorro й таблиці; оцінку ставить експерт.',
+    risks: 'Підказки до матриці ризиків', risksHint: 'Одна матриця субпроєкту: підказки з Prozorro, таблиці й договорів на контролі (ціни, змови, оплати, підрядник, правила програми); оцінку ставить експерт.',
     note: 'Нотатка команди', saveNote: 'Зберегти', saved: 'Збережено', payments: 'Платежі в Казначействі', loadPayments: 'Показати платежі замовника підряднику',
     paidSum: 'Сплачено {sum} ({n} платежів) з {from}', noPayments: 'Платежів не знайдено', tablePaid: 'За аркушем Payments: {sum}',
     updated: 'оновлено {at}', never: 'ще не оновлювалось', noAccess: 'Реєстр доступний лише учасникам команди.',
@@ -142,6 +142,10 @@ const RG = {
     pfXRating: "Оцінка",
     pfYes: "так", pfAnyBatch: "Усі пули",
     colStage: "Етап", riskShort: "ризик {n}",
+    fromContract: "договір {who}: {why}",
+    lateBy: "прострочено {n} дн.",
+    stepFailed: "невдалих: {n}",
+    stepRunning: "триває {n} дн.",
     autoProgress: "Автоконтроль: субпроєкт {n} з {total}, додано {added}…",
     autoDone: "На контроль автоматично додано договорів і закупівель: {added}",
     autoStatus: "Автоконтроль ({n} субпроєктів): додано {added}, не вдалося {failed}",
@@ -214,7 +218,7 @@ const RG = {
     fromTable: 'From the table', finance: 'Funding', progress: 'Progress', procurement: 'Procurements in the table', weekly: 'Latest expert actions',
     pz: 'Prozorro', pzHint: "This sub-project's procurements in Prozorro. Ids from the table come in by themselves; others can be found by name and linked.",
     findByName: 'Search by name', addId: 'Add UA-…', link: 'Link', unlink: 'Unlink', linked: 'Linked',
-    risks: 'Hints for the risk matrix', risksHint: 'Hints from Prozorro and the table; the expert sets the rating.',
+    risks: 'Hints for the risk matrix', risksHint: "One matrix for the sub-project: hints from Prozorro, the table and the contracts on control (prices, collusion, payments, contractor, programme rules); the expert sets the rating.",
     note: 'Team note', saveNote: 'Save', saved: 'Saved', payments: 'Treasury payments', loadPayments: "Show the beneficiary's payments to the contractor",
     paidSum: '{sum} paid ({n} payments) since {from}', noPayments: 'No payments found', tablePaid: 'Payments sheet: {sum}',
     updated: 'updated {at}', never: 'not refreshed yet', noAccess: 'The registry is open to team members only.',
@@ -337,6 +341,10 @@ const RG = {
     pfXRating: "Rating",
     pfYes: "yes", pfAnyBatch: "All batches",
     colStage: "Stage", riskShort: "risk {n}",
+    fromContract: "contract {who}: {why}",
+    lateBy: "{n} days late",
+    stepFailed: "failed: {n}",
+    stepRunning: "running {n} days",
     autoProgress: "Auto control: sub-project {n} of {total}, {added} added…",
     autoDone: "Put on control automatically: {added} contracts and procurements",
     autoStatus: "Auto control ({n} sub-projects): {added} added, {failed} failed",
@@ -901,12 +909,14 @@ const SCORE_KEYS = RISK_KEYS.slice(0, 8);
 // Weights of the risk matrix (row 14 of the SPs sheet).
 const WEIGHT = { r1: 1, r2: 1.5, r3: 1.5, r4: 1.5, r5: 1, r6: 1, r7: 1.5, r8: 1 };
 
-// A rating 1–3 suggested from the hints, only where the app has something to judge by; price
-// checks (2) and the contractor's legal status (6) stay with the expert.
+// A rating 1–3 suggested from the hints, only where the app has something to judge by: the
+// sub-project's own data and the ratings of its contracts on control.
 function suggestedScores(r) {
   const risk = allRisk(r), tt = r.t || {};
   const read = !!(r.pz && r.pz.at);
   const known = { r1: !!mainContract(r), r3: !!subvMatch(r) || !!tt.funding, r4: paidShare(r) != null, r5: !!mainContract(r), r7: read, r8: read };
+  // A criterion the monitor rated on a contract on control is known even when all is well there.
+  for (const x of spTracked(r)) for (const k of Object.keys((x.matrix || {}).scores || {})) known[k] = true;
   const out = {};
   for (const k of SCORE_KEYS) {
     const items = risk[k] || [];
@@ -1052,10 +1062,27 @@ function subvRisk(r) {
   return [];
 }
 function allRisk(r) {
-  const extra = subvRisk(r);
-  if (!extra.length) return r.risk || {};
+  const extra = subvRisk(r), fromContracts = contractHints(r);
+  if (!extra.length && !Object.keys(fromContracts).length) return r.risk || {};
   const out = Object.assign({}, r.risk || {});
-  out.r3 = (out.r3 || []).concat(extra);
+  if (extra.length) out.r3 = (out.r3 || []).concat(extra);
+  for (const [k, list] of Object.entries(fromContracts)) out[k] = (out[k] || []).concat(list);
+  return out;
+}
+// One matrix, the sub-project's: what the monitor rated on its contracts on control (prices,
+// collusion, payments, the contractor's standing, the programme rules) comes in as hints to it.
+function contractHints(r) {
+  const out = {};
+  for (const x of spTracked(r)) {
+    const mx = x.matrix;
+    if (!mx) continue;
+    const who = x.number ? '№ ' + x.number : x.tid;
+    for (const [k, v] of Object.entries(mx.scores || {})) {
+      if (v < 2) continue;
+      const why = ((mx.why || {})[k] || []).map((w) => (typeof udWhy === 'function' ? udWhy(w) : w)).join(', ');
+      (out[k] = out[k] || []).push({ level: v === 3 ? 'high' : 'medium', text: rt('fromContract', { who, why: why || rt('lvl' + v) }), contract: x.key });
+    }
+  }
   return out;
 }
 
@@ -1220,7 +1247,13 @@ function spStage(r) {
   // The table's own status unless the data show the sub-project further along (they are newer).
   const order = (s) => ['prep', 'tender', 'retender', 'contract', 'works', 'done'].indexOf(s);
   const stage = table && ['suspended', 'withdrawn'].includes(table) ? table : (data && order(data) > order(table || 'prep') ? data : table || data || 'prep');
-  return { stage, from: table && stage === table ? 'table' : 'data', pct, signed: m ? m.c.signed : (works.find((x) => x.status === 'Contract Signed') || {}).contract_date || tt.contract_date || null };
+  // Late: the contractual completion date passed with the works unfinished.
+  const end = tt.completion || (m && m.c.end) || null;
+  const late = end && end < today() && !['done', 'withdrawn'].includes(stage) && (pct == null || pct < 100) && ['contract', 'works', 'suspended'].includes(stage) ? dayDiff(end, today()) : null;
+  const failed = works.filter((x) => /No Bids|All Rejected|Cancel/i.test(x.status || '')).length;
+  const lastIssued = works.map((x) => x.issued).filter(Boolean).sort().pop() || null;
+  return { stage, from: table && stage === table ? 'table' : 'data', pct, end, late, failed, lastIssued,
+    signed: m ? m.c.signed : (works.find((x) => x.status === 'Contract Signed') || {}).contract_date || tt.contract_date || null };
 }
 const stageChip = (st) => h('span', { class: 'stage st-' + st.stage }, rt('stage_' + st.stage));
 // Contracts and procurements on control that belong to this sub-project (by its Prozorro ids).
@@ -1257,7 +1290,7 @@ function registryTable(rows) {
       return h('tr', { class: 'click', tabindex: 0, onclick: open, onkeydown: (e) => { if (e.key === 'Enter') open(); } },
         td(L.c, { class: 'num' }, h('b', null, r.code), h('div', { class: 'cell-sub' }, join([tt.programme, tt.batch && 'B' + tt.batch])), tt.expert ? h('div', { class: 'cell-sub clamp1' }, tt.expert) : null, tt.manual ? h('div', { class: 'cell-sub' }, rt('manualTag')) : null),
         td(L.s, { class: 'w-text' }, h('div', { class: 'clamp' }, tt.name_uk || tt.name_en || '—'), h('div', { class: 'cell-sub clamp1' }, tt.beneficiary || '')),
-        td(L.st, null, stageChip(st),
+        td(L.st, null, stageChip(st), st.late ? h('div', { class: 'cell-sub bad' }, rt('lateBy', { n: st.late })) : null,
           !tids.length ? h('div', { class: 'cell-sub' }, ((r.pz || {}).cand || []).length ? h('span', { class: 'warn-text' }, rt('candidates', { n: r.pz.cand.length })) : rt('notLinked'))
             : st.signed && ['contract', 'works'].includes(st.stage) ? h('div', { class: 'cell-sub' }, rt('signedOn', { date: fdate(st.signed) })) : null),
         td(L.k, { class: 'w-party' }, m ? [h('div', { class: 'cell-main clamp1' }, ((m.c.suppliers || [])[0] || {}).name || '—'), h('div', { class: 'cell-sub' }, join([m.c.number && '№ ' + m.c.number, m.c.value ? money(m.c.value.amount) : null]))]
@@ -1314,15 +1347,16 @@ function stageCard(r, st) {
   const m = mainContract(r);
   const steps = [
     ['subvention', sv ? rt('stepSubv', { sum: fmtK((sv.amounts || {})[(sv.editions || []).slice(-1)[0]] || 0) }) : null, !!sv],
-    ['tender', works.length ? join([rt('stepTenders', { n: works.length }), works[works.length - 1].issued ? fdate(works[works.length - 1].issued) : null]) : null, works.length > 0],
+    ['tender', works.length ? join([rt('stepTenders', { n: works.length }), st.failed ? rt('stepFailed', { n: st.failed }) : null, works[works.length - 1].issued ? fdate(works[works.length - 1].issued) : null,
+      ['tender', 'retender'].includes(st.stage) && st.lastIssued ? rt('stepRunning', { n: dayDiff(st.lastIssued, today()) }) : null]) : null, works.length > 0],
     ['contract', st.signed ? join([fdate(st.signed), m && ((m.c.suppliers || [])[0] || {}).name]) : null, !!st.signed],
     ['works', join([tt.start ? rt('stStart', { date: fdate(tt.start) }) : null, st.pct != null ? st.pct + '%' : null]), st.pct > 0 || !!tt.start],
-    ['done', tt.completion ? rt('stEnd', { date: fdate(tt.completion) }) : null, st.stage === 'done'],
+    ['done', st.end ? join([rt('stEnd', { date: fdate(st.end) }), st.late ? rt('lateBy', { n: st.late }) : null]) : null, st.stage === 'done'],
   ];
   const at = { prep: 0, tender: 1, retender: 1, contract: 2, works: 3, done: 4 }[st.stage];
   return h('div', { class: 'card pad section' },
     h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('stageTitle')), stageChip(st)),
-    h('ol', { class: 'sp-road' }, steps.map(([k, text, done], i) => h('li', { class: (done || (at != null && i < at) ? 'done' : '') + (i === at ? ' now' : '') },
+    h('ol', { class: 'sp-road' }, steps.map(([k, text, done], i) => h('li', { class: (done || (at != null && i < at) ? 'done' : '') + (i === at ? ' now' : '') + (k === 'done' && st.late ? ' late' : '') },
       h('b', null, rt('step_' + k)), text ? h('span', { class: 'small muted' }, text) : null))),
     ['suspended', 'withdrawn'].includes(st.stage) ? h('p', { class: 'notice small' }, rt('stage_' + st.stage)) : null,
     h('p', { class: 'muted small' }, rt(st.from === 'table' ? 'stageFromTable' : 'stageFromData')));
