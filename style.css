@@ -971,3 +971,8 @@ details.fold[open] > summary { margin-bottom: 8px; }
 .add-row { flex-wrap: wrap; } .add-row .grow { flex: 1 1 260px; }
 @media (max-width: 900px) { .proc-sums { grid-template-columns: repeat(2, minmax(0, 1fr)); } .proc-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px) { .proc-sums, .proc-facts { grid-template-columns: 1fr; } }
+
+.cell-sub.mine { font-weight: 700; color: var(--ink); }
+.sig-sp-title { display: flex; gap: 8px; align-items: baseline; min-width: 0; color: var(--ink); text-decoration: none; }
+.sig-sp-title:hover b { text-decoration: underline; }
+.ev-row.bad b { color: var(--red); }

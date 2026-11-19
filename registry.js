@@ -142,6 +142,25 @@ const RG = {
     pfXRating: "Оцінка",
     pfYes: "так", pfAnyBatch: "Усі пули",
     colStage: "Етап", riskShort: "ризик {n}",
+    newsNone2: "Монітор ще не веде договорів цього субпроєкту: вони стають на контроль самі, коли менеджер субпроєкту відкриває застосунок.",
+    sigEyebrow: "Сигнали",
+    sigTitle1: "Що змінилось",
+    sigTitle2: "по субпроєктах",
+    sigLead: "Нове на договорах і закупівлях, які монітор веде, і те, що з даних субпроєкту треба зробити: прострочення, оплати ЄІБ, що чекають, прострочені завдання.",
+    sigMine: "Мої ({who})",
+    sigAll: "Усі субпроєкти",
+    sigMore: "і ще {n} — у субпроєкті",
+    sigNone: "Нових сигналів немає.",
+    sigTask: "прострочене завдання: {text}",
+    autoNote2: "Оновлюються автоматично субпроєкти, де менеджер — {who}: те, що триває (закупівля, діючі договори), а завершене знімається само.",
+    autoDone2: "Автоконтроль: додано {added}, знято завершених {removed}",
+    autoStatus2: "Автоконтроль ({n} субпроєктів): додано {added}, знято {removed}, не вдалося {failed}",
+    managerTag: "Менеджер: {who}",
+    takeOver: "Взяти на себе",
+    takeOverHint: "Субпроєкт стане вашим: монітор оновлюватиме його у вашому застосунку",
+    takenOver: "{code} тепер ваш — монітор його оновлює",
+    pAuto: "стане на контроль сам",
+    pNotMine: "оновлює менеджер субпроєкту",
     pTitle: "Закупівлі субпроєкту",
     pNone: "не знайдено",
     pCscNotNeeded: "не потрібен (до €3 млн)",
@@ -444,6 +463,25 @@ const RG = {
     pfXRating: "Rating",
     pfYes: "yes", pfAnyBatch: "All batches",
     colStage: "Stage", riskShort: "risk {n}",
+    newsNone2: "The monitor follows no contract of this sub-project yet: they go on control by themselves when its manager opens the app.",
+    sigEyebrow: "Signals",
+    sigTitle1: "What changed",
+    sigTitle2: "by sub-project",
+    sigLead: "News on the contracts and procurements the monitor follows, and what the sub-project's data say needs doing: lateness, EIB payments waiting, overdue tasks.",
+    sigMine: "Mine ({who})",
+    sigAll: "All sub-projects",
+    sigMore: "and {n} more — in the sub-project",
+    sigNone: "No new signals.",
+    sigTask: "overdue task: {text}",
+    autoNote2: "Sub-projects managed by {who} are kept up to date automatically: what is alive (the procurement, contracts in force) is followed, and what ended leaves by itself.",
+    autoDone2: "Auto control: {added} added, {removed} ended removed",
+    autoStatus2: "Auto control ({n} sub-projects): {added} added, {removed} removed, {failed} failed",
+    managerTag: "Manager: {who}",
+    takeOver: "Take over",
+    takeOverHint: "The sub-project becomes yours: the monitor keeps it up to date in your app",
+    takenOver: "{code} is yours now — the monitor keeps it up to date",
+    pAuto: "goes on control by itself",
+    pNotMine: "kept up to date by the sub-project's manager",
     pTitle: "The sub-project's procurements",
     pNone: "not found",
     pCscNotNeeded: "not needed (under €3M)",
@@ -962,15 +1000,23 @@ async function trackAll(rows) {
   toast(rt('trackDone', { added, already, failed }), { long: true });
 }
 
-// ---- contracts on control by themselves ---------------------------------------------------------
+// ---- who keeps a sub-project, and keeping it up to date ----------------------------------------
 //
-// The contracts and running procurements of the sub-projects of these experts go on control in the
-// account of whoever on the team opens the app, without the "track" button: in force contracts, and
-// procurements with no contract yet (they turn into their contract when it is signed). Prozorro is
-// read again where it was not read this week. Once a day per device. One taken off control by hand
-// is kept off (registry/{code}.work.noTrack, for the whole team).
-const AUTO_EXPERTS = ['Maksym Kasap'];
+// Each sub-project has a manager: the table's expert, or whoever took it over in the app
+// (registry/{code}.work.manager). Everyone on the team sees every sub-project; only its manager's
+// app keeps it up to date. For the signed-in user (by default Maksym Kasap when the account has no
+// expert of its own), once a day: Prozorro is read again where it is a week old, and what is alive
+// is followed by the sync — the procurement under way (until it ends) and the contracts in force
+// (works, supervision, consulting engineer). What ended leaves by itself: a failed or cancelled
+// procurement at once, a finished or terminated contract 90 days on (the last payments). A
+// sub-project given to someone else leaves this user's list too. One taken off by hand stays off
+// (work.noTrack).
+const DEFAULT_MANAGER = 'Maksym Kasap';
 const AUTO_EVERY_H = 20;
+const KEEP_AFTER_END_D = 90;
+const myManager = () => (REG.access && REG.access.expert) || DEFAULT_MANAGER;
+const spManager = (r) => ((r.work || {}).manager) || (r.t || {}).expert || '';
+const isMine = (r) => spManager(r) === myManager();
 let autoTimer = null;
 function autoTrackSoon() {
   clearTimeout(autoTimer);
@@ -978,17 +1024,31 @@ function autoTrackSoon() {
 }
 // With Prozorro ids, or a Ukrainian name to find its works procurement by (as "Refresh from Prozorro" does).
 function autoRows() {
-  return [...REG.rows.values()].filter((r) => AUTO_EXPERTS.includes((r.t || {}).expert) && spStage(r).stage !== 'withdrawn' && (spTids(r).length || spNameUk(r)));
+  return [...REG.rows.values()].filter((r) => isMine(r) && spStage(r).stage !== 'withdrawn' && (spTids(r).length || spNameUk(r)));
 }
-async function autoTrack(force) {
+// Followed items of this user that should go: their sub-project is someone else's, or they ended.
+function endedPicks() {
+  const out = [];
+  for (const id of state.mine.tracked.keys()) {
+    const row = trackedRow(id);
+    if (!row) continue;
+    const r = spOfTid(row.tid);
+    if (!r) continue;  // one's own pick outside the registry stays as it is
+    if (!isMine(r)) { out.push(id); continue; }
+    if (row.kind === 'tender' && ['unsuccessful', 'cancelled'].includes(row.tender_status)) { out.push(id); continue; }
+    const end = row.end || row.signed;
+    if (['terminated', 'complete'].includes(row.status) && end && addDays(end, KEEP_AFTER_END_D) < today()) out.push(id);
+  }
+  return out;
+}
+async function autoTrack(force, only) {
   if (!REG.access || !cloud || !state.user || !state.mine.ready || REG.busy || !REG.rows.size) return;
   let last = 0;
   try { last = Number(localStorage.getItem('autoTrackAt') || 0); } catch (e) { /* private window */ }
   if (!force && Date.now() - last < AUTO_EVERY_H * 3600e3) return;
-  const rows = autoRows();
-  if (!rows.length) return;
+  const rows = only ? [only] : autoRows();
   REG.busy = 'auto';
-  let added = 0, failed = 0, n = 0;
+  let added = 0, removed = 0, failed = 0, n = 0;
   try {
     for (const r of rows) {
       n++;
@@ -1002,18 +1062,27 @@ async function autoTrack(force) {
       const off = new Set(((r.work || {}).noTrack) || []);
       for (const p of trackPicks(pz)) {
         if (isTracked(p.cid) || off.has(p.cid)) continue;
-        // A procurement already on control follows its contract by itself.
+        // A procurement already followed turns into its contract by itself.
         const t0 = (pz.tenders || []).find((x) => x.tid === p.info.tid);
         if (!p.cid.startsWith('tn') && t0 && isTracked('tn' + t0.id)) continue;
         try { await cloud.track(p.cid, p.info); added++; } catch (e) { failed++; console.error('auto track', r.code, p.cid, e); }
       }
     }
-    try { localStorage.setItem('autoTrackAt', String(Date.now())); } catch (e) { /* private window */ }
+    for (const id of endedPicks()) {
+      try { await cloud.untrack(id); removed++; } catch (e) { failed++; }
+    }
+    if (!only) try { localStorage.setItem('autoTrackAt', String(Date.now())); } catch (e) { /* private window */ }
   } finally {
     REG.busy = null;
   }
-  if (added) { nudgeSync(); toast(rt('autoDone', { added }), { long: true }); }
-  setStatus(rt('autoStatus', { added, failed, n: rows.length }), failed > 0);
+  if (added || removed) { nudgeSync(); toast(rt('autoDone2', { added, removed }), { long: true }); }
+  setStatus(rt('autoStatus2', { added, removed, failed, n: rows.length }), failed > 0);
+}
+// Take a sub-project over: it becomes this user's to keep up to date (and leaves its former manager's list).
+async function takeOver(r) {
+  await saveWork(r, (w) => { w.manager = myManager(); w.managerAt = today(); w.managerBy = (state.user && (state.user.displayName || state.user.email)) || ''; });
+  toast(rt('takenOver', { code: r.code }));
+  autoTrack(true, Object.assign({}, r, { work: Object.assign({}, r.work, { manager: myManager() }) })).catch(() => {});
 }
 // Taken off control by hand: kept off for the sub-project (called by the dossier's "remove").
 function regNoTrack(cid, tid) {
@@ -1355,15 +1424,14 @@ const REGF = { expert: null, programme: '', stage: '', which: '', sort: 'code', 
 function registryPage() {
   if (REG.access === undefined) return [h('div', { class: 'card empty section' }, t('ui.loading'))];
   if (!REG.access) return [h('div', { class: 'card empty section' }, rt('noAccess'))];
-  if (REGF.expert == null) REGF.expert = REG.access.expert || '';
+  if (REGF.expert == null) REGF.expert = myManager();
   const rows = [...REG.rows.values()];
   const status = h('span', { class: 'muted small', id: 'reg-status' }, REG.status ? h('span', { class: REG.status.bad ? 'bad' : '' }, REG.status.text) : null);
   const file = h('input', { type: 'file', accept: '.xlsx', hidden: true, onchange: () => file.files[0] && importFile(file.files[0]) });
   const mrdFile = h('input', { type: 'file', accept: '.xlsx', hidden: true, onchange: () => mrdFile.files[0] && importMrd(mrdFile.files[0]) });
   const meta = REG.meta;
-  const own = REG.access.expert ? rows.filter((r) => (r.t || {}).expert === REG.access.expert) : [];
   // Prozorro is read only for the chosen expert's sub-projects: all 400+ would take half an hour.
-  const ofExpert = () => (REGF.expert ? rows.filter((r) => (r.t || {}).expert === REGF.expert) : []);
+  const ofExpert = () => (REGF.expert ? rows.filter((r) => spManager(r) === REGF.expert) : []);
   const refreshBtn = h('button', { class: 'btn', onclick: () => {
     const list = ofExpert();
     if (!list.length) { toast(rt('pickExpert'), { bad: true }); return; }
@@ -1377,11 +1445,10 @@ function registryPage() {
     rows.length ? [rt('mrdUpload'), () => mrdFile.click(), 'upload', rt('mrdUploadHint')] : null,
     rows.length ? [rt('export'), () => exportDialog(), 'download', rt('exportHint')] : null,
     [rt('addSp'), () => addSpDialog(null), 'plus', null],
-    own.length && !AUTO_EXPERTS.includes(REG.access.expert) ? [rt('trackAll', { n: own.length }), () => { if (confirm(rt('trackConfirm', { n: own.length }))) trackAll(own); }, 'star', null] : null,
   ], 'db');
   const lead = h('span', null, meta ? rt('imported', { at: ftime(meta.at && meta.at.toDate ? meta.at.toDate().toISOString() : meta.at), by: meta.byName || '—', n: meta.rows }) : rt('noTable'),
-    autoRows().length ? h('span', { class: 'lead-sub' }, rt('autoNote', { who: AUTO_EXPERTS.join(', ') }), ' ',
-      h('button', { class: 'linkish', type: 'button', onclick: () => autoTrack(true) }, rt('autoRun'))) : null);
+    h('span', { class: 'lead-sub' }, rt('autoNote2', { who: myManager() }), ' ',
+      h('button', { class: 'linkish', type: 'button', onclick: () => autoTrack(true) }, rt('autoRun'))));
   const head = pageHead(rt('eyebrow'), titleGrad(rt('title1'), rt('title2')), lead,
     h('div', { class: 'head-actions' }, rows.length ? refreshBtn : null, dataMenu, file, mrdFile, status));
   const orphans = Object.entries((meta && meta.orphans) || {});
@@ -1391,7 +1458,7 @@ function registryPage() {
     h('p', null, rt('orphansText')),
     h('ul', null, orphans.sort((a, b) => a[0].localeCompare(b[0])).map(([c, v]) => h('li', null, h('b', null, c), ' — ' + money(v))))) : null;
   if (!rows.length) return [head];
-  const experts = [...new Set(rows.map((r) => (r.t || {}).expert).filter(Boolean))].sort();
+  const experts = [...new Set(rows.map(spManager).concat([myManager()]).filter(Boolean))].sort();
   const progs = [...new Set(rows.map((r) => (r.t || {}).programme).filter(Boolean))].sort();
   // What each row is, worked out once per drawing: stage, news, risk, the expert's work.
   const facts = new Map(rows.map((r) => {
@@ -1419,7 +1486,7 @@ function registryPage() {
     const words = REGF.q.toLowerCase().split(/\s+/).filter(Boolean);
     return rows.filter((r) => {
       const tt = r.t || {};
-      if (REGF.expert && tt.expert !== REGF.expert) return false;
+      if (REGF.expert && spManager(r) !== REGF.expert) return false;
       if (REGF.programme && tt.programme !== REGF.programme) return false;
       if (REGF.stage && F(r).st.stage !== REGF.stage) return false;
       if (words.length) {
@@ -1527,7 +1594,7 @@ function registryTable(rows) {
       const rating = overallRating(scoresOf(r).scores);
       const open = () => { location.hash = '#/registry/' + encodeURIComponent(r.code); };
       return h('tr', { class: 'click', tabindex: 0, onclick: open, onkeydown: (e) => { if (e.key === 'Enter') open(); } },
-        td(L.c, { class: 'num' }, h('b', null, r.code), h('div', { class: 'cell-sub' }, join([tt.programme, tt.batch && 'B' + tt.batch])), tt.expert ? h('div', { class: 'cell-sub clamp1' }, tt.expert) : null, tt.manual ? h('div', { class: 'cell-sub' }, rt('manualTag')) : null),
+        td(L.c, { class: 'num' }, h('b', null, r.code), h('div', { class: 'cell-sub' }, join([tt.programme, tt.batch && 'B' + tt.batch])), spManager(r) ? h('div', { class: 'cell-sub clamp1' + (isMine(r) ? ' mine' : '') }, spManager(r)) : null, tt.manual ? h('div', { class: 'cell-sub' }, rt('manualTag')) : null),
         td(L.s, { class: 'w-text' }, h('div', { class: 'clamp' }, tt.name_uk || tt.name_en || '—'), h('div', { class: 'cell-sub clamp1' }, tt.beneficiary || '')),
         td(L.st, null, stageChip(st), st.late ? h('div', { class: 'cell-sub bad' }, rt('lateBy', { n: st.late })) : null,
           !tids.length ? h('div', { class: 'cell-sub' }, ((r.pz || {}).cand || []).length ? h('span', { class: 'warn-text' }, rt('candidates', { n: r.pz.cand.length })) : rt('notLinked'))
@@ -1560,7 +1627,9 @@ function registryCard(code, tab) {
       h('nav', { class: 'crumbs', 'aria-label': rt('nav') }, h('a', { href: '#/' }, rt('nav')), h('span', { 'aria-hidden': 'true' }, '/'), h('span', null, join([r.code, tt.programme, tt.batch && 'Batch ' + tt.batch, tt.office]))),
       h('h1', { class: 'org-title' + (String(tt.name_uk || tt.name_en || '').length > 90 ? ' long' : '') }, tt.name_uk || tt.name_en || r.code),
       tt.name_uk && tt.name_en ? h('p', { class: 'muted' }, tt.name_en) : null,
-      h('div', { class: 'chips' }, stageChip(st), tt.expert ? h('span', { class: 'tag' }, tt.expert) : null, tt.funding ? h('span', { class: 'tag' }, tt.funding) : null,
+      h('div', { class: 'chips' }, stageChip(st),
+        h('span', { class: 'tag' + (isMine(r) ? ' ok' : '') }, rt('managerTag', { who: spManager(r) || '—' })),
+        !isMine(r) ? h('button', { class: 'btn btn-sm', onclick: () => takeOver(r), title: rt('takeOverHint') }, rt('takeOver')) : null, tt.funding ? h('span', { class: 'tag' }, tt.funding) : null,
         overallRating(scoresOf(r).scores) ? h('span', { class: 'sev ' + ['', 'low', 'medium', 'high'][overallRating(scoresOf(r).scores)] }, rt('overall', { n: overallRating(scoresOf(r).scores) })) : null,
         tt.manual ? h('span', { class: 'tag warn' }, rt('manualTag')) : null)),
     h('div', { class: 'org-actions' }, h('div', { class: 'row' }, spDream(r) ? ext(dreamUrl(spDream(r)), 'DREAM', 'btn') : null, tt.manual ? h('button', { class: 'btn', onclick: () => addSpDialog(r) }, rt('editSp')) : null)));
@@ -1604,8 +1673,8 @@ function stageCard(r, st) {
 // News from the contracts on control under the sub-project: their signals since taken on control.
 function newsCard(tracked, news) {
   return h('div', { class: 'card pad section' },
-    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('newsTitle')), h('a', { class: 'btn btn-sm', href: '#/tracked' }, t('nav.tracked'))),
-    !tracked.length ? h('p', { class: 'muted small' }, rt('newsNone'))
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('newsTitle')), h('a', { class: 'btn btn-sm', href: '#/signals' }, t('nav.signals'))),
+    !tracked.length ? h('p', { class: 'muted small' }, rt('newsNone2'))
       : news.signals.length ? h('div', { class: 'ev-feed' }, news.signals.slice(0, 12).map((g) => h('a', { class: 'ev-row', href: '#/tracked/' + g.row.key },
         h('span', { class: 'num' }, fdate(String(g.since || '').slice(0, 10))), h('span', null, h('b', null, t('sig.' + g.type + '.title')), ' · ', g.row.number ? '№ ' + g.row.number : g.row.tid))))
         : h('p', { class: 'muted small' }, rt('newsQuiet', { n: tracked.length })));
@@ -1633,7 +1702,7 @@ function contractsCard(r) {
           h('div', { class: 'cell-sub' }, join([sup.name, c.value ? money(c.value.amount, c.value.currency) : null, label('pzc.', c.status)])),
           row ? h('div', { class: 'cell-sub' }, join([row.totals ? rt('paidShort', { pct: row.totals.value ? Math.round(((row.totals.paid_total || row.totals.paid || 0) / row.totals.value) * 100) : 0 }) : null,
             row.late_days ? t('ud.overdue', { n: row.late_days }) : null, (row.rules && row.rules.bad || []).length ? rt('rulesBad', { n: row.rules.bad.length }) : null])) : null),
-        trackButton({ edrpou: t0.buyer, name: t0.buyer_name, role: 'buyer' }, Object.assign({}, t0, { tid: t0.tid }), c));
+        row ? h('a', { class: 'btn btn-sm', href: '#/tracked/' + row.key }, rt('pDossier')) : c.status === 'active' ? h('span', { class: 'faint small' }, isMine(r) ? rt('pAuto') : rt('pNotMine')) : null);
     })) : h('p', { class: 'muted small' }, rt('noContracts')),
     h('p', { class: 'muted small' }, rt('contractsHint')));
 }
@@ -1855,7 +1924,8 @@ function procItem(r, it, save, linkIds, off) {
         t0 ? pzStatus(t0.status) : x && x.status ? h('span', { class: 'pz-st run' }, x.status) : null,
         tid ? h('a', { class: 'num proc-tid', href: pzUrl(tid), target: '_blank', rel: 'noopener noreferrer' }, tid) : h('span', { class: 'faint' }, rt('pSheetOnly'))),
       h('div', { class: 'proc-actions' },
-        row ? h('a', { class: 'btn btn-sm', href: '#/tracked/' + row.key }, rt('pDossier')) : c && org ? trackButton(org, t0, c) : null,
+        row ? h('a', { class: 'btn btn-sm', href: '#/tracked/' + row.key }, rt('pDossier'))
+          : c && ['active'].includes(c.status) ? h('span', { class: 'faint small' }, isMine(r) ? rt('pAuto') : rt('pNotMine')) : null,
         tid ? actionMenu('', [[rt('unlink'), () => save(linkIds.filter((y) => y !== tid), [...new Set(off.concat(tid))]), 'x', rt('pUnlinkHint')]], 'more') : null)),
     h('div', { class: 'proc-title clamp' }, (t0 && t0.title) || (x && x.name) || '—'),
     h('dl', { class: 'proc-facts' },
@@ -2016,7 +2086,7 @@ function dueTasks(within = 0) {
       if (!x.done && x.due && x.due <= until && (!x.who || x.who === me)) out.push(Object.assign({ code: r.code, name: (r.t || {}).name_uk || (r.t || {}).name_en || '' }, x));
     }
     // A guarantee ending within 30 days (or already ended and not closed) is a task of the sub-project's expert.
-    if ((r.t || {}).expert && (r.t || {}).expert !== me && me) continue;
+    if (spManager(r) && spManager(r) !== myManager()) continue;
     for (const g of ((r.work || {}).guarantees || [])) {
       if (!g.closed && g.until && g.until <= addDays(until, 30)) {
         out.push({ code: r.code, name: (r.t || {}).name_uk || (r.t || {}).name_en || '', due: addDays(g.until, -30) < today() ? g.until : addDays(g.until, -30),
@@ -2028,11 +2098,11 @@ function dueTasks(within = 0) {
 }
 function workCard(r) {
   const w = r.work || {}, tt = r.t || {};
-  const experts = [...new Set([...REG.rows.values()].map((x) => (x.t || {}).expert).filter(Boolean).concat([myExpert()]))].sort();
+  const experts = [...new Set([...REG.rows.values()].map(spManager).filter(Boolean).concat([myExpert()]))].sort();
   // Tasks
   const tText = h('input', { class: 'input', placeholder: rt('taskWhat'), 'aria-label': rt('taskWhat') });
   const tDue = h('input', { class: 'input', type: 'date', value: addDays(today(), 7), 'aria-label': rt('taskDue') });
-  const tWho = select(experts.map((x) => [x, x]), tt.expert || myExpert(), () => {}, rt('taskWho'));
+  const tWho = select(experts.map((x) => [x, x]), spManager(r) || myExpert(), () => {}, rt('taskWho'));
   const tasks = (w.tasks || []).slice().sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0) || String(a.due || '9').localeCompare(String(b.due || '9')));
   // Journal
   const jDate = h('input', { class: 'input', type: 'date', value: today(), 'aria-label': rt('logDate') });
@@ -2587,7 +2657,7 @@ function activities(r) {
 const inYear = (d, y) => y === 'all' || String(d || '').startsWith(y);
 function portfolioData() {
   const all = [...REG.rows.values()];
-  const rows = all.filter((r) => (!PF.expert || (r.t || {}).expert === PF.expert) && (!PF.programme || (r.t || {}).programme === PF.programme) && (!PF.batch || String((r.t || {}).batch) === PF.batch));
+  const rows = all.filter((r) => (!PF.expert || spManager(r) === PF.expert) && (!PF.programme || (r.t || {}).programme === PF.programme) && (!PF.batch || String((r.t || {}).batch) === PF.batch));
   const y = PF.year;
   const tenders = rows.flatMap((r) => (r.tenders || []).map((x) => tenderVerdict(r, x)));
   const acts = rows.flatMap((r) => activities(r).map((a) => Object.assign({ r }, a)));
@@ -2635,7 +2705,7 @@ function portfolioPage() {
   if (!REG.access) return [h('div', { class: 'card empty section' }, rt('noAccess'))];
   const all = [...REG.rows.values()];
   const years = [...new Set([String(new Date().getFullYear()), ...all.flatMap((r) => (r.tenders || []).map((x) => String(x.issued || '').slice(0, 4)))].filter((x) => /^20\d\d$/.test(x) && x >= '2024'))].sort();
-  const experts = [...new Set(all.map((r) => (r.t || {}).expert).filter(Boolean))].sort();
+  const experts = [...new Set(all.map(spManager).filter(Boolean))].sort();
   const progs = [...new Set(all.map((r) => (r.t || {}).programme).filter(Boolean))].sort();
   const batches = [...new Set(all.map((r) => (r.t || {}).batch).filter((x) => x != null && x !== '').map(String))].sort((a, b) => parseInt(a, 10) - parseInt(b, 10) || a.localeCompare(b));
   const box = h('div');
@@ -2732,7 +2802,7 @@ async function exportPortfolio(d) {
   const s3 = [[rt('colCode'), rt('pfXName'), rt('colExpert'), 'Programme', 'Batch', rt('pfXVisitsY'), rt('pfXVisitsAll'), rt('pfXCost'), rt('pfXTs'), rt('pfXCsc'), rt('pfXRating')].map((v) => ({ v, s: head }))]
     .concat(d.rows.slice().sort((a, b) => a.code.localeCompare(b.code)).map((r) => {
       const acts = activities(r), v = acts.filter((a) => a.kind === 'VISIT');
-      return [{ v: r.code, s: cell }, { v: (r.t || {}).name_uk || (r.t || {}).name_en || '', s: cell }, { v: (r.t || {}).expert || '', s: cell }, { v: (r.t || {}).programme || '', s: cell }, { v: (r.t || {}).batch != null ? String(r.t.batch) : '', s: cell },
+      return [{ v: r.code, s: cell }, { v: (r.t || {}).name_uk || (r.t || {}).name_en || '', s: cell }, { v: spManager(r), s: cell }, { v: (r.t || {}).programme || '', s: cell }, { v: (r.t || {}).batch != null ? String(r.t.batch) : '', s: cell },
         { v: v.filter((a) => inYear(a.date, y)).length, s: num }, { v: v.length, s: num }, { v: d.costChecked.includes(r) ? rt('pfYes') : '', s: cell },
         { v: d.noTs.includes(r) ? rt('pfMissing') : '', s: cell }, { v: d.noCsc.includes(r) ? rt('pfMissing') : '', s: cell }, { v: overallRating(scoresOf(r).scores), s: num }];
     }));
@@ -2958,3 +3028,46 @@ function mrdCard(r) {
     h('p', { class: 'muted small' }, rt('mrdHint')));
 }
 const median = (a) => { const s = a.filter((x) => x != null).sort((x, y) => x - y); return s.length ? s[Math.floor((s.length - 1) / 2)] : null; };
+
+// ---- signals by sub-project ----------------------------------------------------------------------
+//
+// One feed for the team: what changed on the contracts the monitor follows (since it started following
+// them), and what the sub-project's own data say needs doing (late, payments waiting, overdue tasks),
+// by sub-project, newest first. Mine by default, all on a click.
+const SIGF = { scope: 'mine' };
+function spSignalRows() {
+  const out = [];
+  for (const r of REG.rows.values()) {
+    const news = spNews(spTracked(r)), st = spStage(r), wk = spWork(r), f = mrdFacts(r);
+    const items = news.signals.map((g) => ({ at: String(g.since || '').slice(0, 10), level: g.severity, text: t('sig.' + g.type + '.title'), who: g.row.number ? '№ ' + g.row.number : g.row.tid, href: '#/tracked/' + g.row.key }));
+    if (st.late) items.push({ at: st.end, level: 'high', text: rt('lateBy', { n: st.late }), href: '#/registry/' + encodeURIComponent(r.code) + '/overview' });
+    const waiting = f ? f.waiting.filter((x) => x.days > 14) : [];
+    if (waiting.length) items.push({ at: waiting.map((x) => x.received).sort().pop(), level: waiting.some((x) => x.days > 30) ? 'high' : 'medium', text: rt('h_mrdWaiting', { n: waiting.length, days: Math.max(...waiting.map((x) => x.days)) }), href: '#/registry/' + encodeURIComponent(r.code) + '/finance' });
+    if (wk.next && wk.next.due && wk.next.due < today()) items.push({ at: wk.next.due, level: 'medium', text: rt('sigTask', { text: wk.next.text }), href: '#/registry/' + encodeURIComponent(r.code) + '/work' });
+    if (items.length) out.push({ r, st, items: items.sort((a, b) => String(b.at || '').localeCompare(String(a.at || ''))) });
+  }
+  return out.sort((a, b) => String(b.items[0].at || '').localeCompare(String(a.items[0].at || '')));
+}
+function spSignalCount() {
+  if (!REG.access || !REG.rows.size) return 0;
+  return spSignalRows().filter((x) => isMine(x.r)).reduce((a, x) => a + x.items.filter((i) => i.level === 'high').length, 0);
+}
+function spSignalsPage() {
+  if (REG.access === undefined) return [h('div', { class: 'card empty section' }, t('ui.loading'))];
+  const box = h('div');
+  const draw = () => {
+    const all = spSignalRows(), mine = all.filter((x) => isMine(x.r));
+    const list = SIGF.scope === 'mine' ? mine : all;
+    fill(box, h('div', { class: 'section' }, pills([['mine', rt('sigMine', { who: myManager() }), mine.length], ['all', rt('sigAll'), all.length]], SIGF.scope, (v) => { SIGF.scope = v; draw(); })),
+      list.length ? list.map(({ r, st, items }) => h('div', { class: 'card pad section sig-sp' },
+        h('div', { class: 'card-head' },
+          h('a', { class: 'sig-sp-title', href: '#/registry/' + encodeURIComponent(r.code) + '/overview' }, h('b', null, r.code), ' ', h('span', { class: 'clamp1' }, (r.t || {}).name_uk || (r.t || {}).name_en || '')),
+          h('div', { class: 'row' }, stageChip(st), h('span', { class: 'tag' + (isMine(r) ? ' ok' : '') }, spManager(r) || '—'))),
+        h('div', { class: 'ev-feed' }, items.slice(0, 8).map((i) => h('a', { class: 'ev-row' + (i.level === 'high' ? ' bad' : ''), href: i.href },
+          h('span', { class: 'num' }, i.at ? fdate(i.at) : '—'), h('span', null, h('b', null, i.text), i.who ? ' · ' + i.who : '')))),
+        items.length > 8 ? h('p', { class: 'muted small' }, rt('sigMore', { n: items.length - 8 })) : null))
+        : h('div', { class: 'card empty section' }, rt('sigNone')));
+  };
+  draw();
+  return [pageHead(rt('sigEyebrow'), titleGrad(rt('sigTitle1'), rt('sigTitle2')), rt('sigLead')), box];
+}

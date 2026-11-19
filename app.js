@@ -630,6 +630,7 @@ function scopeLine() {
 
 function badgeFor(key) {
   if (key === 'tracked') { const n = riskCount(); return n ? h('em', { class: 'count red' }, n) : null; }
+  if (key === 'signals' && typeof spSignalCount === 'function') { const n = spSignalCount(); return n ? h('em', { class: 'count red' }, n) : null; }
   return null;
 }
 
@@ -649,7 +650,7 @@ function accountButton() {
 // The sections: the sub-project registry only for the people on its access list.
 // For the team the sub-project leads: sub-projects → contracts on control → the portfolio; search stays.
 const navItems = () => (typeof hasRegistry === 'function' && hasRegistry()
-  ? [['#/', 'home', 'building', 'nav.sps'], ['#/tracked', 'tracked', 'star', 'nav.tracked'], ['#/registry/summary', 'portfolio', 'chart', 'nav.portfolio'], ['#/search', 'search', 'search', 'nav.search']]
+  ? [['#/', 'home', 'building', 'nav.sps'], ['#/signals', 'signals', 'bell', 'nav.signals'], ['#/registry/summary', 'portfolio', 'chart', 'nav.portfolio'], ['#/search', 'search', 'search', 'nav.search']]
   : NAV);
 function shell(route, page) {
   const last = state.index.runs && state.index.runs[0];
@@ -2352,7 +2353,7 @@ function trackedDossier(id) {
           org && s.sp ? h('button', { class: 'btn', onclick: () => openContract(org, s.sp) }, t('pz.openDossier')) : null,
           s.tid ? ext(pzUrl(s.tid), 'Prozorro', 'btn') : null,
           t0.dream_id ? ext(dreamUrl(t0.dream_id), 'DREAM', 'btn') : null),
-          isTracked(id) ? off : null)),
+          isTracked(id) && !isTeam() ? off : null)),
       s.from_tender ? h('p', { class: 'notice small section' }, t('tr.fromTender', { tid: s.tid })) : null,
       h('div', { class: 'tiles section' },
         h('div', { class: 'stat tint-violet' }, h('small', null, t('pz.contractValue')), h('b', { class: 'num' }, money(tt.value)), c.start || c.end ? h('span', { class: 'sub' }, `${fdate(c.start)} — ${fdate(c.end)}`) : null),
@@ -2408,9 +2409,9 @@ function trackedDossier(id) {
         h('p', { class: 'muted small' }, join([pick && pick.addedAt ? t('tr.addedAt', { at: ftime(pick.addedAt) }) : null, s.payments_checked ? t('tr.checked', { at: fdate(s.payments_checked) }) : null])))
         : h('div', { class: 'card pad section' },
           h('h2', { class: 'card-title' }, sharedPick ? t('tr.sharedTab') : t('tr.teamItem')),
-          h('p', { class: 'muted' }, sharedPick ? t('tr.sharedBy', { who: sharedPick.fromName || '—' }) + (sharedPick.at ? ' · ' + ftime(sharedPick.at) : '') : t('tr.teamItemText')),
+          h('p', { class: 'muted' }, sharedPick ? t('tr.sharedBy', { who: sharedPick.fromName || '—' }) + (sharedPick.at ? ' · ' + ftime(sharedPick.at) : '') : t('tr.teamItemText2')),
           h('div', { class: 'row after' },
-            trackButton(org || { edrpou: s.org }, { tid: s.tid, title: t0.title, buyer_name: t0.buyer_name }, c),
+            isTeam() ? null : trackButton(org || { edrpou: s.org }, { tid: s.tid, title: t0.title, buyer_name: t0.buyer_name }, c),
             sharedPick ? h('button', { class: 'btn btn-sm', onclick: async () => {
               if (!confirm(t('tr.removeSharedConfirm'))) return;
               try { await cloud.removeShared(id); location.hash = '#/tracked/shared'; } catch (e) { toast(e.message, { bad: true }); }
@@ -4217,6 +4218,7 @@ function render() {
     const pages = { contracts: contractsPage, payments: paymentsPage, prozorro: prozorroPage };
     page = [scopeLine()].concat(pages[route](parts[1])); key = 'tracked';
   }
+  else if (route === 'signals' && isTeam() && typeof spSignalsPage === 'function') { page = spSignalsPage(); key = 'signals'; }
   else if (route === 'signals') { page = trackedPage('signals'); key = 'tracked'; }
   else if (route === 'eib') { page = searchPage('eib'); key = 'search'; }
   else if (route === 'overview') { page = overviewPage(); key = 'tracked'; }
