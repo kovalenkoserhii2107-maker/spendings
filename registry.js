@@ -45,6 +45,7 @@ const RG = {
     xRows: 'Субпроєктів у файлі: {sp}; закупівель із даними Prozorro: {tn}; тижнів журналу: {w}.', xKept: 'Не змінено: заповнених вами — {kept}, з формулами — {formula}.',
     xMissing: 'Немає у файлі ({n}): {list}', xNoWeek: 'Записів журналу без свого тижня в таблиці: {n}.',
     mark_td: 'ТД перевірено', mark_assist: 'Супровід', mark_monitor: 'Моніторинг', markHint: 'Відмітка команди (стовпці TD Checking / Tender Assistance / Tender Monitoring)', xJournal: 'Журнал', xTasks: 'Завдання', overall: 'Загальна оцінка: {n}', overallHint: 'За формулою робочої таблиці (стовпець M)', acceptHints: 'Прийняти підказки ({n})', from_own: 'оцінка експерта', from_table: 'з таблиці', from_hint: 'підказка — не прийнята', from_none: 'немає даних', orphans: 'Виплати в Payments без рядка в SPs: {list}', orphansTitle: 'Оплати без субпроєкту: {n} кодів на {sum}', orphansText: 'На аркуші Payments є суми оплат за цими кодами, але на аркуші SPs рядка з таким кодом немає, тож монітор не може віднести їх до жодного субпроєкту. Можливо, субпроєкт прибрали з SPs або код записано інакше (наприклад, «_A» замість «-A»). Варто додати рядок у SPs або виправити код у Payments.',
+    lvl0: 'немає', lvl1: 'низький', lvl2: 'середній', lvl3: 'високий', cancel: 'Скасувати',
     stTitle: 'Стан субпроєкту', stPct: '% виконання', stUpd: 'Дата оновлення', stComment: 'Коментар', stSave: 'Зберегти', stContract: 'Договір підряду', stDates: 'Строки', stStart: 'початок {date}', stEnd: 'завершення {date}',
     stPaid: 'Оплачено (Payments)', stUpdApp: 'оновлено {date} · {who}', stUpdTable: 'з таблиці, оновлено {date}', stTableWas: 'У таблиці було (оновлено {date})',
     addSp: 'Додати субпроєкт', editSp: 'Редагувати', spAdd: 'Додати', manualTag: 'додано вручну', addSpHint: 'Субпроєкт, якого ще немає в таблиці. Код — як у таблиці (OD08_05); при вивантаженні в таблицю такий рядок треба додати в SPs самому — монітор рядків не додає.',
@@ -101,6 +102,7 @@ const RG = {
     xRows: 'Sub-projects in the file: {sp}; procurements with Prozorro data: {tn}; journal weeks: {w}.', xKept: 'Left as they are: filled in by you {kept}, with formulas {formula}.',
     xMissing: 'Not in the file ({n}): {list}', xNoWeek: 'Journal entries with no week of their own in the table: {n}.',
     mark_td: 'TD checked', mark_assist: 'Assistance', mark_monitor: 'Monitoring', markHint: "The team's mark (TD Checking / Tender Assistance / Tender Monitoring columns)", xJournal: 'Journal', xTasks: 'Tasks', overall: 'Overall rating: {n}', overallHint: 'By the working table formula (column M)', acceptHints: 'Accept hints ({n})', from_own: "expert's rating", from_table: 'from the table', from_hint: 'hint — not accepted', from_none: 'no data', orphans: 'Payments with no row in SPs: {list}', orphansTitle: 'Payments with no sub-project: {n} codes, {sum}', orphansText: 'The Payments sheet has payments under these codes, but the SPs sheet has no row with such a code, so the monitor cannot put them to any sub-project. The sub-project may have been taken off SPs or the code is written differently (e.g. “_A” instead of “-A”). Add the row to SPs or correct the code in Payments.',
+    lvl0: 'none', lvl1: 'low', lvl2: 'medium', lvl3: 'high', cancel: 'Cancel',
     stTitle: 'Sub-project status', stPct: '% of completion', stUpd: 'Update date', stComment: 'Comment', stSave: 'Save', stContract: 'Works contract', stDates: 'Dates', stStart: 'start {date}', stEnd: 'completion {date}',
     stPaid: 'Paid (Payments)', stUpdApp: 'updated {date} · {who}', stUpdTable: 'from the table, updated {date}', stTableWas: 'The table had (updated {date})',
     addSp: 'Add a sub-project', editSp: 'Edit', spAdd: 'Add', manualTag: 'added by hand', addSpHint: "A sub-project the table does not have yet. The code as in the table (OD08_05); when exporting, add such a row to SPs yourself: the monitor does not add rows.",
@@ -896,11 +898,12 @@ function statusCard(r) {
   const tt = r.t || {}, s = spStatus(r);
   const m = mainContract(r);
   const sup = m ? (m.c.suppliers || [])[0] || {} : {};
+  const view = h('div', { class: 'st-edit' });
   const pctIn = h('input', { class: 'input', type: 'number', min: 0, max: 100, step: 1, inputmode: 'numeric', 'aria-label': rt('stPct') });
   pctIn.value = s.pct != null ? pctOf(s.pct) : '';
   const dayIn = h('input', { class: 'input', type: 'date', 'aria-label': rt('stUpd') });
   dayIn.value = today();
-  const textIn = h('textarea', { class: 'input', rows: 5, maxlength: 4000, 'aria-label': rt('stComment') });
+  const textIn = h('textarea', { class: 'input', rows: 10, maxlength: 4000, 'aria-label': rt('stComment') });
   textIn.value = s.comment || '';
   const msg = h('span', { class: 'small muted' });
   const saveBtn = h('button', { class: 'btn btn-sm btn-dark', onclick: async () => {
@@ -908,11 +911,11 @@ function statusCard(r) {
     saveBtn.disabled = true;
     try {
       await saveWork(r, (w) => { w.status = { pct: p, upd: dayIn.value || today(), comment: textIn.value.trim().slice(0, 4000), by: myExpert(), at: new Date().toISOString() }; });
-      fill(msg, rt('saved'));
+      toast(rt('saved'));
     } catch (e) { fill(msg, h('span', { class: 'bad' }, e.message)); } finally { saveBtn.disabled = false; }
   } }, icon('check'), rt('stSave'));
   const paid = paidShare(r);
-  return h('div', { class: 'card pad section' },
+  const card = h('div', { class: 'card pad section' },
     h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('stTitle')),
       s.upd ? h('span', { class: 'faint small' }, rt(s.app ? 'stUpdApp' : 'stUpdTable', { date: fdate(s.upd), who: s.by || '' })) : null),
     h('div', { class: 'grid-2 st-grid' },
@@ -926,11 +929,27 @@ function statusCard(r) {
         [rt('subvention'), join([+tt.subv_year > 0 ? money(+tt.subv_year) : null, +tt.subv_paid > 0 ? rt('subvPaid', { sum: money(+tt.subv_paid) }) : null])],
         [rt('next'), tt.next ? join([tt.next.who, tt.next.what, tt.next.date && fdate(tt.next.date)]) : null],
       ]),
-      h('div', { class: 'st-edit' },
-        h('div', { class: 'st-row' }, h('label', { class: 'field' }, h('span', null, rt('stPct')), pctIn), h('label', { class: 'field' }, h('span', null, rt('stUpd')), dayIn)),
-        h('label', { class: 'field' }, h('span', null, rt('stComment')), textIn),
-        s.app && tt.comment && tt.comment !== s.comment ? h('details', { class: 'small muted st-was' }, h('summary', null, rt('stTableWas', { date: tt.upd ? fdate(tt.upd) : '—' })), h('div', null, tt.comment)) : null,
-        h('div', { class: 'row' }, saveBtn, msg))));
+      view));
+  const was = s.app && tt.comment && tt.comment !== s.comment ? h('details', { class: 'small muted st-was' }, h('summary', null, rt('stTableWas', { date: tt.upd ? fdate(tt.upd) : '—' })), h('div', null, tt.comment)) : null;
+  // First what it says; the form only on "Edit".
+  const showView = () => fill(view,
+    h('div', { class: 'st-row' },
+      h('div', { class: 'field' }, h('span', null, rt('stPct')), h('b', { class: 'st-val num' }, s.pct != null ? pctOf(s.pct) + '%' : '—')),
+      h('div', { class: 'field' }, h('span', null, rt('stUpd')), h('b', { class: 'st-val num' }, s.upd ? fdate(s.upd) : '—'))),
+    h('div', { class: 'field' }, h('span', null, rt('stComment')), h('div', { class: 'st-text' }, s.comment || h('span', { class: 'muted' }, '—'))),
+    was,
+    h('div', { class: 'row' }, h('button', { class: 'btn btn-sm', onclick: showEdit }, rt('editSp'))));
+  const showEdit = () => {
+    fill(view,
+      h('div', { class: 'st-row' }, h('label', { class: 'field' }, h('span', null, rt('stPct')), pctIn), h('label', { class: 'field' }, h('span', null, rt('stUpd')), dayIn)),
+      h('label', { class: 'field' }, h('span', null, rt('stComment')), textIn),
+      was,
+      h('div', { class: 'row' }, saveBtn, h('button', { class: 'btn btn-sm', onclick: () => { pctIn.value = s.pct != null ? pctOf(s.pct) : ''; dayIn.value = today(); textIn.value = s.comment || ''; showView(); } }, rt('cancel')), msg));
+    // As tall as what is written (up to a screen), the cursor at its end.
+    requestAnimationFrame(() => { textIn.style.height = Math.min(window.innerHeight * 0.7, Math.max(240, textIn.scrollHeight + 4)) + 'px'; textIn.focus(); textIn.setSelectionRange(textIn.value.length, textIn.value.length); });
+  };
+  showView();
+  return card;
 }
 
 // A sub-project the table does not have yet, added by hand (and its fields edited the same way).
@@ -975,6 +994,25 @@ function addSpDialog(r0) {
     h('div', { class: 'row', style: 'margin-top:12px' }, save), msg);
 }
 
+// A rating 1–3 as a coloured square; a click opens the four choices in their own colours
+// (– none, 1 low green, 2 medium amber, 3 high red).
+function scorePicker(score, onpick, label, title) {
+  const wrap = h('div', { class: 'score-wrap' });
+  const btn = h('button', { type: 'button', class: 'score-pick s' + (score || 0), 'aria-label': label, 'aria-haspopup': 'true', title }, score != null ? String(score) : '–');
+  const close = (e) => { if (!e || !wrap.contains(e.target)) { const m = wrap.querySelector('.score-menu'); if (m) m.remove(); document.removeEventListener('click', close, true); } };
+  btn.onclick = (e) => {
+    e.preventDefault();
+    if (wrap.querySelector('.score-menu')) { close(); return; }
+    wrap.append(h('div', { class: 'score-menu', role: 'menu' }, [null, 1, 2, 3].map((v) => h('button', {
+      type: 'button', role: 'menuitem', class: 'score-opt s' + (v || 0) + ((score || null) === v ? ' on' : ''),
+      onclick: (ev) => { ev.preventDefault(); close(); onpick(v); },
+    }, v == null ? '–' : String(v), h('small', null, rt('lvl' + (v || 0)))))));
+    setTimeout(() => document.addEventListener('click', close, true));
+  };
+  wrap.append(btn);
+  return wrap;
+}
+
 function risksCard(r) {
   const { scores, from } = scoresOf(r);
   const sug = suggestedScores(r);
@@ -991,8 +1029,7 @@ function risksCard(r) {
       if (k === 'rx' && !items.length) return null;
       const score = scores[k];
       const lv = k === 'rx' ? (items.some((x) => x.level === 'high') ? 'bad' : 'warn') : score === 3 ? 'bad' : score === 2 ? 'warn' : score === 1 ? 'ok' : 'na';
-      const pick = k !== 'rx' ? select([['', '–'], ['1', '1'], ['2', '2'], ['3', '3']], score != null ? String(score) : '', (e) => save({ [k]: e.target.value ? Number(e.target.value) : null }), rt(k)) : null;
-      if (pick) { pick.classList.add('select-sm', 'score-pick'); pick.title = rt('from_' + (from[k] || 'none')); }
+      const pick = k !== 'rx' ? scorePicker(score, (v) => save({ [k]: v }), rt(k), rt('from_' + (from[k] || 'none'))) : null;
       return h('div', { class: 'chk ' + lv },
         pick || h('span', { class: 'chk-ico' }, '!'),
         h('div', null, h('b', null, rt(k)), h('div', { class: 'small muted' }, items.length ? items.map((x) => x.text).join(' · ') : '—'),

@@ -283,8 +283,16 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 .tag { padding: 2px 9px; border-radius: 999px; background: var(--soft); color: var(--muted); font-size: 11.5px; font-weight: 800; }
 .tag.ok { background: var(--green-bg); color: var(--green); }
 .tag.warn { background: #FFF4D6; color: #8A5A00; }
-.chk .score-pick { flex: none; width: 40px; min-height: 32px; height: 32px; padding: 0; border-radius: 10px; font-weight: 800; text-align: center; text-align-last: center; -webkit-appearance: none; appearance: none; background: #fff; box-shadow: inset 0 0 0 1px var(--line); cursor: pointer; }
-.chk.ok .score-pick { background: var(--green); color: #fff; box-shadow: none; } .chk.warn .score-pick { background: #E5A000; color: #fff; box-shadow: none; } .chk.bad .score-pick { background: var(--red); color: #fff; box-shadow: none; }
+.score-wrap { position: relative; flex: none; }
+.score-pick { width: 40px; height: 32px; border: 0; border-radius: 10px; font: inherit; font-weight: 800; cursor: pointer; background: #fff; box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); }
+.score-pick.s1, .score-opt.s1 { background: var(--green); color: #fff; box-shadow: none; }
+.score-pick.s2, .score-opt.s2 { background: #E5A000; color: #fff; box-shadow: none; }
+.score-pick.s3, .score-opt.s3 { background: var(--red); color: #fff; box-shadow: none; }
+.score-menu { position: absolute; z-index: 30; top: 36px; left: 0; display: grid; gap: 4px; width: 150px; padding: 6px; border-radius: 12px; background: #fff; box-shadow: var(--shadow-up); }
+.score-opt { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px; border: 0; border-radius: 8px; font: inherit; font-weight: 800; text-align: left; cursor: pointer; background: var(--soft); color: var(--muted); }
+.score-opt small { font-weight: 600; opacity: .9; }
+.score-opt.on { outline: 2px solid #000; outline-offset: 1px; }
+.score-opt:hover { filter: brightness(.95); }
 .chk > div { min-width: 0; }
 /* The sub-projects table: fixed shares, nothing past the frame. */
 .reg-table { table-layout: fixed; }
@@ -299,7 +307,9 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 /* The sub-project's status card and forms. */
 .st-grid { align-items: start; gap: 24px; }
 .st-edit { display: grid; gap: 10px; padding: 14px; border-radius: 14px; background: var(--soft); }
-.st-edit textarea { min-height: 110px; padding: 10px 12px; resize: vertical; line-height: 1.45; background: #fff; }
+.st-edit textarea { min-height: 240px; padding: 10px 12px; resize: vertical; line-height: 1.45; background: #fff; }
+.st-val { font-size: 18px; }
+.st-text { white-space: pre-wrap; line-height: 1.5; overflow-wrap: anywhere; }
 .st-edit .input { background: #fff; width: 100%; }
 .st-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
 .st-was summary { cursor: pointer; }
