@@ -23,7 +23,7 @@ const RG = {
     note: 'Нотатка команди', saveNote: 'Зберегти', saved: 'Збережено', payments: 'Платежі в Казначействі', loadPayments: 'Показати платежі замовника підряднику',
     paidSum: 'Сплачено {sum} ({n} платежів) з {from}', noPayments: 'Платежів не знайдено', tablePaid: 'За аркушем Payments: {sum}',
     updated: 'оновлено {at}', never: 'ще не оновлювалось', noAccess: 'Реєстр доступний лише учасникам команди.',
-    sheetTender: 'Закупівля', sheetStatus: 'Статус', sheetBidders: 'Учасники', sheetContract: 'Договір', sheetPaid: 'Сплачено',
+    sheetTender: 'Закупівля', sheetStatus: 'Статус', sheetBidders: 'Учасники', sheetContract: 'Договір', sheetPaid: 'Сплачено', sheetRules: 'Правила програми',
     r1: '1. Зміни договору', r2: '2. Перевірка ціни', r3: '3. Нестача фінансування', r4: '4. Затримки оплат', r5: '5. Підрядник на інших субпроєктах',
     r6: '6. Банкрутство / статус підрядника', r7: '7. Висновки ДАСУ', r8: '8. Рішення АМКУ', rx: 'Інше',
     h_changes: '{n} змін договору ({types})', h_manyChanges: 'багато змін: {n}', h_sasuViol: 'ДАСУ виявила порушення ({ids})', h_sasuActive: 'моніторинг ДАСУ триває',
@@ -276,7 +276,7 @@ const RG = {
     note: 'Team note', saveNote: 'Save', saved: 'Saved', payments: 'Treasury payments', loadPayments: "Show the beneficiary's payments to the contractor",
     paidSum: '{sum} paid ({n} payments) since {from}', noPayments: 'No payments found', tablePaid: 'Payments sheet: {sum}',
     updated: 'updated {at}', never: 'not refreshed yet', noAccess: 'The registry is open to team members only.',
-    sheetTender: 'Procurement', sheetStatus: 'Status', sheetBidders: 'Bidders', sheetContract: 'Contract', sheetPaid: 'Paid',
+    sheetTender: 'Procurement', sheetStatus: 'Status', sheetBidders: 'Bidders', sheetContract: 'Contract', sheetPaid: 'Paid', sheetRules: 'Programme rules',
     r1: '1. Contract amendments', r2: '2. Cost and price', r3: '3. Funding gap', r4: '4. Payment delays', r5: '5. Contractor on other sub-projects',
     r6: '6. Contractor bankruptcy / status', r7: '7. SASU conclusions', r8: '8. AMCU decisions', rx: 'Other',
     h_changes: '{n} contract changes ({types})', h_manyChanges: 'many changes: {n}', h_sasuViol: 'SASU found a violation ({ids})', h_sasuActive: 'SASU monitoring under way',
@@ -1276,11 +1276,10 @@ function registryPage() {
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => file.click() }, icon('cloud'), rt('upload')), file,
       rows.length ? h('button', { class: 'btn', onclick: () => exportDialog() }, icon('download'), rt('export')) : null,
       h('button', { class: 'btn', onclick: () => addSpDialog(null) }, icon('plus'), rt('addSp')),
-      rows.length ? h('a', { class: 'btn', href: '#/registry/summary' }, icon('chart'), rt('pfOpen')) : null,
       rows.length ? h('button', { class: 'btn', onclick: () => mrdFile.click(), title: rt('mrdUploadHint') }, icon('cloud'), rt('mrdUpload')) : null, mrdFile,
       rows.length ? refreshBtn : null,
       // Only an expert's own sub-projects, into their own tracking, whatever the filters show.
-      own.length ? h('button', { class: 'btn btn-dark', onclick: () => { if (confirm(rt('trackConfirm', { n: own.length }))) trackAll(own); } }, icon('star'), rt('trackAll', { n: own.length })) : null, status));
+      own.length && !AUTO_EXPERTS.includes(REG.access.expert) ? h('button', { class: 'btn btn-dark', onclick: () => { if (confirm(rt('trackConfirm', { n: own.length }))) trackAll(own); } }, icon('star'), rt('trackAll', { n: own.length })) : null, status));
   const autoNote = autoRows().length ? h('p', { class: 'notice small section' }, rt('autoNote', { who: AUTO_EXPERTS.join(', ') }), ' ',
     h('button', { class: 'btn btn-sm', onclick: () => autoTrack(true) }, rt('autoRun'))) : null;
   const orphans = Object.entries((meta && meta.orphans) || {});
@@ -1442,7 +1441,7 @@ function registryCard(code, tab) {
     rt('tab_' + k), count[k] ? h('em', { class: 'count' }, count[k]) : null, k === 'overview' && news.signals.length ? h('em', { class: 'count red' }, news.signals.length) : null)));
   const body = {
     overview: () => [stageCard(r, st), statusCard(r), newsCard(tracked, news), h('div', { class: 'section' }, risksCard(r))],
-    procurement: () => [pzCard(r), (r.tenders || []).length ? tenderChecksCard(r) : null, (r.tenders || []).length ? sheetTendersCard(r) : null],
+    procurement: () => [pzCard(r), (r.tenders || []).length ? sheetTendersCard(r) : null],
     contracts: () => [contractsCard(r), guaranteesCard(r), paymentsCard(r)],
     finance: () => [mrdCard(r), subventionCard(r), financeFactsCard(r)],
     work: () => [workCard(r), noteCard(r)],
@@ -1509,21 +1508,6 @@ function contractsCard(r) {
     h('p', { class: 'muted small' }, rt('contractsHint')));
 }
 const prozorro_role = (title) => (/технічн\S*\s+нагляд/i.test(title || '') ? 'ts' : /інженер\S*[\s-]*консультант|консультаційн/i.test(title || '') ? 'csc' : /авторськ\S*\s+нагляд/i.test(title || '') ? 'author' : /про[еє]кт/i.test(title || '') ? 'design' : 'other');
-
-// Each procurement of the Tenders sheet against the rules every edition shares (as the summary counts).
-function tenderChecksCard(r) {
-  const list = (r.tenders || []).map((x) => tenderVerdict(r, x)).filter((v) => v.k);
-  if (!list.length) return null;
-  return h('div', { class: 'card pad section' },
-    h('h2', { class: 'card-title' }, rt('checksTitle')),
-    h('div', { class: 'checklist' }, list.map((v) => {
-      const cls = v.verdict === 'bad' ? 'bad' : v.verdict === 'ok' ? 'ok' : 'na';
-      const notes = v.found.filter((f) => f.st !== 'ok').map((f) => rt('pfR_' + f.key, f) + (f.st === 'check' ? ' (' + rt('pfToCheck') + ')' : ''));
-      return h('div', { class: 'chk ' + cls }, h('span', { class: 'chk-ico' }, v.verdict === 'bad' ? '!' : v.verdict === 'ok' ? '✓' : '·'),
-        h('div', null, h('b', null, join([v.x.kind, v.x.pz || v.x.name, v.x.status])), h('div', { class: 'small muted' }, notes.length ? notes.join('; ') : rt('pfV_' + v.verdict))));
-    })),
-    h('p', { class: 'muted small' }, rt('checksHint')));
-}
 
 // The money in figures from the table: investment, the loan's part, contract, paid, this year's subvention.
 function financeFactsCard(r) {
@@ -1924,13 +1908,21 @@ function sheetTendersCard(r) {
   return h('div', { class: 'table-card section' },
     h('div', { class: 'table-tools' }, h('b', null, rt('procurement'))),
     h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
-      h('thead', null, h('tr', null, [rt('sheetTender'), rt('sheetStatus'), rt('sheetBidders'), rt('sheetContract'), rt('sheetPaid')].map((x) => h('th', null, x)))),
+      h('thead', null, h('tr', null, [rt('sheetTender'), rt('sheetStatus'), rt('sheetBidders'), rt('sheetContract'), rt('sheetPaid'), rt('sheetRules')].map((x) => h('th', null, x)))),
       h('tbody', null, r.tenders.map((x) => h('tr', null,
         td(rt('sheetTender'), { class: 'w-text' }, h('div', { class: 'clamp' }, x.name || '—'), h('div', { class: 'cell-sub num' }, join([x.pz ? h('a', { href: pzUrl(x.pz), target: '_blank', rel: 'noopener noreferrer' }, x.pz) : null, x.kind, x.method]))),
         td(rt('sheetStatus'), null, join([x.status, x.issued && fdate(x.issued), x.opening && '→ ' + fdate(x.opening)])),
         td(rt('sheetBidders'), { class: 'w-text' }, join([x.bidders_n, x.bidders && String(x.bidders).replace(/\n/g, ', ')])),
         td(rt('sheetContract'), { class: 'w-party' }, join([x.contractor, x.contract_no && '№ ' + x.contract_no, x.contract_total != null ? money(x.contract_total) : null])),
-        td(rt('sheetPaid'), { class: 'num' }, x.paid != null ? money(x.paid) : '—')))))));
+        td(rt('sheetPaid'), { class: 'num' }, x.paid != null ? money(x.paid) : '—'),
+        td(rt('sheetRules'), { class: 'w-text' }, verdictCell(tenderVerdict(r, x)))))))),
+    h('p', { class: 'muted small', style: 'padding:0 16px 12px' }, rt('checksHint')));
+}
+// The rules' verdict on one procurement of the sheet: compliant, broken (why) or not checked.
+function verdictCell(v) {
+  if (!v.k) return h('span', { class: 'faint' }, '—');
+  const notes = v.found.filter((f) => f.st !== 'ok').map((f) => rt('pfR_' + f.key, f) + (f.st === 'check' ? ' (' + rt('pfToCheck') + ')' : ''));
+  return [h('span', { class: 'sev ' + (v.verdict === 'bad' ? 'high' : v.verdict === 'ok' ? 'ok' : '') }, rt('pfV_' + v.verdict)), notes.length ? h('div', { class: 'cell-sub' }, notes.join('; ')) : null];
 }
 
 function paymentsCard(r) {
@@ -2466,8 +2458,7 @@ function portfolioPage() {
   const set = (k) => (e) => { PF[k] = e.target.value; draw(); };
   draw();
   return [pageHead(rt('pfEyebrow'), titleGrad(rt('pfTitle1'), rt('pfTitle2')), rt('pfLead'),
-    h('div', { class: 'row' }, h('a', { class: 'btn', href: '#/registry' }, rt('pfBack')),
-      h('button', { class: 'btn btn-dark', onclick: () => exportPortfolio(portfolioData()) }, icon('download'), rt('pfExport')))),
+    h('div', { class: 'row' }, h('button', { class: 'btn btn-dark', onclick: () => exportPortfolio(portfolioData()) }, icon('download'), rt('pfExport')))),
   h('div', { class: 'table-card section' }, h('div', { class: 'table-tools' },
     pills(years.map((x) => [x, x]).concat([['all', rt('pfAll')]]), PF.year, (v) => { PF.year = v; draw(); }),
     select([['', rt('anyExpert')]].concat(experts.map((x) => [x, x])), PF.expert, set('expert'), rt('colExpert')),

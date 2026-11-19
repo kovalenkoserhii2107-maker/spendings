@@ -2097,8 +2097,10 @@ function trackedPage(preset) {
   // buyer, contractor; remembered on this device.
   // By buyer unless one picked another way on this device.
   const GROUPS = ['buyer', 'action', 'subproject', 'programme', 'region', 'supplier', 'none'];
-  let groupBy = 'buyer';
-  try { groupBy = GROUPS.includes(localStorage.getItem('trGroup')) ? localStorage.getItem('trGroup') : 'buyer'; } catch (e) { /* private mode */ }
+  // The team sees its contracts by sub-project first; everyone else by buyer.
+  const defGroup = typeof hasRegistry === 'function' && hasRegistry() ? 'subproject' : 'buyer';
+  let groupBy = defGroup;
+  try { groupBy = GROUPS.includes(localStorage.getItem('trGroup')) ? localStorage.getItem('trGroup') : defGroup; } catch (e) { /* private mode */ }
   const closed = (r) => r.row && !isTender(r) && ['terminated', 'cancelled'].includes(r.row.status);
   function actionGroup(r) {
     if (!r.row) return 'pending';
@@ -2564,14 +2566,17 @@ function procurementCard(s, c) {
 // Where the money comes from: the Cabinet's subvention for the project (or its community) by
 // edition, and the procurement plan's sources.
 function fundingCard(s, t0) {
-  const sv = (s.undp || {}).subvention;
+  // Under a sub-project of the registry its subvention is shown there, once.
+  const sp = typeof spOfTid === 'function' ? spOfTid(s.tid) : null;
+  const sv = sp ? null : (s.undp || {}).subvention;
   const plans = t0.plan_info || [];
   const gs = (typeof guaranteesOfTid === 'function' ? guaranteesOfTid(s.tid) : null) || [];
   const adv = s.advance && s.advance.sum > 0 ? s.advance : null;
-  if (!sv && !plans.length && !gs.length && !t0.guarantee && !adv) return null;
+  if (!sv && !sp && !plans.length && !gs.length && !t0.guarantee && !adv && !(s.undp || {}).funding) return null;
   const eds = (sv && sv.editions) || [];
   return h('div', { class: 'card pad section' },
     h('h2', { class: 'card-title' }, t('ud.funding')),
+    sp ? h('p', { class: 'small muted' }, t('ud.subvInSp', { code: sp.code }), ' ', h('a', { href: '#/registry/' + encodeURIComponent(sp.code) + '/finance' }, t('ud.spOpen'))) : null,
     sv ? h('div', null,
       h('h3', { class: 'card-sub' }, sv.level === 'budget' ? t('ud.subvBudget') : t('ud.subv')),
       h('p', { class: 'small muted' }, join([sv.programme, sv.level === 'budget' ? sv.budget : sv.name])),
