@@ -133,7 +133,8 @@ async function registryInit() {
   if (!cloud || !state.user) { REG.access = null; return; }
   REG.access = await cloud.registryAccess();
   loadSubvention().then(() => { if (location.hash.startsWith('#/registry')) softRender(); });
-  if (REG.access) cloud.watchRegistry((r) => { REG.rows = r.rows; REG.meta = r.meta; if (location.hash.startsWith('#/registry')) softRender(); });
+  // The registry also names the sub-projects of the tracked list: that page redraws too.
+  if (REG.access) cloud.watchRegistry((r) => { REG.rows = r.rows; REG.meta = r.meta; if (/^#\/(registry|tracked\/?$|$)|^$/.test(location.hash)) softRender(); });
   softRender();
 }
 const hasRegistry = () => !!REG.access;

@@ -1901,7 +1901,7 @@ async function exportTracked(rows) {
   const W = [1, 1.5, 1.5, 1.5, 1, 1, 1.5, 1];
   // [group, header, width, value(row, snap, i), style]
   const cols = [
-    ['id', 'SP ID', 12, (x) => x.subproject || ''],
+    ['id', 'SP ID', 12, (x) => spCodeOf(x)],
     ['id', 'Programme', 10, (x, s) => (((s || {}).undp || {}).subvention || {}).programme || x.programme || ''],
     ['id', 'Region', 14, (x, s) => x.region || ((s || {}).tender || {}).region || ''],
     ['id', 'Analyst', 16, (x) => { const r = spOfTid(x.tid); return r ? ((r.t || {}).expert || '') : ''; }],
@@ -2010,6 +2010,14 @@ function overallFormula(r, c1) {
   const all = `${n(0)}#:${n(7)}#`, crit = `${n(1)}#:${n(3)}#`, c7 = `${n(6)}#`, wts = `${n(0)}$3:${n(7)}$3`;
   return `IF(COUNTBLANK(${all})=8,"",IF(OR(COUNTIF(${crit},3)+COUNTIF(${c7},3)>=1,COUNTIF(${crit},2)+COUNTIF(${c7},2)>=3),3,IF(SUMPRODUCT(${all},${wts})/SUM(${wts})>=1.8,3,IF(OR(COUNTIF(${crit},2)+COUNTIF(${c7},2)>=1,COUNTIF(${all},3)>=1,SUMPRODUCT(${all},${wts})/SUM(${wts})>=1.4),2,1))))`.replace(/#/g, r);
 }
+// The sub-project of a tracked line: the code Prozorro's texts give, else the registry's sub-project
+// that has this procurement linked.
+function spCodeOf(x) {
+  if (!x) return '';
+  if (x.subproject) return x.subproject;
+  const r = spOfTid(x.tid);
+  return r ? r.code : '';
+}
 function spOfTid(tid) {
   if (!tid || typeof hasRegistry !== 'function' || !hasRegistry()) return null;
   return [...REG.rows.values()].find((r) => spTids(r).includes(tid)) || null;
@@ -2098,19 +2106,19 @@ function trackedPage(preset) {
   const ACTION_ORDER = ['attention', 'changed', 'tenders', 'active', 'pending', 'closed'];
   const keyOf = (r) => {
     const x = r.row || {}, p = r.pick;
-    return { subproject: x.subproject, programme: x.programme, region: x.region, buyer: x.buyer_name || p.buyer, supplier: x.supplier_name || p.supplier }[groupBy] || '';
+    return { subproject: spCodeOf(Object.assign({ tid: p.tid }, x)), programme: x.programme, region: x.region, buyer: x.buyer_name || p.buyer, supplier: x.supplier_name || p.supplier }[groupBy] || '';
   };
   // A sub-project's group: its code and name (the team's table, else the procurement's object).
   const spTitle = (code) => {
     const reg = typeof hasRegistry === 'function' && hasRegistry() ? REG.rows.get(code) : null;
-    const name = reg ? ((reg.t || {}).name_uk || (reg.t || {}).name_en || '') : objectName(((inScope().find((r) => r.row && r.row.subproject === code) || {}).row || {}).title || '', 20);
+    const name = reg ? ((reg.t || {}).name_uk || (reg.t || {}).name_en || '') : objectName(((inScope().find((r) => r.row && spCodeOf(r.row) === code) || {}).row || {}).title || '', 20);
     return h('span', null, h('b', null, code), name ? h('span', { class: 'tr-group-sub' }, ' — ' + name) : null);
   };
   const byRisk = (a, b) => ((b.row && b.row.risk) || 0) - ((a.row && a.row.risk) || 0) || byDate(a, b);
   function draw() {
     const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
     const shown = lastShown = inScope().filter((r) => (!f.which || tests[f.which](r))
-      && (!words.length || words.every((w) => [r.pick.number, r.pick.title, r.pick.buyer, r.pick.supplier, r.pick.tid, r.row && r.row.buyer_name, r.row && r.row.supplier_name, r.row && r.row.subproject].join(' ').toLowerCase().includes(w))));
+      && (!words.length || words.every((w) => [r.pick.number, r.pick.title, r.pick.buyer, r.pick.supplier, r.pick.tid, r.row && r.row.buyer_name, r.row && r.row.supplier_name, r.row && spCodeOf(r.row)].join(' ').toLowerCase().includes(w))));
     const none = f.scope === 'shared' ? [t('tr.sharedEmptyTitle'), t('tr.sharedEmptyText')] : [t('tr.emptyTitle'), t('tr.emptyText')];
     fillHead();
     if (!shown.length) { fill(list, h('div', { class: 'card empty' }, h('b', null, inScope().length ? t('pz.none') : none[0]), inScope().length ? t('sigs.changeFilter') : none[1])); return; }
@@ -2154,7 +2162,7 @@ function trackedPage(preset) {
           h('span', { class: 'tl-status st-' + (tender ? 'tender' : (x && x.status) || 'pending') }, status)),
         parties ? h('div', { class: 'cell-sub clamp1' }, parties) : null,
         h('div', { class: 'tl-meta' },
-          join([groupBy === 'subproject' ? null : x && x.subproject, groupBy === 'programme' ? null : (x && x.programme) || (x && x.eib ? t('eib.short') : null)]),
+          join([groupBy === 'subproject' ? null : spCodeOf(x), groupBy === 'programme' ? null : (x && x.programme) || (x && x.eib ? t('eib.short') : null)]),
           newN ? h('span', { class: 'tl-new' }, t('tr.newN', { n: newN })) : null,
           !r.mine ? h('span', { class: 'faint' }, t('tr.sharedBy', { who: p.fromName || '—' })) : null),
         alerts.length ? h('div', { class: 'tl-alerts' }, alerts.slice(0, 3).map((a) => h('span', { class: HIGH.includes(a) ? 'high' : 'medium' }, t('tra.' + a))),
