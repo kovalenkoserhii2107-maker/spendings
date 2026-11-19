@@ -576,6 +576,7 @@ def index_row(s):
         "key": s["key"], "kind": s.get("kind") or ("treasury" if s["key"].startswith("sp") else "contract"),
         "from_tender": bool(s.get("from_tender")),
         "org": s["org"], "tid": s["tid"], "sp": s.get("sp") or "", "tender_status": t.get("status") or "",
+        "contract_id": s.get("contract_id") or c.get("id"),
         "contracts_n": len(t.get("contracts") or []) if s.get("kind") == "tender" else None,
         "number": c.get("number") or "", "signed": c.get("signed"), "end": c.get("end"), "status": c.get("status"),
         "title": c.get("title") or t.get("title") or "", "buyer": t.get("buyer"), "buyer_name": t.get("buyer_name") or "",

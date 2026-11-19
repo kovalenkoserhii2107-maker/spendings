@@ -296,8 +296,8 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 .chk > div { min-width: 0; }
 /* The sub-projects table: fixed shares, nothing past the frame. */
 .reg-table { table-layout: fixed; }
-.reg-table col.rc-c { width: 104px; } .reg-table col.rc-s { width: 23%; } .reg-table col.rc-e { width: 112px; } .reg-table col.rc-p { width: 190px; }
-.reg-table col.rc-k { width: 17%; } .reg-table col.rc-g { width: 112px; } .reg-table col.rc-r { width: 22%; }
+.reg-table col.rc-c { width: 112px; } .reg-table col.rc-s { width: 25%; } .reg-table col.rc-st { width: 150px; }
+.reg-table col.rc-k { width: 17%; } .reg-table col.rc-g { width: 100px; } .reg-table col.rc-r { width: 15%; } .reg-table col.rc-w { width: 17%; }
 .reg-table td { overflow-wrap: anywhere; vertical-align: top; overflow: hidden; }
 .reg-table th { white-space: normal; line-height: 1.25; vertical-align: bottom; }
 .reg-table td .cell-main.num { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -855,3 +855,24 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
 .kpi-bar > span { display: block; height: 100%; background: #E5A000; border-radius: 999px; }
 .kpi.kpi-ok .kpi-bar > span { background: var(--green); }
 .kpi.kpi-low .kpi-val { color: var(--red); }
+
+/* The sub-project as the main object: its stage and its road */
+.stage { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap; background: var(--soft); color: var(--muted); }
+.stage.st-tender, .stage.st-retender { background: #FFF4D6; color: #8A5A00; }
+.stage.st-retender { background: #FDE8D7; color: #9A3F00; }
+.stage.st-contract { background: #E3EEFF; color: #1F4FA8; }
+.stage.st-works { background: #E6F4EA; color: #1E6B35; }
+.stage.st-done { background: var(--green-bg); color: var(--green); }
+.stage.st-suspended, .stage.st-withdrawn { background: var(--red-bg); color: var(--red); }
+.warn-text { color: #9A3F00; }
+.sp-tabs { margin: 4px 0 6px; }
+.sp-tabs em.count { font-style: normal; margin-left: 6px; font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--soft); }
+.sp-tabs em.count.red { background: var(--red); color: #fff; }
+.sp-road { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; counter-reset: road; }
+.sp-road li { position: relative; padding: 10px 12px 10px 38px; border-radius: 14px; background: var(--soft); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sp-road li::before { counter-increment: road; content: counter(road); position: absolute; left: 10px; top: 10px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 800; background: var(--faint); color: #fff; }
+.sp-road li.done::before { content: '✓'; background: var(--green); }
+.sp-road li.now { outline: 2px solid #E5A000; background: #FFF8E6; }
+.sp-road li.now::before { background: #E5A000; }
+.sp-road li b { font-size: 13.5px; }
+@media (max-width: 900px) { .sp-road { grid-template-columns: 1fr; } }

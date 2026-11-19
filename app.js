@@ -641,7 +641,10 @@ function accountButton() {
 }
 
 // The sections: the sub-project registry only for the people on its access list.
-const navItems = () => NAV.concat(typeof hasRegistry === 'function' && hasRegistry() ? [['#/registry', 'registry', 'building', 'nav.registry']] : []);
+// For the team the sub-project leads: sub-projects → contracts on control → the portfolio; search stays.
+const navItems = () => (typeof hasRegistry === 'function' && hasRegistry()
+  ? [['#/', 'home', 'building', 'nav.sps'], ['#/tracked', 'tracked', 'star', 'nav.tracked'], ['#/registry/summary', 'portfolio', 'chart', 'nav.portfolio'], ['#/search', 'search', 'search', 'nav.search']]
+  : NAV);
 function shell(route, page) {
   const last = state.index.runs && state.index.runs[0];
   const failed = last && last.orgs_failed;
@@ -1787,7 +1790,7 @@ function trackedBar(tt, acts) {
 function trackingTabs(active) {
   const own = [...state.mine.tracked.keys()].length;
   const shared = [...state.mine.shared.keys()].filter((id) => !isTracked(id)).length;
-  const tabs = [['#/', 'mine', t('tr.scope.items'), own, t('tr.scope.itemsShort')], ['#/tracked/orgs', 'orgs', t('tr.scope.orgs'), (state.index.orgs || []).length],
+  const tabs = [['#/tracked', 'mine', t('tr.scope.items'), own, t('tr.scope.itemsShort')], ['#/tracked/orgs', 'orgs', t('tr.scope.orgs'), (state.index.orgs || []).length],
     ['#/tracked/signals', 'signals', t('tr.scope.signals'), riskCount()]].concat(shared ? [['#/tracked/shared', 'shared', t('tr.sharedTab'), shared]] : []);
   // A shorter name for the phone, where the tabs share one row.
   return h('nav', { class: 'section-tabs pills', 'aria-label': t('nav.tracking') }, tabs.map(([href, key, text, n, short]) =>
@@ -4144,7 +4147,11 @@ function render() {
   else if (route === 'tracked' && /^([0-9a-f]{32}|sp\d{3,20}|tn[0-9a-f]{32})$/.test(parts[1] || '')) { page = trackedDossier(parts[1]); key = 'tracked'; }
   else if (route === 'orgs') { page = trackedPage('orgs'); key = 'tracked'; }
   else if (route === 'org' && /^\d+$/.test(parts[1] || '')) { page = orgPage(parts[1], parts[2], parts[3]); key = 'tracked'; }
-  else if (route === 'registry' && typeof registryPage === 'function') { page = parts[1] === 'summary' && typeof portfolioPage === 'function' ? portfolioPage() : parts[1] ? registryCard(decodeURIComponent(parts[1])) : registryPage(); key = 'registry'; }
+  else if (route === 'registry' && typeof registryPage === 'function') {
+    if (parts[1] === 'summary' && typeof portfolioPage === 'function') { page = portfolioPage(); key = 'portfolio'; }
+    else { page = parts[1] ? registryCard(decodeURIComponent(parts[1]), parts[2]) : registryPage(); key = 'home'; }
+  }
+  else if (!route && typeof hasRegistry === 'function' && hasRegistry()) { page = registryPage(); key = 'home'; }
   else if (route === 'feed') page = feedPage(parts[1]);
   else if (route === 'search') page = searchPage(parts[1]);
   else if (route === 'method') { page = methodPage(); key = 'settings'; }
