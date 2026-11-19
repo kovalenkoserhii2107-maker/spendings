@@ -1775,6 +1775,263 @@ function trackingTabs(active) {
     h('a', { href, class: key === active ? 'on' : '' }, h('span', { class: 't-full' }, text), h('span', { class: 't-short' }, short || text),
       n ? h('em', { class: 'count' + (key === 'signals' ? ' red' : '') }, n) : null)));
 }
+// ---- an .xlsx of our own, styled -----------------------------------------------------------------
+//
+// A small writer: one or more sheets of rows, each cell a value or {v, f (formula), s (style)}.
+// Styles are named ({bold, size, fill, fmt, wrap, align, color, border}) and turned into the
+// workbook's style table; the zip is made with SheetJS's CFB (already loaded for the import).
+function xlsxBook(sheets) {
+  const fonts = ['<font><sz val="11"/><name val="Calibri"/><family val="2"/></font>'], fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>'];
+  const borders = ['<border><left/><right/><top/><bottom/><diagonal/></border>', '<border><left style="thin"><color rgb="FFD0D7DE"/></left><right style="thin"><color rgb="FFD0D7DE"/></right><top style="thin"><color rgb="FFD0D7DE"/></top><bottom style="thin"><color rgb="FFD0D7DE"/></bottom><diagonal/></border>'];
+  const numFmts = [], xfs = ['<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'], seen = new Map();
+  const idx = (list, x) => { const i = list.indexOf(x); return i >= 0 ? i : list.push(x) - 1; };
+  const BUILTIN = { '0%': 9, '#,##0': 3, '#,##0.00': 4, '0.0': null };
+  const style = (st) => {
+    if (!st) return 0;
+    const key = JSON.stringify(st);
+    if (seen.has(key)) return seen.get(key);
+    const font = idx(fonts, `<font>${st.bold ? '<b/>' : ''}<sz val="${st.size || 11}"/>${st.color ? `<color rgb="FF${st.color}"/>` : ''}<name val="Calibri"/><family val="2"/></font>`);
+    const fill = st.fill ? idx(fills, `<fill><patternFill patternType="solid"><fgColor rgb="FF${st.fill}"/><bgColor indexed="64"/></patternFill></fill>`) : 0;
+    let fmt = 0;
+    if (st.fmt) {
+      if (BUILTIN[st.fmt]) fmt = BUILTIN[st.fmt];
+      else { let i = numFmts.indexOf(st.fmt); if (i < 0) i = numFmts.push(st.fmt) - 1; fmt = 164 + i; }
+    }
+    const al = st.wrap || st.align || st.valign ? `<alignment${st.align ? ` horizontal="${st.align}"` : ''} vertical="${st.valign || 'top'}"${st.wrap ? ' wrapText="1"' : ''}/>` : '';
+    const i = xfs.push(`<xf numFmtId="${fmt}" fontId="${font}" fillId="${fill}" borderId="${st.border ? 1 : 0}" xfId="0"${fmt ? ' applyNumberFormat="1"' : ''} applyFont="1"${fill ? ' applyFill="1"' : ''}${st.border ? ' applyBorder="1"' : ''}${al ? ' applyAlignment="1">' + al + '</xf>' : '/>'}`) - 1;
+    seen.set(key, i);
+    return i;
+  };
+  const absRef = (ref) => ref.split(':').map((x) => x.replace(/^([A-Z]+)(\d+)$/, (m0, c, d) => '$' + c + '$' + d)).join(':');
+  const colName = (n) => { let s = ''; for (n++; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s; return s; };
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
+  const dayNum = (d) => (Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) - Date.UTC(1899, 11, 30)) / 864e5;
+  const cell = (ref, c) => {
+    const x = c && typeof c === 'object' && !(c instanceof Date) ? c : { v: c };
+    const s = style(x.s);
+    const sa = s ? ` s="${s}"` : '';
+    if (x.f) return `<c r="${ref}"${sa}${typeof x.v === 'string' ? ' t="str"' : ''}><f>${esc(x.f)}</f>${x.v != null ? `<v>${esc(x.v)}</v>` : ''}</c>`;
+    const v = x.v;
+    if (v == null || v === '') return s ? `<c r="${ref}"${sa}/>` : '';
+    if (typeof v === 'boolean') return `<c r="${ref}"${sa} t="b"><v>${v ? 1 : 0}</v></c>`;
+    if (typeof v === 'number') return isFinite(v) ? `<c r="${ref}"${sa}><v>${v}</v></c>` : '';
+    if (x.day) return `<c r="${ref}"${sa}><v>${dayNum(v)}</v></c>`;
+    return `<c r="${ref}"${sa} t="inlineStr"><is><t xml:space="preserve">${esc(v)}</t></is></c>`;
+  };
+  const sheetXml = (sh) => {
+    const rows = sh.rows.map((row, r) => {
+      if (!row) return '';
+      const cells = row.map((c, i) => cell(colName(i) + (r + 1), c)).join('');
+      const ht = (sh.heights || {})[r + 1];
+      return cells || ht ? `<row r="${r + 1}"${ht ? ` ht="${ht}" customHeight="1"` : ''}>${cells}</row>` : '';
+    }).join('');
+    const cols = (sh.widths || []).map((w, i) => (w ? `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>` : '')).join('');
+    const fr = sh.freeze;
+    const pane = fr ? `<sheetViews><sheetView workbookViewId="0" zoomScale="90"><pane${fr.col ? ` xSplit="${fr.col}"` : ''} ySplit="${fr.row}" topLeftCell="${colName(fr.col || 0)}${fr.row + 1}" activePane="bottomRight" state="frozen"/><selection pane="bottomRight"/></sheetView></sheetViews>` : '';
+    const merges = (sh.merges || []).length ? `<mergeCells count="${sh.merges.length}">${sh.merges.map((m) => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>` : '';
+    const cf = (sh.cf || []).map((c, i) => `<conditionalFormatting sqref="${c.ref}">${c.rules.map((ru, j) => `<cfRule type="cellIs" dxfId="${ru.dxf}" priority="${i * 10 + j + 1}" operator="equal"><formula>${ru.eq}</formula></cfRule>`).join('')}</conditionalFormatting>`).join('');
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${pane}<sheetFormatPr defaultRowHeight="14.4"/>${cols ? `<cols>${cols}</cols>` : ''}<sheetData>${rows}</sheetData>${sh.filter ? `<autoFilter ref="${sh.filter}"/>` : ''}${merges}${cf}</worksheet>`;
+  };
+  const parts = sheets.map(sheetXml);
+  const dxfs = ['FFC7CE|9C0006', 'FFEB9C|9C5700', 'C6EFCE|006100'].map((p) => { const [bg, fg] = p.split('|'); return `<dxf><font><color rgb="FF${fg}"/></font><fill><patternFill><bgColor rgb="FF${bg}"/></patternFill></fill></dxf>`; });
+  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${numFmts.length ? `<numFmts count="${numFmts.length}">${numFmts.map((f, i) => `<numFmt numFmtId="${164 + i}" formatCode="${esc(f)}"/>`).join('')}</numFmts>` : ''}<fonts count="${fonts.length}">${fonts.join('')}</fonts><fills count="${fills.length}">${fills.join('')}</fills><borders count="${borders.length}">${borders.join('')}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${xfs.length}">${xfs.join('')}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles><dxfs count="${dxfs.length}">${dxfs.join('')}</dxfs></styleSheet>`;
+  const files = {
+    '[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${parts.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`,
+    '_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((s, i) => `<sheet name="${esc(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets>${sheets.some((s) => s.filter) ? `<definedNames>${sheets.map((s, i) => (s.filter ? `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${esc(s.name)}'!${absRef(s.filter)}</definedName>` : '')).join('')}</definedNames>` : ''}<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`,
+    'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${parts.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${parts.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+    'xl/styles.xml': styles,
+  };
+  parts.forEach((p, i) => { files[`xl/worksheets/sheet${i + 1}.xml`] = p; });
+  return files;
+}
+async function xlsxBlob(files) {
+  const XLSX = await loadXlsx();
+  const CFB = XLSX.CFB;
+  const z = CFB.utils.cfb_new();
+  const enc = new TextEncoder();
+  for (const [p, s] of Object.entries(files)) CFB.utils.cfb_add(z, p, enc.encode(s));
+  CFB.utils.cfb_del(z, '\u0001Sh33tJ5');
+  return new Blob([CFB.write(z, { fileType: 'zip', type: 'array', compression: true })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+// ---- the contracts on control, as the working table's Tenders sheet ------------------------------
+//
+// One row per contract or procurement on control, its columns in the order and words of the
+// team's Tenders sheet (tender issuing → AMCU → evaluation → contract stage), then the SPs sheet's
+// money, funding and risk-matrix columns, with the same formulas (tender length, contract
+// duration, paid %, Overall Rating).
+function tableStatusOf(t0, c) {
+  if (c && (c.status === 'active' || c.status === 'terminated')) return 'Contract Signed';
+  const s = (t0 && t0.status) || '';
+  if (/^active\.(enquiries|tendering)$/.test(s)) return 'Ongoing';
+  if (/^active\.(pre-qualification|auction|qualification)/.test(s)) return 'Evaluation';
+  if (s === 'active.awarded') return 'Awarded';
+  if (s === 'complete') return 'Contract Signed';
+  if (s === 'unsuccessful') return t0.bids ? 'All Rejected' : 'No Bids';
+  if (s === 'cancelled') return 'Cancelled';
+  return '';
+}
+async function exportTracked(rows) {
+  toast(t('tx.working'));
+  const snaps = await Promise.all(rows.map(async (r) => { try { return await loadTracked(r.key); } catch (e) { return null; } }));
+  const G = { id: 'F2F2F2', tender: 'DDEBF7', amcu: 'FCE4D6', eval: 'E2EFDA', contract: 'FFFFCC', money: 'FFF2CC', risk: 'EDE7F6', mon: 'F2F2F2' };
+  const H = (g) => ({ s: { bold: false, size: 10, wrap: true, fill: G[g], border: true, valign: 'center' } });
+  const date = { fmt: 'dd.mm.yy', border: true }, money = { fmt: '#,##0.00', border: true }, int = { fmt: '0', border: true, align: 'center' };
+  const txt = { border: true, wrap: true }, plain = { border: true }, pct = { fmt: '0%', border: true }, score = { border: true, align: 'center', bold: true };
+  const D = (v, st) => (v == null || v === '' ? { v: null, s: st } : { v, s: st, day: st === date });
+  const W = [1, 1.5, 1.5, 1.5, 1, 1, 1.5, 1];
+  // [group, header, width, value(row, snap, i), style]
+  const cols = [
+    ['id', 'SP ID', 12, (x) => x.subproject || ''],
+    ['id', 'Programme', 10, (x, s) => (((s || {}).undp || {}).subvention || {}).programme || x.programme || ''],
+    ['id', 'Region', 14, (x, s) => x.region || ((s || {}).tender || {}).region || ''],
+    ['id', 'Analyst', 16, (x) => { const r = spOfTid(x.tid); return r ? ((r.t || {}).expert || '') : ''; }],
+    ['id', 'Name of the tender', 60, (x, s) => ((s || {}).tender || {}).title || x.title || '', txt],
+    ['id', 'W/TS/IC', 7, (x, s) => wtsOf(s, x), plain],
+    ['id', 'Status of the tender procedure', 14, (x, s) => tableStatusOf((s || {}).tender, (s || {}).contract && Object.assign({ status: x.status }, s.contract))],
+    ['id', 'Procurement method', 13, (x, s) => { const m = ((s || {}).tender || {}).method || x.method || ''; return m ? (/^(reporting|negotiation)/.test(m) ? 'Direct Contract' : 'Tender') : ''; }],
+    ['id', 'Prozorro ID', 24, (x) => (x.tid ? { v: x.tid, f: `HYPERLINK("https://prozorro.gov.ua/tender/${x.tid}","${x.tid}")`, s: { border: true, color: '0563C1' } } : '')],
+    ['id', 'TD Checking', 9, (x) => markOf(x.tid, 'td'), int],
+    ['id', 'Tender Assistance', 9, (x) => markOf(x.tid, 'assist'), int],
+    ['id', 'Tender Monitoring', 9, (x) => markOf(x.tid, 'monitor'), int],
+    ['tender', 'Estimated Value acc. to the Procurement Plan, UAH incl VAT', 15, (x, s) => { const tt = (s || {}).tender || {}; const pl = (tt.plan_info || []).reduce((a, p) => a + (p.amount || 0), 0); return pl || (tt.value || {}).amount || null; }, money],
+    ['tender', 'Tender Issuing Date', 11, (x, s) => (((s || {}).undp || {}).timeline || {}).announced || ((s || {}).tender || {}).date, date],
+    ['tender', 'Tender opening Date', 11, (x, s) => (((s || {}).undp || {}).timeline || {}).opening || ((s || {}).tender || {}).deadline, date],
+    ['tender', 'Length of the tender', 8, (x, s, r) => ({ f: `IF(${L('Procurement method')}${r}="Tender",IF(${L('Tender Issuing Date')}${r}<>"",${L('Tender opening Date')}${r}-${L('Tender Issuing Date')}${r},""),"")`, s: int })],
+    ['tender', 'Q&R', 6, (x, s) => ((s || {}).tender || {}).questions_count, int],
+    ['amcu', 'AMCU Complaints concerning the TD', 9, (x, s) => (((((s || {}).undp || {}).complaints || {}).tender || {}).n || null), int],
+    ['amcu', 'Complaint Review Status', 12, (x, s) => amcuWord((((s || {}).undp || {}).complaints || {}).tender)],
+    ['eval', 'Auction Date \n(if there are 2 or more bidders)', 11, (x, s) => (((s || {}).undp || {}).timeline || {}).auction || ((s || {}).tender || {}).auction, date],
+    ['eval', '## of bidders', 8, (x, s) => (((s || {}).undp || {}).bidders || {}).bids ?? ((s || {}).tender || {}).bids, int],
+    ['eval', 'Bidders', 34, (x, s) => ((((s || {}).undp || {}).bidders || {}).list || []).map((b) => b.name + (b.amount ? ' — ' + money2(b.amount) : '')).join('\n'), txt],
+    ['eval', 'Award decision date', 11, (x, s) => (((s || {}).undp || {}).timeline || {}).award, date],
+    ['eval', 'AMCU Complaints concerning the evaluation', 9, (x, s) => (((((s || {}).undp || {}).complaints || {}).award || {}).n || null), int],
+    ['eval', 'Complaint Review Status', 12, (x, s) => amcuWord((((s || {}).undp || {}).complaints || {}).award)],
+    ['eval', 'SASU Monitoring', 11, (x, s) => sasuWord(s)],
+    ['eval', 'Any other observation on procurement process', 40, (x, s) => procObs(s), txt],
+    ['contract', 'Link to the Contract', 24, (x, s) => { const c = (s || {}).contract; return c && c.cid ? { v: c.cid, f: `HYPERLINK("https://prozorro.gov.ua/contract/${c.cid}","${c.cid}")`, s: { border: true, color: '0563C1', fill: G.contract } } : ''; }],
+    ['contract', 'Contractor Name (ukr)', 30, (x, s) => (((s || {}).contract || {}).suppliers || [{}])[0].name || x.supplier_name || '', txt],
+    ['contract', 'Contractor ID', 11, (x, s) => (((s || {}).contract || {}).suppliers || [{}])[0].code || x.supplier || ''],
+    ['contract', 'Contract Number', 14, (x, s) => ((s || {}).contract || {}).number || x.number || ''],
+    ['contract', 'Date of the Contract ', 11, (x, s) => ((s || {}).contract || {}).signed || x.signed, date],
+    ['contract', 'Date of the Contract end', 11, (x, s) => ((s || {}).contract || {}).end || x.end, date],
+    ['contract', 'Contract (works) duration\nmonths', 9, (x, s, r) => { const a = L('Date of the Contract ') + r, b = L('Date of the Contract end') + r; return { f: `IF(AND(${a}<>"",${b}<>""),ROUND((${b}-${a})/30,1),"")`, s: { fmt: '0.0', border: true, align: 'center' } }; }],
+    ['contract', 'Total Сontract amount with VAT, UAH', 15, (x, s) => (((s || {}).contract || {}).value || {}).amount || ((s || {}).totals || {}).value, money],
+    ['contract', '# of Contract Modifications', 9, (x, s) => (((s || {}).contract || {}).changes || []).length || 0, int],
+    ['contract', 'Any other observation on contract execution process', 40, (x, s) => execObs(s), txt],
+    ['money', 'Total Amount Paid to Date', 15, (x, s, r) => { const a = L('Amount Paid to Date (EIB Co-Financing)') + r, b = L('Amount Paid to Date (Local  budget)') + r; return { f: `IF(AND(${a}="",${b}=""),"",N(${a})+N(${b}))`, s: money }; }],
+    ['money', 'Amount Paid to Date (EIB Co-Financing)', 15, (x, s) => (((s || {}).totals || {}).paid_eib) ?? null, money],
+    ['money', 'Amount Paid to Date (Local  budget)', 15, (x, s) => { const tt = (s || {}).totals || {}; return tt.paid_eib != null && tt.paid_total != null ? Math.round((tt.paid_total - tt.paid_eib) * 100) / 100 : tt.paid ?? null; }, money],
+    ['money', 'Acts to date, UAH', 15, (x, s) => (s || {}).acts_sum ?? null, money],
+    ['money', 'Contract Paid %', 8, (x, s, r) => { const v = L('Total Сontract amount with VAT, UAH') + r; return { f: `IF(N(${v})=0,"",N(${L('Total Amount Paid to Date')}${r})/${v})`, s: pct }; }],
+    ['money', '% of completion (acts)', 8, (x, s, r) => { const v = L('Total Сontract amount with VAT, UAH') + r; return { f: `IF(N(${v})=0,"",N(${L('Acts to date, UAH')}${r})/${v})`, s: pct }; }],
+    ['money', 'Overdue payment, UAH', 13, (x, s) => (((s || {}).totals || {}).overdue) || null, money],
+    ['money', 'Completion overdue, days', 9, (x, s) => ((((s || {}).undp || {}).progress || {}).overdue_days) || null, int],
+    ['money', 'Current-Year Subvention, UAH', 15, (x, s) => { const f = ((s || {}).undp || {}).funding; return f ? f.year_subvention : null; }, money],
+    ['money', 'Funding Adequacy Status', 12, (x, s) => ({ adequate: 'Adequate', insufficient: 'Insufficient', suspended: 'Suspended', excess: 'Excess Funding' })[((((s || {}).undp || {}).funding) || {}).status] || ''],
+    ['money', 'Anticipated Additional Funding Needs, UAH', 15, (x, s) => { const f = ((s || {}).undp || {}).funding; return f ? Math.round(f.gap || 0) : null; }, money],
+    ['risk', 'Overall Rating', 9, (x, s, r) => ({ f: overallFormula(r, colLetter(riskAt)), s: score })],
+    ...UD_KEYS.map((k, i) => ['risk', ['1. Contract Amendments Compliance', '2. Cost and Price Verification', '3. Funding Gap', '4. Payment Delays', '5. Contractor performance under other UERP/URP contracts', '6. Contractor bankruptcy or other loss of legal status', '7. Conclusions of SASU monitoring', '8. AMCU decisions on procurement complaints'][i], 11,
+      (x, s) => { const v = ((((s || {}).undp || {}).matrix || {}).scores || {})[k]; return v == null ? null : v; }, score]),
+    ['mon', 'Contractor legal status', 22, (x, s) => (((((s || {}).undp || {}).legal || {}).flags) || []).map((f) => t('lg.f.' + f.kind)).join('; ') || ((((s || {}).undp || {}).legal || {}).edr || {}).stan || '', txt],
+    ['mon', 'діючий', 7, (x, s) => (x.status === 'active' ? 'yes' : x.status ? 'no' : '')],
+    ['mon', 'Last change', 11, (x) => (x.changed_at || '').slice(0, 10), date],
+    ['mon', 'Monitor', 12, (x) => ({ v: t('tx.open'), f: `HYPERLINK("${location.origin + location.pathname}#/tracked/${x.key}","${t('tx.open')}")`, s: { border: true, color: '0563C1' } })],
+  ];
+  const L = (name) => colLetter(cols.findIndex((c) => c[1] === name));
+  const riskAt = cols.findIndex((c) => c[0] === 'risk') + 1;  // the first of 1–8 (after Overall Rating)
+  const HEAD = 5, first = HEAD + 1;
+  const sheetRows = [];
+  sheetRows[0] = [{ v: t('tx.title'), s: { bold: true, size: 20 } }];
+  sheetRows[1] = [{ v: t('tx.sub', { n: rows.length, date: fdate(today()) }), s: { size: 10, color: '6B7280' } }];
+  const groupRow = [], headRow = [], merges = [];
+  let start = 0;
+  cols.forEach((c, i) => {
+    headRow[i] = Object.assign({ v: c[1] }, H(c[0]));
+    if (i === cols.length - 1 || cols[i + 1][0] !== c[0]) {
+      groupRow[start] = { v: t('tx.g.' + c[0]), s: { bold: true, size: 12, fill: G[c[0]], border: true, valign: 'center' } };
+      for (let j = start + 1; j <= i; j++) groupRow[j] = { v: null, s: { fill: G[c[0]], border: true } };
+      if (i > start) merges.push(`${colLetter(start)}4:${colLetter(i)}4`);
+      start = i + 1;
+    }
+  });
+  // The risk weights stand over 1–8 as in the SPs sheet (the Overall Rating reads them from row 3).
+  sheetRows[2] = [];
+  W.forEach((w, i) => { sheetRows[2][riskAt + i] = { v: w, s: { size: 9, align: 'center', color: '6B7280' } }; });
+  sheetRows[3] = groupRow;
+  sheetRows[4] = headRow;
+  rows.forEach((x, n) => {
+    const s = snaps[n], r = first + n;
+    sheetRows[first - 1 + n] = cols.map((c) => {
+      const st = c[4] || plain;
+      let v = c[3](x, s, r);
+      if (v && typeof v === 'object' && (v.f || 's' in v)) return v.s ? v : Object.assign({ s: st }, v);
+      if (st === date) return D(v, date);
+      if (c[0] === 'contract' && st === plain) return { v, s: Object.assign({}, plain, { fill: G.contract }) };
+      return { v: v === '' ? null : v, s: st };
+    });
+  });
+  const last = first + rows.length - 1;
+  const riskCols = `${colLetter(riskAt - 1)}${first}:${colLetter(riskAt + 7)}${Math.max(first, last)}`;
+  const files = xlsxBook([{
+    name: t('tx.sheet'), rows: sheetRows, widths: cols.map((c) => c[2]), heights: { 4: 22, 5: 66 },
+    freeze: { row: HEAD, col: 5 }, filter: `A${HEAD}:${colLetter(cols.length - 1)}${Math.max(HEAD + 1, last)}`, merges,
+    cf: [{ ref: riskCols, rules: [{ eq: '3', dxf: 0 }, { eq: '2', dxf: 1 }, { eq: '1', dxf: 2 }] }],
+  }]);
+  const blob = await xlsxBlob(files);
+  const a = h('a', { href: URL.createObjectURL(blob), download: t('tx.file', { date: today() }) + '.xlsx' });
+  document.body.append(a); a.click(); a.remove();
+  toast(t('tx.done', { n: rows.length }));
+}
+function colLetter(n) { let s = ''; for (n++; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s; return s; }
+const money2 = (x) => new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(x);
+function overallFormula(r, c1) {
+  // The SPs sheet's own formula (its M column), the weights over 1–8 in row 3.
+  const n = (k) => { let x = 0; for (const ch of c1) x = x * 26 + ch.charCodeAt(0) - 64; return colLetter(x - 1 + k); };
+  const all = `${n(0)}#:${n(7)}#`, crit = `${n(1)}#:${n(3)}#`, c7 = `${n(6)}#`, wts = `${n(0)}$3:${n(7)}$3`;
+  return `IF(COUNTBLANK(${all})=8,"",IF(OR(COUNTIF(${crit},3)+COUNTIF(${c7},3)>=1,COUNTIF(${crit},2)+COUNTIF(${c7},2)>=3),3,IF(SUMPRODUCT(${all},${wts})/SUM(${wts})>=1.8,3,IF(OR(COUNTIF(${crit},2)+COUNTIF(${c7},2)>=1,COUNTIF(${all},3)>=1,SUMPRODUCT(${all},${wts})/SUM(${wts})>=1.4),2,1))))`.replace(/#/g, r);
+}
+function spOfTid(tid) {
+  if (!tid || typeof hasRegistry !== 'function' || !hasRegistry()) return null;
+  return [...REG.rows.values()].find((r) => spTids(r).includes(tid)) || null;
+}
+function markOf(tid, k) {
+  const r = spOfTid(tid);
+  const m = r && (((r.work || {}).marks || {})[tid] || {});
+  return m && m[k] ? 1 : null;
+}
+function wtsOf(s, x) {
+  const tt = (s || {}).tender || {};
+  const title = tt.title || x.title || '';
+  if (/технічн\w*\s+нагляд|авторськ\w*\s+нагляд/i.test(title)) return 'TS';
+  if (tt.category === 'works' || /^45/.test(tt.cpv || '')) return 'W';
+  return tt.category ? 'IC' : '';
+}
+function amcuWord(c) {
+  if (!c || !c.n) return '';
+  return c.open ? 'Ongoing' : c.upheld ? 'Satisfied' : 'Not satisfied';
+}
+function sasuWord(s) {
+  const xs = (s || {}).sasu || [];
+  if (!xs.length) return '';
+  if (xs.some((x) => x.violation) || ((s.signals || []).some((g) => g.type === 'sasu_violation'))) return 'Negative';
+  if (xs.some((x) => /^(active|draft)$/.test(x.status || ''))) return 'Ongoing';
+  return 'Positive';
+}
+function procObs(s) {
+  const u = (s || {}).undp || {};
+  const out = (u.collusion || []).filter((f) => f.level !== 'low').map((f) => t('co.k.' + f.kind));
+  const pc = u.price_check || {};
+  if ((pc.bids || {}).abnormal) out.push(t(pc.bids.justified ? 'pc.abnormalJ' : 'pc.abnormal'));
+  if (pc.peers) out.push(t('tx.discount', { d: pc.peers.discount, m: pc.peers.median, n: pc.peers.n }));
+  return out.join('; ');
+}
+function execObs(s) {
+  const sig = ((s || {}).signals || []).filter((g) => g.severity === 'high' || g.severity === 'medium');
+  return sig.map((g) => label('sigtype.', g.type)).filter((v, i, a) => a.indexOf(v) === i).join('; ');
+}
+
 const trackingHead = () => pageHead(t('tr.eyebrow'), titleGrad(t('tr.title1'), t('tr.title2')), null);
 
 function trackedPage(preset) {
@@ -1795,6 +2052,7 @@ function trackedPage(preset) {
   const inScope = () => (f.scope === 'shared' ? shared : own);
   const sum = (k) => inScope().reduce((acc, r) => acc + ((r.row && r.row.totals && r.row.totals[k]) || 0), 0);
   const list = h('div');
+  let lastShown = [];
   const isTender = (r) => (r.row ? r.row.kind === 'tender' : r.id.startsWith('tn'));
   const tests = {
     risk: (r) => r.row && r.row.risk === 3,
@@ -1826,7 +2084,7 @@ function trackedPage(preset) {
   const byRisk = (a, b) => ((b.row && b.row.risk) || 0) - ((a.row && a.row.risk) || 0) || byDate(a, b);
   function draw() {
     const words = f.q.toLowerCase().split(/\s+/).filter(Boolean);
-    const shown = inScope().filter((r) => (!f.which || tests[f.which](r))
+    const shown = lastShown = inScope().filter((r) => (!f.which || tests[f.which](r))
       && (!words.length || words.every((w) => [r.pick.number, r.pick.title, r.pick.buyer, r.pick.supplier, r.pick.tid, r.row && r.row.buyer_name, r.row && r.row.supplier_name, r.row && r.row.subproject].join(' ').toLowerCase().includes(w))));
     const none = f.scope === 'shared' ? [t('tr.sharedEmptyTitle'), t('tr.sharedEmptyText')] : [t('tr.emptyTitle'), t('tr.emptyText')];
     fillHead();
@@ -1899,7 +2157,14 @@ function trackedPage(preset) {
     trackingHead(), scope,
     driveBanner(),
     tiles,
-    h('div', { class: 'table-card section' }, h('div', { class: 'table-tools' }, h('label', { class: 'field tr-group-by' }, h('span', null, t('trgb.label')), groupSel), q), list),
+    h('div', { class: 'table-card section' }, h('div', { class: 'table-tools' }, h('label', { class: 'field tr-group-by' }, h('span', null, t('trgb.label')), groupSel), q,
+      h('button', { class: 'btn btn-sm', title: t('tx.hint'), onclick: async (e) => {
+        const btn = e.currentTarget;
+        const rows = lastShown.map((r) => Object.assign({ key: r.id, tid: r.pick.tid, title: r.pick.title, number: r.pick.number }, r.row || {}));
+        if (!rows.length) { toast(t('tx.none'), { bad: true }); return; }
+        btn.disabled = true;
+        try { await exportTracked(rows); } catch (er) { console.error('export', er); toast(er.message || String(er), { bad: true }); } finally { btn.disabled = false; }
+      } }, icon('download'), t('tx.btn'))), list),
   ];
 }
 
