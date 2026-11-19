@@ -383,6 +383,8 @@ def sync_tracked(mode="full"):
                 codes |= {r.get("supplier"), r.get("org")}
                 snap = read_json(os.path.join(TRACKED_DIR, r["key"] + ".json"), None) or {}
                 codes |= set((snap.get("tender") or {}).get("bidder_codes") or [])
+                # the technical supervision and the consulting engineer: are they independent of the contractor
+                codes |= {(x.get("supplier") or {}).get("code") for x in snap.get("related") or [] if x.get("supplier")}
             legal.sync(codes, DATA, log=lambda m: print(m, flush=True))
         except Exception:  # noqa: BLE001
             traceback.print_exc()

@@ -453,6 +453,8 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
             related = prozorro.related(tender.get("buyer") or buyer, tender.get("title"), req["tid"])
         except prozorro.ProzorroError as e:
             log("  ! пов'язані закупівлі: %s" % e)
+        # Who does the technical supervision and the consulting engineer's job.
+        related = prozorro.related_suppliers(related, (old or {}).get("related"), log)
     pay_notes["oversight"] = [["no_supervision", {}]] if works and eib_kind and related is not None \
         and not any(r.get("role") == "supervision" for r in related) else []
     review = compliance.evaluate(tender, contract, eib=bool(eib_kind), paid=paid, acts_sum=acts_sum,
@@ -617,6 +619,8 @@ def _list_fields(s):
         alerts.append("legal")
     if any(f.get("level") == "high" for f in u.get("collusion") or []):
         alerts.append("collusion")
+    if any(x.get("st") == "bad" and x.get("level") == "high" for x in u.get("rules") or []):
+        alerts.append("rules")
     if any(str(w).startswith("subvention_") or w == "funding_gap" for w in (mx.get("why") or {}).get("r3") or []):
         alerts.append("subvention")
     return {k: v for k, v in {

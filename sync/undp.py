@@ -19,6 +19,7 @@ from datetime import date
 
 import contractor
 import legal
+import rules
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 OPEN_COMPLAINT = {"draft", "claim", "answered", "pending", "accepted"}
@@ -434,7 +435,7 @@ def overall(sc):
     return 1
 
 
-def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contract_stage, fund=None, coll=None, lg=None, pc=None):
+def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contract_stage, fund=None, coll=None, lg=None, pc=None, rl=None):
     """Ratings 1–3 with the reasons, where there is something to judge by; 6 (the contractor's
     legal status) stays with the expert."""
     types = {x["type"] for x in signals or []}
@@ -462,6 +463,10 @@ def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contr
         (medium if bf.get("justified") else high).append("abnormal_price")
     if (plan.get("over_pct") or 0) > 0:
         medium.append("over_plan")
+    # The programme's rules broken by the data (tender period, bid security, signing, independence).
+    r_hi, r_md = rules.worst(rl)
+    high += r_hi
+    medium += r_md
     if "disqualified_lower_bid" in types or high:
         put("r2", 3, "disqualified_lower_bid" if "disqualified_lower_bid" in types else None, *high)
     elif "single_bidder" in types or medium:
@@ -534,6 +539,10 @@ def card(t, c, tc, signals, totals, acts_sum, paid, audit, advance, own_key, tod
     record = contractor_record(((c or {}).get("suppliers") or [{}])[0].get("code"), own_key) if contract_stage else None
     value = ((c or {}).get("value") or {}).get("amount") or (t.get("value") or {}).get("amount")
     fund = funding(subv, value, paid, acts, eib_paid, (c or {}).get("start") or (c or {}).get("signed"), today) if contract_stage else None
+    code = ((c or {}).get("suppliers") or [{}])[0].get("code")
+    rl = rules.check(t, c, related=related, advance=advance, acts=acts, paid_total=paid, legal_items=_legal().get("items") or {},
+                     profile=contractor.load(code, DATA) if code else None,
+                     docs=list((c or {}).get("docs") or []) + list(t.get("docs") or []), contract_stage=contract_stage)
     return {k: v for k, v in {
         "timeline": tl, "bidders": bidders(t, c), "complaints": comp, "price": pr,
         "progress": progress(value, acts_sum, paid, (c or {}).get("end"), today, (c or {}).get("status")) if contract_stage else None,
@@ -542,7 +551,8 @@ def card(t, c, tc, signals, totals, acts_sum, paid, audit, advance, own_key, tod
         "collusion": coll if t.get("collusion") is not None else None,
         "legal": lg,
         "price_check": pc,
-        "matrix": matrix(c, signals, totals, pr, subv, record, audit, comp, advance, contract_stage, fund, coll, lg, pc),
+        "rules": rl,
+        "matrix": matrix(c, signals, totals, pr, subv, record, audit, comp, advance, contract_stage, fund, coll, lg, pc, rl),
     }.items() if v is not None}
 
 
@@ -580,6 +590,11 @@ def events(old, new, event):
     for f in (new.get("legal") or {}).get("flags") or []:
         if f["kind"] not in ol and old.get("legal") is not None:
             out.append(event("legal", kind=f["kind"], level=f["level"]))
+    if old.get("rules") is not None:
+        was = {x["key"] for x in old.get("rules") or [] if x.get("st") == "bad"}
+        for x in new.get("rules") or []:
+            if x.get("st") == "bad" and x["key"] not in was:
+                out.append(event("rule", key=x["key"], level=x.get("level")))
     of_, nf = (old.get("funding") or {}).get("status"), (new.get("funding") or {}).get("status")
     if nf and of_ and nf != of_:
         out.append(event("funding", old=of_, new=nf, gap=(new.get("funding") or {}).get("gap")))

@@ -18,6 +18,7 @@ from collections import Counter, defaultdict
 import prozorro
 
 REFRESH_DAYS = 7
+VERSION = 2  # 2: the largest contracts (the programme's "similar contract of 30%")
 MAX_PAGES = 25          # 500 latest contracts
 ID_DATE = re.compile(r"^UA-(\d{4})-(\d{2})-(\d{2})-\d{6}-[a-z]")
 
@@ -45,6 +46,7 @@ def build(code, eib_rows, tracked_rows, today, log=print):
     year = int(today[:4])
     by_year, buyers = defaultdict(lambda: [0, 0.0]), defaultdict(lambda: [0, 0.0])
     active_n, active_v, name, first = 0, 0.0, "", None
+    big = []
     for r in rows:
         if r.get("status") == "cancelled":
             continue
@@ -55,6 +57,9 @@ def build(code, eib_rows, tracked_rows, today, log=print):
             by_year[y][0] += 1
             by_year[y][1] += v
             first = min(first or y, y)
+        if v:
+            big.append({"cid": r.get("contractID"), "value": round(v, 2), "status": r.get("status"),
+                        "day": "%s-%s-%s" % m.groups() if m else None, "buyer": _name(r.get("buyer") or {})[:120]})
         b = _name(r.get("buyer") or {})
         buyers[b][0] += 1
         buyers[b][1] += v
@@ -71,7 +76,8 @@ def build(code, eib_rows, tracked_rows, today, log=print):
     eib = [x for x in eib_rows if code in x["codes"]]
     tracked = [x for x in tracked_rows if code in x["codes"]]
     return {
-        "code": code, "name": name, "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "code": code, "name": name, "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "v": VERSION,
+        "top": sorted(big, key=lambda x: -x["value"])[:15],
         "total": total, "read": len(rows), "truncated": total > len(rows),
         "value": round(sum(v for _, v in by_year.values()), 2), "first_year": first,
         "active": {"n": active_n, "value": round(active_v, 2), "since": year - 1},
@@ -134,7 +140,8 @@ def sync(codes, data_dir, today, budget_s=300, log=print):
     for c in codes:
         try:
             with open(os.path.join(out_dir, c + ".json"), encoding="utf-8") as f:
-                ages[c] = json.load(f).get("built_at") or ""
+                p = json.load(f)
+                ages[c] = (p.get("built_at") or "") if p.get("v") == VERSION else ""
         except (OSError, ValueError):
             ages[c] = ""
     stale = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - REFRESH_DAYS * 86400))

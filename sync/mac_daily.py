@@ -39,6 +39,8 @@ def codes_on_control():
             with open(os.path.join(DATA, "tracked", r["key"] + ".json"), encoding="utf-8") as f:
                 snap = json.load(f)
             out |= set((snap.get("tender") or {}).get("bidder_codes") or [])
+            # the technical supervision and the consulting engineer: are they independent of the contractor
+            out |= {(x.get("supplier") or {}).get("code") for x in snap.get("related") or [] if x.get("supplier")}
         except (OSError, ValueError, KeyError):
             pass
     return {c for c in out if c and len(c) == 8 and c.isdigit()}

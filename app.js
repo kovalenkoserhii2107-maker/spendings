@@ -1755,6 +1755,7 @@ function eventText(e) {
     case 'subvention': return t('ev.subvention', { old: e.old != null ? ni.format(e.old) : '—', new: e.new != null ? ni.format(e.new) : t('ud.subvDropped'), date: fdate(String(e.edition || '').replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')) });
     case 'matrix': return t('ev.matrix', { old: e.old || '—', new: e.new });
     case 'legal': return t('ev.legal', { what: t('lg.f.' + e.kind) });
+    case 'rule': return t('ev.rule', { what: t('rl.k.' + e.key) });
     case 'collusion': return t('ev.collusion', { what: t('co.k.' + e.kind) }) + (e.a ? ' · ' + e.a + (e.b ? ' / ' + e.b : '') : '');
     case 'funding': return t('ev.funding', { old: t('fa.st.' + e.old), new: t('fa.st.' + e.new) }) + (e.gap > 0 ? ' · ' + t('fa.gap') + ' ' + money(e.gap) : '');
     case 'completion_overdue': return t('ev.completionOverdue', { date: fdate(e.end) });
@@ -1763,10 +1764,10 @@ function eventText(e) {
     default: return e.type;
   }
 }
-const eventClass = (e) => ({ payment: 'pay', change: 'add', value: 'add', end: 'add', doc: 'act', act: 'act', due: 'add', complaint: 'bad', complaint_status: 'add', sasu: 'bad', sasu_status: 'bad', matrix: 'bad', subvention: 'add', completion_overdue: 'bad' }[e.type] || '');
+const eventClass = (e) => ({ rule: 'bad', payment: 'pay', change: 'add', value: 'add', end: 'add', doc: 'act', act: 'act', due: 'add', complaint: 'bad', complaint_status: 'add', sasu: 'bad', sasu_status: 'bad', matrix: 'bad', subvention: 'add', completion_overdue: 'bad' }[e.type] || '');
 // Kinds of change a user filters by.
 const EVENT_GROUPS = { pay: ['payment', 'due'], docs: ['doc', 'act'], terms: ['change', 'value', 'end', 'timeline', 'bids'], status: ['status', 'tender_status'],
-  control: ['complaint', 'complaint_status', 'sasu', 'sasu_status', 'matrix', 'subvention', 'funding', 'collusion', 'legal', 'completion_overdue'] };
+  control: ['complaint', 'complaint_status', 'sasu', 'sasu_status', 'matrix', 'subvention', 'funding', 'collusion', 'legal', 'rule', 'completion_overdue'] };
 const eventGroup = (e) => Object.keys(EVENT_GROUPS).find((g) => EVENT_GROUPS[g].includes(e.type)) || '';
 function eventPills(events, value, onpick) {
   const n = (g) => events.filter((e) => eventGroup(e) === g).length;
@@ -2149,7 +2150,7 @@ function trackedPage(preset) {
     const bar = (v, cls) => h('span', { class: 'mini-bar ' + cls }, h('i', { style: 'width:' + Math.max(0, Math.min(100, v || 0)) + '%' }));
     // The problems, quietly: a coloured dot and a word, at most three; the risk itself is the circle.
     const alerts = ((x && x.alerts) || []).filter((a) => a !== 'risk');
-    const HIGH = ['sasu', 'late', 'collusion', 'legal'];
+    const HIGH = ['sasu', 'late', 'collusion', 'legal', 'rules'];
     const status = tender ? t('stage.tender') : x ? label('pzc.', x.status) : t('tr.pending');
     const buyer = (x && x.buyer_name) || p.buyer, supplier = (x && x.supplier_name) || p.supplier;
     const parties = groupBy === 'buyer' ? supplier || '' : groupBy === 'supplier' ? buyer || '' : join([buyer, supplier], ' → ');
@@ -2317,6 +2318,7 @@ function trackedDossier(id) {
       partiesCard(t0, c),
       contractorCard(s, c),
       procurementCard(s, c),
+      rulesCard(s),
       s.related ? relatedCard(s.related, t0) : null,
       (t0.other_contracts || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('tr.otherContracts')),
         h('div', { class: 'qs-contracts' }, t0.other_contracts.map((oc) => h('div', { class: 'qs-contract' },
@@ -2708,6 +2710,7 @@ function tenderDossier(id, s, pick) {
           h('div', { class: 'cell-sub' }, join([(c.suppliers || []).map((x) => x.name).join(', '), c.value ? money(c.value.amount, c.value.currency) : null, label('pzc.', c.status)]))),
         h('span', { class: 'small muted' }, c.status === 'pending' ? t('tr.autoContract') : label('pzc.', c.status))))) : h('p', { class: 'muted small' }, t('tr.noContractsYet'))),
     procurementCard(s, null),
+    rulesCard(s),
     fundingCard(s, t0),
     complianceCard(s),
     h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, t('tr.history')),
@@ -2762,6 +2765,71 @@ function priceCheckBlock(pc) {
     ]),
     h('p', { class: 'muted small' }, t('pc.hint'))];
 }
+
+// The programme's own rules (ПВУ III guidelines, the Procurement Manual and the model tender
+// documents): what the data show broken, what to look at, what to see in the documents, what holds.
+function rulesCard(s) {
+  const list = (s.undp || {}).rules;
+  if (!list || !list.length) return null;
+  const pct = (x) => (x == null ? '—' : ni.format(x) + '%');
+  const eur = (x) => (x == null ? '—' : '≈ ' + money(Math.round(x), 'EUR'));
+  const meth = (m) => (m ? label('pzt.', m) : '—');
+  const text = (x) => {
+    const p = x.p || {}, k = x.key, st = x.st;
+    const who = (want) => (p.who || []).filter((w) => !want || want.includes(w.st)).map((w) => orgShort(w.name || w.code) + (w.tid ? ' (' + w.tid + ')' : '')).join('; ');
+    const v = { days: p.days, min: p.min, max: p.max != null ? ni.format(p.max) : '—', method: meth(p.method), eur: eur(p.eur), limit: eur(p.limit),
+      amount: money(p.amount), pct: pct(p.pct), award: fdate(p.award), signed: fdate(p.signed), tids: (p.tids || []).join(', '),
+      name: p.name || '—', tid: p.tid || '', registered: fdate(p.registered), years: p.years != null ? ni.format(p.years) : '—',
+      best: p.best != null ? money(p.best) : '—', cid: p.cid || '', need: money(p.need), on: fdate(p.on), n: p.n, total: money(p.total),
+      avg: money(p.avg), code: p.code || '', sum: money(p.sum), closed: fdate(p.closed), until: fdate(p.until), covered: p.covered != null ? p.covered : '—' };
+    let key = k + '.' + st;
+    if (k === 'method') key = st === 'ok' ? (p.limit && p.eur >= p.limit ? 'method.okIntl' : p.eur != null ? 'method.ok' : 'method.okNoEur')
+      : (['negotiation', 'negotiation.quick', 'reporting'].includes(p.method) ? (p.small ? 'method.direct' : 'method.nonComp') : 'method.intl');
+    else if (k === 'bid_security' && st !== 'ok') key = p.amount ? 'bid_security.over' : 'bid_security.none';
+    else if (k === 'standstill' && st !== 'ok') key = p.late ? 'standstill.late' : p.single ? 'standstill.single' : 'standstill.early';
+    else if (/_independent$/.test(k)) {
+      const sts = (p.who || []).map((w) => w.st);
+      key = 'indep.' + (sts.includes('same') ? 'same' : sts.includes('linked') ? 'linked' : sts.includes('nodata') ? 'nodata' : 'ok');
+      v.name = who(key === 'indep.ok' ? null : [key.slice(6)]);
+    }
+    else if (/_share$/.test(k)) key = 'share.' + st;
+    else if (k === 'similar' && st !== 'ok') key = p.best != null ? 'similar.check' : 'similar.none';
+    else if (k === 'overload') key = p.n ? 'overload.found' : 'overload.none';
+    else if (k === 'pacts' && st !== 'ok') { v.missing = [p.integrity ? null : t('rl.pact.integrity'), p.es ? null : t('rl.pact.es')].filter(Boolean).join(t('rl.and')); }
+    else if (k === 'advance_guarantee') key = p.closed ? 'advance_guarantee.closed' : 'advance_guarantee.open';
+    let out = t('rl.d.' + key, v);
+    if (k === 'overload' && p.avg != null && p.total && p.avg < p.need) out += ' ' + t('rl.d.overload.low', v);
+    return out;
+  };
+  const row = (x) => {
+    const cls = x.st === 'ok' ? 'ok' : x.st === 'bad' ? 'bad' : x.level === 'low' ? 'na' : 'warn';
+    const p = x.p || {};
+    return h('div', { class: 'chk ' + cls },
+      h('span', { class: 'chk-ico' }, x.st === 'ok' ? '✓' : x.st === 'bad' ? '!' : x.level === 'low' ? '·' : '?'),
+      h('div', null, h('b', null, t('rl.k.' + x.key)), h('div', { class: 'small muted' }, text(x)),
+        p.older ? h('div', { class: 'small faint' }, t('rl.older')) : null,
+        x.key === 'overload' && (p.list || []).length ? h('div', { class: 'small', style: 'margin-top:4px' }, p.list.map((c) => h('div', { class: 'num' },
+          h('a', { href: pzUrl(c.tid), target: '_blank', rel: 'noopener noreferrer' }, c.tid), ' · ', join([c.number ? '№ ' + c.number : null, fdate(c.signed), money(c.value)])))) : null));
+  };
+  const bad = list.filter((x) => x.st === 'bad'), look = list.filter((x) => x.st === 'check' && x.level !== 'low'),
+    low = list.filter((x) => x.st === 'check' && x.level === 'low'), ok = list.filter((x) => x.st === 'ok');
+  const group = (title, items) => (items.length ? [h('div', { class: 'drive-part-title', style: 'margin-top:14px' }, title), h('div', { class: 'checklist' }, items.map(row))] : null);
+  return h('div', { class: 'card pad section' },
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, t('rl.title')),
+      h('div', { class: 'row' }, bad.length ? h('span', { class: 'sev high' }, t('rl.nBad', { n: bad.length })) : null,
+        look.length ? h('span', { class: 'sev medium' }, t('rl.nLook', { n: look.length })) : null,
+        !bad.length && !look.length ? h('span', { class: 'sev ok' }, t('rl.allOk')) : null)),
+    h('p', { class: 'muted small' }, t('rl.sub')),
+    group(t('rl.g.bad'), bad), group(t('rl.g.look'), look), group(t('rl.g.low'), low),
+    ok.length ? h('details', { class: 'rules-ok', style: 'margin-top:14px' }, h('summary', { class: 'drive-part-title' }, t('rl.g.ok', { n: ok.length })),
+      h('div', { class: 'checklist' }, ok.map(row))) : null,
+    h('p', { class: 'muted small', style: 'margin-top:12px' }, t('rl.hint')));
+}
+
+// A company's name with its legal form shortened: "ТОВ «Технаглядбуд»".
+const LEGAL_FORMS = [[/товариство\s+з\s+обмеженою\s+відповідальн\S*/i, 'ТОВ'], [/приватне\s+підприємство/i, 'ПП'], [/фізична\s+особа[\s-]+підприємець/i, 'ФОП'],
+  [/акціонерне\s+товариство/i, 'АТ'], [/комунальне\s+підприємство/i, 'КП'], [/державне\s+підприємство/i, 'ДП']];
+const orgShort = (name) => LEGAL_FORMS.reduce((s, [rx, to]) => s.replace(rx, to), String(name || '').replace(/\u00ad/g, '')).replace(/\s+/g, ' ').trim();
 
 // Signs of collusion between bidders and of a link with the buyer, read from the bids.
 function collusionBlock(list) {

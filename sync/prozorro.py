@@ -311,7 +311,7 @@ RELATED_ROLES = (
     ("author", re.compile(r"авторськ\w*\s+нагляд", re.I)),
     ("expertise", re.compile(r"експертиз|обстеженн|інвентаризац", re.I)),
     ("design", re.compile(r"про[еє]кт\w*\s*[-–‑]?\s*кошторисн|про[еє]ктуванн|розробленн\w*\s+про[еє]кт|\bпкд\b|робоч\w+\s+про[еє]кт|коригуванн", re.I)),
-    ("consulting", re.compile(r"консультаційн|консалтинг|(?<!\d)713[1-5]\d{4}-\d", re.I)),
+    ("consulting", re.compile(r"консультаційн|консалтинг|інженер\w*[\s\-‐–]*консультант|(?<!\d)713[1-5]\d{4}-\d", re.I)),
     ("works", re.compile(r"будівництв|реконструкці|капітальн\w*\s+ремонт|ремонт|монтаж", re.I)),
 )
 _ANY_CPV = re.compile(r"(?<!\d)(\d{8})-\d")
@@ -359,6 +359,35 @@ def related(buyer, title, own_tid):
                     "value": {"amount": v.get("amount"), "currency": v.get("currency")} if v else None,
                     "role": related_role(r.get("title"))})
     return out
+
+
+SUPPLIER_ROLES = ("supervision", "consulting")
+
+
+def related_suppliers(items, old=None, log=print, limit=4):
+    """Who won the technical supervision and the consulting engineer among the related procedures
+    (the programme wants them independent of the contractor); kept from the last run once known."""
+    known = {r.get("tid"): r.get("supplier") for r in old or [] if r.get("supplier")}
+    done = 0
+    for r in items or []:
+        if r.get("role") not in SUPPLIER_ROLES or r.get("status") in ("cancelled", "unsuccessful"):
+            continue
+        if known.get(r.get("tid")):
+            r["supplier"] = known[r["tid"]]
+            continue
+        if done >= limit or r.get("status") not in ("complete", "active.awarded", "active.qualification", "active"):
+            continue
+        done += 1
+        try:
+            t = fetch_tender(internal_id(r["tid"]))
+        except ProzorroError as e:
+            log("  ! %s: %s" % (r.get("tid"), e))
+            continue
+        aw = [a for a in t.get("awards") or [] if a.get("status") == "active"]
+        sup = _org(((t.get("contracts") or [{}])[-1].get("suppliers") or (aw[-1].get("suppliers") if aw else None) or [{}])[0])
+        if sup.get("code"):
+            r["supplier"] = sup
+    return items
 
 
 def _subcontracts(c, t):
@@ -450,6 +479,9 @@ def compact_tender(t, contracts):
         "questions_unanswered": sum(1 for q in t.get("questions") or [] if not q.get("answer")) or None,
         "guarantee": {"amount": (t.get("guarantee") or {}).get("amount"), "currency": (t.get("guarantee") or {}).get("currency")}
         if (t.get("guarantee") or {}).get("amount") else None,
+        # Per lot: the bid security asked and the expected value (the programme's 0.5% rule).
+        "lot_guarantee": {l["id"]: (l.get("guarantee") or {}).get("amount") or 0 for l in t.get("lots") or [] if l.get("id")} or None,
+        "lot_value": {l["id"]: (l.get("value") or {}).get("amount") for l in t.get("lots") or [] if l.get("id") and (l.get("value") or {}).get("amount")} or None,
         "dream_id": _dream(t),
         "contracts": contracts,
         "modified": t.get("dateModified"),

@@ -833,3 +833,10 @@ textarea.input { min-height: 84px; padding: 10px 14px; resize: vertical; line-he
   /* journal: date, kind | text | done, button */
   .work-form.j { grid-template-areas: "d k" "t t" "o b"; }
 }
+
+/* The programme's rules: what holds stays folded */
+.rules-ok > summary { cursor: pointer; list-style: none; }
+.rules-ok > summary::-webkit-details-marker { display: none; }
+.rules-ok > summary::before { content: '▸ '; }
+.rules-ok[open] > summary::before { content: '▾ '; }
+.rules-ok .checklist { margin-top: 8px; }
