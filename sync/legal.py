@@ -135,12 +135,13 @@ def parse_subject(s):
 LIVE = ("зареєстровано", "зареєстровано, свідоцтво про державну реєстрацію недійсне")
 
 
-def scan_edr(codes, log=print):
-    """Stream the register's zip (one XML member, windows-1251) and keep the subjects asked for."""
+def scan_edr(codes, log=print, path=None):
+    """Stream the register's zip (one XML member, windows-1251) and keep the subjects asked for;
+    `path` reads a copy downloaded by hand instead of the site."""
     wanted = {c.encode() for c in codes}
     found = {}
     started = time.time()
-    with _open(EDR_URL, timeout=60) as res:
+    with (open(path, "rb") if path else _open(EDR_URL, timeout=60)) as res:
         head = res.read(30)
         sig, _, flag, method, _, _, _, _, _, nl, el = struct.unpack("<IHHHHHIIIHH", head)
         if sig != 0x04034B50 or method != 8:
@@ -152,7 +153,7 @@ def scan_edr(codes, log=print):
             if not chunk:
                 break
             read += len(chunk)
-            if time.time() - started > EDR_MAX_S:
+            if not path and time.time() - started > EDR_MAX_S:
                 raise RuntimeError("ЄДР: за %d с прочитано лише %.0f МБ — спробуємо завтра" % (EDR_MAX_S, read / 1e6))
             buf += dec.decompress(chunk)
             cut = buf.rfind(b"</SUBJECT>")

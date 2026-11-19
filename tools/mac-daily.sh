@@ -22,7 +22,7 @@ git fetch --depth 30 origin main && git reset --hard origin/main || exit 1
 
 /usr/bin/python3 -I sync/mac_daily.py
 
-git add data/subvention.json data/edr.json 2>/dev/null
+for f in data/subvention.json data/edr.json; do [ -f "$f" ] && git add "$f"; done
 if git diff --cached --quiet; then
   echo "Змін немає"
   exit 0
