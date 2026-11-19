@@ -1031,3 +1031,29 @@ select.select:focus { background-color: #fff; }
 }
 .sg-row.same { border-top: 1px dashed var(--line); }
 .sg-at small { font-size: 12px; color: var(--faint); white-space: nowrap; }
+
+/* The Contracts tab */
+.contract.c-active { border-color: rgba(26, 127, 55, .35); box-shadow: inset 4px 0 0 var(--green); }
+.contract.c-pending { box-shadow: inset 4px 0 0 #2F6FDB; }
+.contract.c-terminated { background: var(--soft); }
+.c-st { font-size: 12px; font-weight: 800; padding: 3px 10px; border-radius: 999px; background: var(--soft); color: var(--muted); }
+.c-st-active { background: var(--green-bg); color: var(--green); } .c-st-pending { background: #E3EEFF; color: #1F4FA8; }
+.c-title { font-size: 15.5px; }
+.proc-facts .wide2 { grid-column: span 2; }
+.c-progress { display: flex; flex-direction: column; gap: 6px; }
+.c-progress > div { display: grid; grid-template-columns: 56px minmax(80px, 280px) 48px auto; gap: 10px; align-items: center; }
+.c-progress small { font-size: 12px; color: var(--muted); }
+.c-bar { display: block; height: 8px; border-radius: 999px; background: var(--soft); overflow: hidden; }
+.c-bar > i { display: block; height: 100%; border-radius: 999px; }
+.c-bar.acts > i { background: #8A7CF0; } .c-bar.paid > i { background: var(--green); }
+details.fold > .fold-body { padding: 0; margin: 0; box-shadow: none; background: none; }
+details.fold > .fold-body > .card-title { display: none; }
+@media (max-width: 900px) { .proc-facts .wide2 { grid-column: 1 / -1; } }
+/* The Overview tab: aligned */
+.sp-road li { min-height: 76px; justify-content: flex-start; }
+.st-grid { align-items: start; }
+.st-grid .kv { align-content: start; }
+.checklist { align-items: stretch; }
+.checklist .chk { height: 100%; box-sizing: border-box; }
+details.fold > .fold-body > .card-head > .card-title { display: none; }
+details.fold > .fold-body > .card-head { justify-content: flex-end; }

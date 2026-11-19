@@ -142,6 +142,31 @@ const RG = {
     pfXRating: "Оцінка",
     pfYes: "так", pfAnyBatch: "Усі пули",
     colStage: "Етап", riskShort: "ризик {n}",
+    stepEnded: "попередній договір {no} від {date} завершено / розірвано",
+    stepSubvGone: "у чинній редакції — 0 (було {sum})",
+    stepSubvZero: "у розподілі — 0",
+    cTitle: "Договори субпроєкту",
+    cCount: "договорів: {n}",
+    cWorks: "Договір підряду",
+    cActsPaid: "Виконано / оплачено",
+    cActsPaidV: "акти {a}% · оплата {p}%",
+    cEib: "Оплати ЄІБ",
+    cEibLocal: "місцевий бюджет {sum}",
+    cEibNone: "реєстр Мінрозвитку не завантажено",
+    cNoNumber: "Договір без номера",
+    cOf: "від {date}",
+    cContractor: "Виконавець",
+    cPrice: "Ціна",
+    cChanges: "змін: {n}, остання {date}",
+    cTerm: "Строк",
+    cLeft: "лишилось {n} дн.",
+    cProgress: "Виконання й оплата",
+    cActs: "Акти",
+    cPaid: "Оплата",
+    cNotFollowed: "дані з’являться, коли монітор почне вести договір",
+    cEibN: "оплат {n}, остання {date}",
+    cMoreSignals: "ще сигналів: {n} — у досьє",
+    cGSoon: "спливає {n}",
     update: "Оновити",
     sg_seen: "виявлено {date}",
     updateHint: "Перечитати Prozorro для {n} субпроєктів ({who}) і оновити, що монітор веде",
@@ -500,6 +525,31 @@ const RG = {
     pfXRating: "Rating",
     pfYes: "yes", pfAnyBatch: "All batches",
     colStage: "Stage", riskShort: "risk {n}",
+    stepEnded: "the previous contract {no} of {date} ended / was terminated",
+    stepSubvGone: "0 in the edition in force (was {sum})",
+    stepSubvZero: "0 in the distribution",
+    cTitle: "The sub-project's contracts",
+    cCount: "contracts: {n}",
+    cWorks: "Works contract",
+    cActsPaid: "Done / paid",
+    cActsPaidV: "acts {a}% · paid {p}%",
+    cEib: "EIB payments",
+    cEibLocal: "local budget {sum}",
+    cEibNone: "Mindev's register not uploaded",
+    cNoNumber: "Contract with no number",
+    cOf: "of {date}",
+    cContractor: "Contractor",
+    cPrice: "Price",
+    cChanges: "{n} changes, last {date}",
+    cTerm: "Term",
+    cLeft: "{n} days left",
+    cProgress: "Done and paid",
+    cActs: "Acts",
+    cPaid: "Paid",
+    cNotFollowed: "data come once the monitor follows the contract",
+    cEibN: "{n} payments, last {date}",
+    cMoreSignals: "{n} more signals — in the dossier",
+    cGSoon: "{n} ending",
     update: "Update",
     sg_seen: "seen {date}",
     updateHint: "Read Prozorro again for {n} sub-projects ({who}) and bring what the monitor follows up to date",
@@ -1618,25 +1668,32 @@ function spStage(r) {
   const tt = r.t || {}, works = (r.tenders || []).filter((x) => tKind(x.kind) === 'works');
   const pzWorks = ((r.pz || {}).tenders || []).filter((t0) => isWorksTender(t0));
   const m = mainContract(r);
-  const signed = m || works.some((x) => x.status === 'Contract Signed') || !!(tt.contract_date || tt.contractor || tt.contract_sum);
+  // A contract counts while it is in force: one terminated (ended early, or finished) no longer
+  // holds the sub-project at "contract" or makes it late.
+  const live = m && m.c.status === 'active' ? m : null;
+  const ended = m && m.c.status !== 'active' ? m : null;
+  const running = pzWorks.some((t0) => RUN.includes(t0.status)) || works.some((x) => ['Ongoing', 'Evaluation', 'Awarded'].includes(x.status));
+  const tableSigned = !m && (works.some((x) => x.status === 'Contract Signed') || !!(tt.contract_date || tt.contractor || tt.contract_sum));
   const pct = pctOf(spStatus(r).pct);
   let data = null;
   if (pct != null && pct >= 100) data = 'done';
-  else if (pct > 0) data = 'works';
-  else if (signed) data = 'contract';
-  else if (pzWorks.some((t0) => RUN.includes(t0.status)) || works.some((x) => ['Ongoing', 'Evaluation', 'Awarded'].includes(x.status))) data = 'tender';
+  else if (live || tableSigned) data = pct > 0 ? 'works' : 'contract';
+  else if (running) data = ended || works.length > 1 || pzWorks.length > 1 ? 'retender' : 'tender';
+  else if (ended && pct > 0) data = 'suspended';
   else if (works.length || pzWorks.length) data = 'retender';
   const table = STAGE_OF_STATUS[tt.status] || null;
-  // The table's own status unless the data show the sub-project further along (they are newer).
+  // The table's status unless the data are clearer: a contract in force or done works move it on;
+  // a contract that ended with a new tender running takes it back to re-tender.
   const order = (s) => ['prep', 'tender', 'retender', 'contract', 'works', 'done'].indexOf(s);
-  const stage = table && ['suspended', 'withdrawn'].includes(table) ? table : (data && order(data) > order(table || 'prep') ? data : table || data || 'prep');
-  // Late: the contractual completion date passed with the works unfinished.
-  const end = tt.completion || (m && m.c.end) || null;
-  const late = end && end < today() && !['done', 'withdrawn'].includes(stage) && (pct == null || pct < 100) && ['contract', 'works', 'suspended'].includes(stage) ? dayDiff(end, today()) : null;
-  const failed = works.filter((x) => /No Bids|All Rejected|Cancel/i.test(x.status || '')).length;
-  const lastIssued = works.map((x) => x.issued).filter(Boolean).sort().pop() || null;
-  return { stage, from: table && stage === table ? 'table' : 'data', pct, end, late, failed, lastIssued,
-    signed: m ? m.c.signed : (works.find((x) => x.status === 'Contract Signed') || {}).contract_date || tt.contract_date || null };
+  let stage = table && ['suspended', 'withdrawn'].includes(table) ? table : (data && order(data) > order(table || 'prep') ? data : table || data || 'prep');
+  if (ended && running && ['contract', 'works'].includes(stage)) stage = 'retender';
+  // Late: the completion date of the contract in force (or the table's) passed with the works unfinished.
+  const end = (live && live.c.end) || (!ended ? tt.completion : null) || null;
+  const late = end && end < today() && (pct == null || pct < 100) && ['contract', 'works', 'suspended'].includes(stage) ? dayDiff(end, today()) : null;
+  const failed = works.filter((x) => /No Bids|All Rejected|Cancel/i.test(x.status || '')).length + pzWorks.filter((t0) => ['unsuccessful', 'cancelled'].includes(t0.status) && !works.some((x) => x.pz === t0.tid)).length;
+  const lastIssued = works.map((x) => x.issued).concat(pzWorks.map((t0) => t0.date)).filter(Boolean).sort().pop() || null;
+  return { stage, from: table && stage === table ? 'table' : 'data', pct, end, late, failed, lastIssued, ended: ended ? ended.c : null,
+    signed: live ? live.c.signed : ended ? null : (works.find((x) => x.status === 'Contract Signed') || {}).contract_date || tt.contract_date || null };
 }
 const stageChip = (st) => h('span', { class: 'stage st-' + st.stage }, rt('stage_' + st.stage));
 // Contracts and procurements on control that belong to this sub-project (by its Prozorro ids).
@@ -1721,7 +1778,7 @@ function registryCard(code, tab) {
   const body = {
     overview: () => [stageCard(r, st), statusCard(r), newsCard(tracked, news), h('div', { class: 'section' }, risksCard(r))],
     procurement: () => procurementTab(r),
-    contracts: () => [contractsCard(r), guaranteesCard(r), paymentsCard(r)],
+    contracts: () => contractsTab(r),
     finance: () => [mrdCard(r), subventionCard(r), financeFactsCard(r)],
     work: () => [workCard(r), noteCard(r)],
   }[tab]();
@@ -1734,10 +1791,12 @@ function stageCard(r, st) {
   const sv = subvMatch(r);
   const m = mainContract(r);
   const steps = [
-    ['subvention', sv ? rt('stepSubv', { sum: fmtK((sv.amounts || {})[(sv.editions || []).slice(-1)[0]] || 0) }) : null, !!sv],
+    // The edition in force; when it took the money away, what there was before.
+    ['subvention', sv ? (() => { const am = sv.amounts || {}, eds = sv.editions || Object.keys(am).sort(), now = am[eds[eds.length - 1]] || 0, top = Math.max(0, ...Object.values(am).map(Number));
+      return now > 0 ? rt('stepSubv', { sum: fmtK(now) }) : top > 0 ? rt('stepSubvGone', { sum: fmtK(top) }) : rt('stepSubvZero'); })() : null, !!sv],
     ['tender', works.length ? join([rt('stepTenders', { n: works.length }), st.failed ? rt('stepFailed', { n: st.failed }) : null, works[works.length - 1].issued ? fdate(works[works.length - 1].issued) : null,
       ['tender', 'retender'].includes(st.stage) && st.lastIssued ? rt('stepRunning', { n: dayDiff(st.lastIssued, today()) }) : null]) : null, works.length > 0],
-    ['contract', st.signed ? join([fdate(st.signed), m && ((m.c.suppliers || [])[0] || {}).name]) : null, !!st.signed],
+    ['contract', st.signed ? join([fdate(st.signed), m && ((m.c.suppliers || [])[0] || {}).name]) : st.ended ? rt('stepEnded', { no: st.ended.number ? '№ ' + st.ended.number : '', date: fdate(st.ended.signed) }) : null, !!st.signed],
     ['works', join([tt.start ? rt('stStart', { date: fdate(tt.start) }) : null, st.pct != null ? st.pct + '%' : null]), st.pct > 0 || !!tt.start],
     ['done', st.end ? join([rt('stEnd', { date: fdate(st.end) }), st.late ? rt('lateBy', { n: st.late }) : null]) : null, st.stage === 'done'],
   ];
@@ -1768,24 +1827,112 @@ function spContracts(r) {
   }
   return out.sort((a, b) => String(b.c.signed || '').localeCompare(String(a.c.signed || '')));
 }
-function contractsCard(r) {
-  const list = spContracts(r);
-  const rowOf = (id) => ((state.trackedIndex || {}).items || []).find((x) => x.key === id || x.contract_id === id);
-  return h('div', { class: 'card pad section' },
-    h('h2', { class: 'card-title' }, rt('tab_contracts')),
-    list.length ? h('div', { class: 'qs-contracts' }, list.map(({ t0, c }) => {
-      const row = rowOf(c.id), sup = (c.suppliers || [])[0] || {};
-      const role = isWorksTender(t0) ? 'works' : prozorro_role(t0.title);
-      return h('div', { class: 'qs-contract' },
-        h('div', null,
-          h('b', null, join([rt('role_' + role), c.number ? '№ ' + c.number : null, c.signed ? fdate(c.signed) : null])),
-          h('div', { class: 'cell-sub' }, join([sup.name, c.value ? money(c.value.amount, c.value.currency) : null, label('pzc.', c.status)])),
-          row ? h('div', { class: 'cell-sub' }, join([row.totals ? rt('paidShort', { pct: row.totals.value ? Math.round(((row.totals.paid_total || row.totals.paid || 0) / row.totals.value) * 100) : 0 }) : null,
-            row.late_days ? t('ud.overdue', { n: row.late_days }) : null, (row.rules && row.rules.bad || []).length ? rt('rulesBad', { n: row.rules.bad.length }) : null])) : null),
-        row ? h('a', { class: 'btn btn-sm', href: '#/tracked/' + row.key }, rt('pDossier')) : c.status === 'active' ? h('span', { class: 'faint small' }, isMine(r) ? rt('pAuto') : rt('pNotMine')) : null);
-    })) : h('p', { class: 'muted small' }, rt('noContracts')),
-    h('p', { class: 'muted small' }, rt('contractsHint')));
+// ---- the Contracts tab ---------------------------------------------------------------------------
+//
+// Every contract of the sub-project's procurements, by role (works, supervision, consulting engineer,
+// the rest), those in force first. One card per contract joins Prozorro (number, dates, price and its
+// changes), what the monitor follows (acts and payments against the price, lateness, signals,
+// programme rules) and Mindev's register (EIB payments, the bank guarantee, tender results sent to the
+// EIB). Above them, the sub-project's contracts in sum; below, the team's guarantees and the
+// Treasury's payments, folded.
+const C_ORDER = { active: 0, pending: 1, terminated: 2 };
+const normNo = (x) => String(x || '').toUpperCase().replace(/[^0-9A-ZА-ЯІЇЄҐ]/g, '');
+function spContracts(r) {
+  const out = [];
+  for (const t0 of ((r.pz || {}).tenders || [])) {
+    for (const c of t0.contracts || []) if (c.status !== 'cancelled') out.push({ t0, c, role: isWorksTender(t0) ? 'works' : prozorro_role(t0.title) });
+  }
+  return out.sort((a, b) => (C_ORDER[a.c.status] ?? 3) - (C_ORDER[b.c.status] ?? 3) || String(b.c.signed || '').localeCompare(String(a.c.signed || '')));
 }
+function contractFacts(r, it) {
+  const { t0, c, role } = it;
+  const row = ((state.trackedIndex || {}).items || []).find((y) => y.key === c.id || y.contract_id === c.id) || null;
+  const mrd = r.mrd || {};
+  const mc = (mrd.contracts || []).find((x) => x.number && c.number && normNo(x.number) === normNo(c.number))
+    || (mrd.contracts || []).filter((x) => x.role === role).length === 1 && (mrd.contracts || []).find((x) => x.role === role) || null;
+  const kinds = { works: ['works', 'advance', 'advance_close'], ts: ['ts'], csc: ['csc'] }[role] || [];
+  const eibPays = (mrd.payments || []).filter((x) => x.paid && kinds.includes(x.kind));
+  const value = (c.value || {}).amount || (row && row.totals && row.totals.value) || 0;
+  const tt = (row && row.totals) || {};
+  const paid = tt.paid_total || tt.paid || 0;
+  const end = c.end || (row && row.end);
+  const left = end && c.status === 'active' ? dayDiff(today(), end) : null;
+  return { row, mc, eibPays, eib: eibPays.reduce((a, x) => a + (x.eib || 0), 0), local: eibPays.reduce((a, x) => a + (x.local || 0), 0),
+    value, paid, paidPct: value && paid ? Math.round((paid / value) * 100) : (row && row.paid_pct != null ? Math.round(row.paid_pct) : null),
+    actsPct: row && row.acts_pct != null ? Math.round(row.acts_pct) : null, end, left };
+}
+function contractCard(r, it) {
+  const { t0, c, role } = it, f = contractFacts(r, it);
+  const sup = (c.suppliers || [])[0] || {};
+  const sig = f.row ? (f.row.signals || []) : [];
+  const high = sig.filter((g) => g.severity === 'high');
+  const bad = ((f.row && f.row.rules) || {}).bad || [];
+  const term = c.status !== 'active' ? null : f.left == null ? null : f.left >= 0 ? h('span', { class: f.left <= 30 ? 'warn-text' : 'faint' }, rt('cLeft', { n: f.left })) : h('span', { class: 'bad' }, rt('lateBy', { n: -f.left }));
+  const bar = (pct, cls) => h('span', { class: 'c-bar ' + cls }, h('i', { style: `width:${Math.max(0, Math.min(100, pct || 0))}%` }));
+  return h('article', { class: 'proc contract c-' + c.status },
+    h('header', { class: 'proc-head' },
+      h('div', { class: 'proc-id' },
+        h('span', { class: 'c-st c-st-' + c.status }, label('pzc.', c.status)),
+        h('b', { class: 'c-title' }, c.number ? '№ ' + c.number : rt('cNoNumber')), c.signed ? h('span', { class: 'faint' }, rt('cOf', { date: fdate(c.signed) })) : null),
+      h('div', { class: 'proc-actions' },
+        f.row ? h('a', { class: 'btn btn-sm', href: '#/tracked/' + f.row.key }, rt('pDossier'))
+          : c.status === 'active' ? h('span', { class: 'faint small' }, isMine(r) ? rt('pAuto') : rt('pNotMine')) : null,
+        ext(pzUrl(t0.tid), 'Prozorro'))),
+    h('dl', { class: 'proc-facts' },
+      h('div', { class: 'wide2' }, h('dt', null, rt('cContractor')), h('dd', null, h('b', null, party(sup.name, sup.code)))),
+      h('div', null, h('dt', null, rt('cPrice')), h('dd', { class: 'num' }, f.value ? money(f.value) : '—',
+        c.changes ? h('small', null, ' · ' + rt('cChanges', { n: c.changes, date: c.last_change ? fdate(c.last_change) : '' })) : null)),
+      h('div', null, h('dt', null, rt('cTerm')), h('dd', { class: 'num' }, join([c.start && fdate(c.start), f.end && '→ ' + fdate(f.end)]) || '—', term ? h('div', null, term) : null)),
+      h('div', { class: 'wide' }, h('dt', null, rt('cProgress')), h('dd', null,
+        f.row ? h('div', { class: 'c-progress' },
+          h('div', null, h('small', null, rt('cActs')), bar(f.actsPct, 'acts'), h('b', { class: 'num' }, f.actsPct != null ? f.actsPct + '%' : '—')),
+          h('div', null, h('small', null, rt('cPaid')), bar(f.paidPct, 'paid'), h('b', { class: 'num' }, f.paidPct != null ? f.paidPct + '%' : '—'), f.paid ? h('span', { class: 'faint small' }, money(f.paid)) : null))
+          : h('span', { class: 'faint' }, c.status === 'active' ? rt('cNotFollowed') : '—'))),
+      f.eibPays.length ? h('div', null, h('dt', null, rt('cEib')), h('dd', { class: 'num' }, money(f.eib), h('small', null, ' · ' + rt('cEibN', { n: f.eibPays.length, date: fdate(f.eibPays.map((x) => x.paid).sort().pop()) })))) : null,
+      f.mc && f.mc.guarantee != null ? h('div', null, h('dt', null, rt('mrdGuarantee')), h('dd', { class: f.mc.guarantee > 5 ? 'bad' : '' }, ni.format(f.mc.guarantee) + '%')) : null,
+      role === 'works' && f.mc && f.mc.pcr !== null && f.mc.pcr !== undefined ? h('div', null, h('dt', null, rt('mrdPcr')), h('dd', null, f.mc.pcr ? f.mc.pcr : h('span', { class: 'warn-text' }, rt('mrdNoPcrShort')))) : null),
+    high.length || bad.length || (f.row && (f.row.alerts || []).length) ? h('div', { class: 'proc-checks' },
+      high.slice(0, 3).map((g) => h('span', { class: 'sev high' }, t('sig.' + g.type + '.title'))),
+      bad.length ? h('span', { class: 'sev high' }, rt('sg_rules')) : null,
+      ((f.row && f.row.alerts) || []).filter((a) => !['risk', 'sasu', 'rules'].includes(a)).slice(0, 3).map((a) => h('span', { class: 'sev medium' }, t('tra.' + a))),
+      sig.length > high.length ? h('a', { class: 'faint small', href: '#/tracked/' + f.row.key }, rt('cMoreSignals', { n: sig.length - high.length })) : null) : null);
+}
+function contractsTab(r) {
+  const list = spContracts(r);
+  const works = list.filter((x) => x.role === 'works');
+  const live = works.find((x) => x.c.status === 'active') || works[0] || null;
+  const lf = live ? contractFacts(r, live) : null;
+  const mrdF = mrdFacts(r);
+  const summary = h('div', { class: 'card pad section' },
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('cTitle')), h('span', { class: 'faint small' }, rt('cCount', { n: list.length }))),
+    list.length ? h('div', { class: 'proc-sums' },
+      h('div', { class: 'proc-sum ' + (live && live.c.status === 'active' ? 'ok' : live ? 'na' : 'warn') }, h('small', null, rt('cWorks')),
+        h('b', null, live ? join([live.c.number ? '№ ' + live.c.number : rt('cNoNumber'), money(lf.value)]) : rt('pNoContractYet')),
+        live ? h('span', { class: 'faint small' }, label('pzc.', live.c.status)) : null),
+      h('div', { class: 'proc-sum ' + (lf && lf.left != null && lf.left < 0 ? 'bad' : lf && lf.left != null && lf.left <= 30 ? 'warn' : 'na') }, h('small', null, rt('cTerm')),
+        h('b', null, lf && lf.end ? fdate(lf.end) : '—'), lf && lf.left != null ? h('span', { class: 'faint small' }, lf.left >= 0 ? rt('cLeft', { n: lf.left }) : rt('lateBy', { n: -lf.left })) : null),
+      h('div', { class: 'proc-sum ' + (lf && lf.actsPct != null ? 'run' : 'na') }, h('small', null, rt('cActsPaid')),
+        h('b', null, lf && (lf.actsPct != null || lf.paidPct != null) ? rt('cActsPaidV', { a: lf.actsPct != null ? lf.actsPct : '—', p: lf.paidPct != null ? lf.paidPct : '—' }) : '—')),
+      h('div', { class: 'proc-sum ' + (mrdF ? 'ok' : 'na') }, h('small', null, rt('cEib')),
+        h('b', null, mrdF ? money(mrdF.paidEib) : '—'), mrdF ? h('span', { class: 'faint small' }, mrdF.waiting.length ? rt('mrdWaitingV', { n: mrdF.waiting.length, days: Math.max(...mrdF.waiting.map((x) => x.days)) }) : rt('cEibLocal', { sum: money(mrdF.paidLocal) })) : h('span', { class: 'faint small' }, rt('cEibNone'))))
+      : h('p', { class: 'muted small' }, rt('noContracts')));
+  const groups = PROC_ROLES.map((role) => {
+    const items = list.filter((x) => x.role === role);
+    if (!items.length) return null;
+    return h('section', { class: 'card pad section proc-group' },
+      h('h2', { class: 'card-title' }, rt('role_' + role), h('span', { class: 'count-inline' }, items.length)),
+      h('div', { class: 'proc-list' }, items.map((it) => contractCard(r, it))));
+  });
+  // The team's guarantees and the Treasury's payments: kept, but folded below the contracts.
+  const g = guaranteesCard(r), pay = paymentsCard(r);
+  const fold = (card, title, open) => (card ? h('details', { class: 'card pad section fold', open: open || null }, h('summary', null, h('h2', { class: 'card-title' }, title)), card) : null);
+  const gs = ((r.work || {}).guarantees || []);
+  const gSoon = gs.filter((x) => !x.closed && x.until && x.until <= addDays(today(), 30)).length;
+  if (g) g.className = 'fold-body';
+  if (pay) pay.className = 'fold-body';
+  return [summary].concat(groups, [fold(g, rt('gTitle') + (gs.length ? ' (' + gs.length + ')' : '') + (gSoon ? ' · ' + rt('cGSoon', { n: gSoon }) : ''), gSoon > 0), fold(pay, rt('payments'), false)]);
+}
+
 const prozorro_role = (title) => (/технічн\S*\s+нагляд/i.test(title || '') ? 'ts' : /інженер\S*[\s-]*консультант|консультаційн/i.test(title || '') ? 'csc' : /авторськ\S*\s+нагляд/i.test(title || '') ? 'author' : /про[еє]кт/i.test(title || '') ? 'design' : 'other');
 
 // The money in figures from the table: investment, the loan's part, contract, paid, this year's subvention.
@@ -1839,7 +1986,8 @@ function statusCard(r) {
       kv([
         [t('eib.buyer'), join([tt.beneficiary, tt.beneficiary_id])],
         [rt('finance'), join([tt.invest_eur != null ? 'Invest ' + ni.format(tt.invest_eur) + ' €' : null, tt.eib_eur != null ? 'EIB ' + ni.format(tt.eib_eur) + ' €' : null])],
-        [rt('stContract'), m ? h('span', null, h('b', null, sup.name || '—'), h('div', { class: 'cell-sub' }, join([m.c.number && '№ ' + m.c.number, m.c.value ? money(m.c.value.amount) : null, m.c.end ? '→ ' + fdate(m.c.end) : null])))
+        [rt('stContract'), m ? h('span', null, h('b', null, sup.name || '—'), h('div', { class: 'cell-sub' }, join([m.c.number && '№ ' + m.c.number, m.c.value ? money(m.c.value.amount) : null, m.c.end ? '→ ' + fdate(m.c.end) : null,
+            m.c.status !== 'active' ? label('pzc.', m.c.status) : null])))
           : tt.contractor || null],
         [rt('stDates'), join([tt.start ? rt('stStart', { date: fdate(tt.start) }) : null, tt.completion ? rt('stEnd', { date: fdate(tt.completion) }) : null])],
         [rt('stPaid'), join([r.paid != null ? money(r.paid) : null, paid != null ? rt('paidShort', { pct: paid }) : null])],
