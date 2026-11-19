@@ -931,3 +931,43 @@ details.howto[open] > summary { margin-bottom: 6px; }
   .section-tabs.sp-tabs::-webkit-scrollbar { display: none; }
   .section-tabs.sp-tabs a { flex: none; padding: 7px 12px; }
 }
+
+/* The Procurement tab: a summary, then one card per procedure by role */
+.proc-sums { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 4px; }
+.proc-sum { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 14px; background: var(--soft); border-left: 4px solid var(--faint); min-width: 0; }
+.proc-sum small { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.proc-sum b { font-size: 14.5px; }
+.proc-sum.ok { border-left-color: var(--green); } .proc-sum.run { border-left-color: #2F6FDB; }
+.proc-sum.warn { border-left-color: #E5A000; } .proc-sum.bad { border-left-color: var(--red); background: var(--red-bg); }
+.count-inline { margin-left: 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.proc-list { display: flex; flex-direction: column; gap: 10px; }
+.proc { border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; background: #fff; }
+.proc.has-contract { border-color: rgba(26, 127, 55, .35); box-shadow: inset 4px 0 0 var(--green); }
+.proc.off { background: var(--soft); }
+.proc-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
+.proc-id { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.proc-n { font-size: 12px; font-weight: 800; color: var(--muted); }
+.proc-tid { font-weight: 700; color: var(--ink); }
+.proc-actions { display: flex; gap: 6px; align-items: center; }
+.proc-actions details.menu > summary { padding-left: 10px; padding-right: 8px; }
+.proc-title { margin: 6px 0 10px; color: var(--muted); font-size: 13.5px; }
+.proc-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 16px; margin: 0; }
+.proc-facts > div { min-width: 0; }
+.proc-facts .wide { grid-column: 1 / -1; }
+.proc-facts dt { font-size: 11.5px; font-weight: 700; color: var(--faint); text-transform: uppercase; letter-spacing: .03em; }
+.proc-facts dd { margin: 2px 0 0; font-size: 14px; }
+.proc-facts dd small { color: var(--muted); }
+.proc-checks { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.proc-verdict { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.proc-verdict .cell-sub { margin: 0; }
+.proc-foot { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.proc-foot .chips { margin: 0 !important; }
+details.fold > summary { list-style: none; cursor: pointer; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary .card-title { display: flex; align-items: center; gap: 6px; margin: 0; }
+details.fold > summary .card-title::after { content: '▾'; margin-left: auto; font-size: 14px; color: var(--muted); transition: transform .2s; }
+details.fold:not([open]) > summary .card-title::after { transform: rotate(-90deg); }
+details.fold[open] > summary { margin-bottom: 8px; }
+.add-row { flex-wrap: wrap; } .add-row .grow { flex: 1 1 260px; }
+@media (max-width: 900px) { .proc-sums { grid-template-columns: repeat(2, minmax(0, 1fr)); } .proc-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .proc-sums, .proc-facts { grid-template-columns: 1fr; } }

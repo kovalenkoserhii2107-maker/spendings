@@ -680,7 +680,8 @@ function shell(route, page) {
 // items: [label, onclick, icon, hint] or null.
 function actionMenu(label, items, ico) {
   const pop = h('div', { class: 'menu-pop', role: 'menu' });
-  const d = h('details', { class: 'menu' }, h('summary', { class: 'btn', 'aria-haspopup': 'menu' }, ico ? icon(ico) : null, label, icon('chevron')), pop);
+  // With no label it is an icon button ("⋯"), its own sign enough; with one, a caret says it opens.
+  const d = h('details', { class: 'menu' }, h('summary', { class: 'btn' + (label ? '' : ' btn-icon'), 'aria-haspopup': 'menu', 'aria-label': label || t('ui.more') }, ico ? icon(ico) : null, label || null, label ? icon('chevron') : null), pop);
   for (const it of items.filter(Boolean)) {
     const [text, onclick, ic, hint] = it;
     pop.append(h('button', { class: 'menu-item', role: 'menuitem', type: 'button', onclick: () => { d.open = false; onclick(); } },
