@@ -237,9 +237,13 @@ async function loadAll() {
 }
 
 // Each user sees only the organisations in their own list, and the feed and signals of those.
+// The team (people with registry access) shares one base: everyone's organisations on monitoring
+// and contracts on control; everyone else sees their own.
+const isTeam = () => typeof hasRegistry === 'function' && hasRegistry();
+const onTeamList = (id) => isTracked(id) || isSharedWithMe(id) || (isTeam() && !!trackedRow(id));
 function applyScope() {
   if (!state.index) return;
-  const mineOrg = (code) => state.mine.orgs.has(code);
+  const mineOrg = (code) => isTeam() || state.mine.orgs.has(code);
   state.index.orgs = state.all.orgs.filter((o) => mineOrg(o.edrpou));
   state.feed = { items: state.all.feed.filter((i) => mineOrg(i.org_edrpou)) };
   state.signals = { items: state.all.signals.filter((x) => mineOrg(x.org_edrpou)).concat(trackedSignals()) };
@@ -319,7 +323,7 @@ function groupPills(list, value, onpick) {
 // Only what came up after the contract was taken on control (by this user, for one shared later):
 // what was there already is in the dossier, not news.
 function trackedSignals() {
-  return (state.trackedIndex.items || []).filter((r) => isTracked(r.key) || isSharedWithMe(r.key))
+  return (state.trackedIndex.items || []).filter((r) => onTeamList(r.key))
     .flatMap((r) => {
       const pick = state.mine.tracked.get(r.key) || state.mine.shared.get(r.key) || {};
       const from = pickTime(pick);
@@ -1790,8 +1794,10 @@ function trackedBar(tt, acts) {
 function trackingTabs(active) {
   const own = [...state.mine.tracked.keys()].length;
   const shared = [...state.mine.shared.keys()].filter((id) => !isTracked(id)).length;
-  const tabs = [['#/tracked', 'mine', t('tr.scope.items'), own, t('tr.scope.itemsShort')], ['#/tracked/orgs', 'orgs', t('tr.scope.orgs'), (state.index.orgs || []).length],
-    ['#/tracked/signals', 'signals', t('tr.scope.signals'), riskCount()]].concat(shared ? [['#/tracked/shared', 'shared', t('tr.sharedTab'), shared]] : []);
+  const team = isTeam() ? new Set((state.trackedIndex.items || []).map((r) => r.key).concat([...state.mine.tracked.keys()])).size : 0;
+  const tabs = (isTeam() ? [['#/tracked', 'team', t('tr.scope.team'), team, t('tr.scope.teamShort')], ['#/tracked/mine', 'mine', t('tr.scope.mine'), own, t('tr.scope.mineShort')]]
+    : [['#/tracked', 'mine', t('tr.scope.items'), own, t('tr.scope.itemsShort')]]).concat([['#/tracked/orgs', 'orgs', t('tr.scope.orgs'), (state.index.orgs || []).length],
+    ['#/tracked/signals', 'signals', t('tr.scope.signals'), riskCount()]]).concat(shared ? [['#/tracked/shared', 'shared', t('tr.sharedTab'), shared]] : []);
   // A shorter name for the phone, where the tabs share one row.
   return h('nav', { class: 'section-tabs pills', 'aria-label': t('nav.tracking') }, tabs.map(([href, key, text, n, short]) =>
     h('a', { href, class: key === active ? 'on' : '' }, h('span', { class: 't-full' }, text), h('span', { class: 't-short' }, short || text),
@@ -2077,9 +2083,13 @@ function trackedPage(preset) {
   const byDate = (a, b) => ((b.row && b.row.changed_at) || '9').localeCompare((a.row && a.row.changed_at) || '9') || (b.pick.addedAt || b.pick.at || 0) - (a.pick.addedAt || a.pick.at || 0);
   const own = [...state.mine.tracked.entries()].map(([id, v]) => ({ id, pick: v, row: trackedRow(id), mine: true })).sort(byDate);
   const shared = [...state.mine.shared.entries()].filter(([id]) => !isTracked(id)).map(([id, v]) => ({ id, pick: v, row: trackedRow(id), mine: false })).sort(byDate);
-  const scopes = ['mine', 'shared'];
-  const f = { which: scopes.includes(preset) ? '' : preset || '', q: '', scope: scopes.includes(preset) ? preset : (!own.length && shared.length ? 'shared' : 'mine') };
-  const inScope = () => (f.scope === 'shared' ? shared : own);
+  // The team's list: one's own and shared picks and everything the others keep on control.
+  const others = isTeam() ? (state.trackedIndex.items || []).filter((r) => !isTracked(r.key) && !state.mine.shared.has(r.key)).map((r) => ({ id: r.key, pick: {}, row: r, mine: false, team: true })) : [];
+  const team = own.concat(shared, others).sort(byDate);
+  const scopes = ['team', 'mine', 'shared'];
+  const f = { which: scopes.includes(preset) ? '' : preset || '', q: '', scope: scopes.includes(preset) ? preset : isTeam() ? 'team' : (!own.length && shared.length ? 'shared' : 'mine') };
+  if (f.scope === 'team' && !isTeam()) f.scope = 'mine';
+  const inScope = () => (f.scope === 'shared' ? shared : f.scope === 'team' ? team : own);
   const sum = (k) => inScope().reduce((acc, r) => acc + ((r.row && r.row.totals && r.row.totals[k]) || 0), 0);
   const list = h('div');
   let lastShown = [];
@@ -2197,7 +2207,7 @@ function trackedPage(preset) {
       tile('overdue', 'tint-yellow', t('trt.overdue'), ni.format(n('overdue'))),
       tile('tenders', '', t('trt.tenders'), ni.format(n('tenders'))));
   }
-  const scope = trackingTabs(f.scope === 'shared' ? 'shared' : 'mine');
+  const scope = trackingTabs(f.scope);
   draw();
   return [
     trackingHead(), scope,
@@ -3314,7 +3324,7 @@ function orgPage(code, tab, preset) {
 
 // Contracts of this organisation that the user has on control (either side).
 function orgTrackedCard(org) {
-  const rows = (state.trackedIndex.items || []).filter((r) => (isTracked(r.key) || isSharedWithMe(r.key)) && [r.org, r.buyer, r.supplier].includes(org.edrpou));
+  const rows = (state.trackedIndex.items || []).filter((r) => onTeamList(r.key) && [r.org, r.buyer, r.supplier].includes(org.edrpou));
   if (!rows.length) return null;
   return h('div', { class: 'card pad section' },
     h('h2', { class: 'card-title' }, t('org.trackedHere'), h('span', { class: 'count', style: 'margin-left:8px' }, rows.length)),

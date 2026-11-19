@@ -190,19 +190,20 @@ service cloud.firestore {
 
     match /orgs/{edrpou} {
       allow read: if signedIn();
-      // The first uploader owns an organisation's upload; analysts may refresh anyone's.
+      // The first uploader owns an organisation's upload; analysts and the team (one shared base)
+      // may refresh anyone's.
       allow create, update: if signedIn() && edrpou.matches('^[0-9]{8,10}$')
         && request.resource.data.edrpou == edrpou
         && request.resource.data.uploadedBy == request.auth.uid
         && request.resource.data.uploadedAt == request.time
-        && (resource == null || resource.data.uploadedBy == request.auth.uid || isAnalyst());
+        && (resource == null || resource.data.uploadedBy == request.auth.uid || isAnalyst() || isRegistry());
       allow delete: if false;
 
       match /{collection}/{id} {
         allow read: if signedIn();
         allow create, update: if signedIn()
           && collection in ['contracts', 'acts', 'addendums', 'penalties', 'payments', 'liabilities', 'reports', 'signals', 'meta']
-          && (get(/databases/$(database)/documents/orgs/$(edrpou)).data.uploadedBy == request.auth.uid || isAnalyst());
+          && (get(/databases/$(database)/documents/orgs/$(edrpou)).data.uploadedBy == request.auth.uid || isAnalyst() || isRegistry());
         allow delete: if false;
       }
     }

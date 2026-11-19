@@ -146,6 +146,8 @@ const RG = {
     mrdUploadHint: "Завантажити реєстр оплат з коштів позики ЄІБ (xlsx Мінрозвитку)",
     mrdSaving: "Зберігаю оплати: субпроєкт {n} з {total}…",
     mrdDone: "Реєстр оплат: записано субпроєктів {n} (у файлі {found}, немає в реєстрі {missing})",
+    mrdDelta: "нових записів {added}, оновлено {changed}",
+    mrdBy: "завантажив {who}",
     mrdTitle: "Оплати ЄІБ за реєстром Мінрозвитку",
     mrdNone: "Реєстр оплат Мінрозвитку ще не завантажено: там оплати з коштів позики ЄІБ (рахунки в Укрексімбанку), яких Казначейство не показує.",
     mrdAsOf: "завантажено {date} {file}",
@@ -399,6 +401,8 @@ const RG = {
     mrdUploadHint: "Upload the register of payments from the EIB loan (Mindev's xlsx)",
     mrdSaving: "Saving payments: sub-project {n} of {total}…",
     mrdDone: "Payments register: {n} sub-projects written ({found} in the file, {missing} not in the registry)",
+    mrdDelta: "{added} new records, {changed} updated",
+    mrdBy: "uploaded by {who}",
     mrdTitle: "EIB payments by Mindev's register",
     mrdNone: "The Mindev payments register is not uploaded yet: it has the payments from the EIB loan (Ukreximbank accounts), which the Treasury does not show.",
     mrdAsOf: "uploaded {date} {file}",
@@ -524,6 +528,8 @@ function rt(key, vars) {
 async function registryInit() {
   if (!cloud || !state.user) { REG.access = null; return; }
   REG.access = await cloud.registryAccess();
+  // The team shares one base: its lists open up to everyone on it.
+  if (REG.access && typeof applyScope === 'function') applyScope();
   loadSubvention().then(() => { if (/^#\/(registry|$)|^$/.test(location.hash)) softRender(); });
   // The registry also names the sub-projects of the tracked list: that page redraws too.
   if (REG.access) cloud.watchRegistry((r) => { REG.rows = r.rows; REG.meta = r.meta; autoTrackSoon(); if (/^#\/(registry|tracked\/?$|$)|^$/.test(location.hash)) softRender(); });
@@ -1368,7 +1374,7 @@ const stageChip = (st) => h('span', { class: 'stage st-' + st.stage }, rt('stage
 // Contracts and procurements on control that belong to this sub-project (by its Prozorro ids).
 function spTracked(r) {
   const tids = new Set(spTids(r));
-  return ((state.trackedIndex || {}).items || []).filter((x) => tids.has(x.tid) && (isTracked(x.key) || isSharedWithMe(x.key)));
+  return ((state.trackedIndex || {}).items || []).filter((x) => tids.has(x.tid) && onTeamList(x.key));
 }
 // What is new there: signals since the contract was taken on control, and the alerts of the list.
 function spNews(rows) {
@@ -2648,18 +2654,23 @@ async function importMrd(file) {
     for (const [code, sp] of found) {
       const rc = regCode(code);
       if (!rc) { missing++; continue; }
-      const cur = bySp.get(rc) || { at, file: fileName, sheet: sp.sheet, contracts: [], payments: [] };
+      const cur = bySp.get(rc) || { sheet: sp.sheet, contracts: [], payments: [] };
       cur.contracts.push(...sp.contracts.map((c) => Object.assign({ code }, c)));
       cur.payments.push(...sp.payments.map((x) => Object.assign({ code }, x)));
       bySp.set(rc, cur);
     }
-    let n = 0, failed = 0;
-    for (const [rc, mrd] of bySp) {
+    // One base that grows: what the new file has is added or brought up to date; what an earlier
+    // file had and this one does not stays (a later register may leave out old rows).
+    let n = 0, failed = 0, added = 0, changed = 0;
+    for (const [rc, fresh] of bySp) {
       n++;
       if (n % 10 === 1) setStatus(rt('mrdSaving', { n, total: bySp.size }));
-      try { await cloud.updateRegistry(rc, { mrd }); } catch (e) { failed++; console.error('mrd', rc, e); if (e && e.code === 'permission-denied') throw e; }
+      const merged = mergeMrd((REG.rows.get(rc) || {}).mrd, fresh, { at, file: fileName, by: myExpert() });
+      added += merged.added; changed += merged.changed;
+      if (!merged.added && !merged.changed && (REG.rows.get(rc) || {}).mrd) continue;
+      try { await cloud.updateRegistry(rc, { mrd: merged.mrd }); } catch (e) { failed++; console.error('mrd', rc, e); if (e && e.code === 'permission-denied') throw e; }
     }
-    const msg = rt('mrdDone', { n: bySp.size - failed, found: found.size, missing });
+    const msg = rt('mrdDone', { n: bySp.size - failed, found: found.size, missing }) + ' · ' + rt('mrdDelta', { added, changed });
     setStatus(msg, failed > 0);
     toast(msg, { long: true });
   } catch (e) {
@@ -2671,6 +2682,31 @@ async function importMrd(file) {
     REG.busy = null;
   }
 }
+// A payment is the same one in two registers when its sub-project code, purpose, amounts and the
+// day its documents came in agree; a contract, by its code, role and number.
+const mrdPayKey = (x) => [x.code, x.kind, Math.round((x.eib || 0) * 100), Math.round((x.local || 0) * 100), x.received || '', String(x.note || '').slice(0, 40)].join('|');
+const mrdConKey = (c) => [c.code, c.role, c.number || Math.round(c.eib || 0)].join('|');
+function mergeMrd(old, fresh, upload) {
+  let added = 0, changed = 0;
+  const merge = (list, add, key) => {
+    const out = new Map((list || []).map((x) => [key(x), x]));
+    for (const x of add) {
+      const k = key(x), was = out.get(k);
+      if (!was) { out.set(k, x); added++; continue; }
+      const next = Object.assign({}, was);
+      for (const [f, v] of Object.entries(x)) if (v !== null && v !== '' && v !== undefined && v !== was[f]) next[f] = v;
+      if (JSON.stringify(next) !== JSON.stringify(was)) changed++;
+      out.set(k, next);
+    }
+    return [...out.values()];
+  };
+  const contracts = merge((old || {}).contracts, fresh.contracts, mrdConKey);
+  const payments = merge((old || {}).payments, fresh.payments, mrdPayKey)
+    .sort((a, b) => String(a.paid || a.received || '').localeCompare(String(b.paid || b.received || ''))).slice(-300);
+  const uploads = (((old || {}).uploads) || []).concat([{ at: upload.at, file: upload.file, by: upload.by }]).slice(-12);
+  return { added, changed, mrd: { at: upload.at, file: upload.file, by: upload.by, first: (old || {}).first || (old || {}).at || upload.at, sheet: fresh.sheet, contracts, payments, uploads } };
+}
+
 // What the register says is worth a look: payments waiting, slow ones, works paid after the
 // contract's term, works contracts whose tender results the EIB never got.
 function mrdFacts(r) {
@@ -2710,7 +2746,7 @@ function mrdCard(r) {
   const kindL = (k) => rt('mrdK_' + k);
   const pays = (m.payments || []).slice().reverse();
   return h('div', { class: 'card pad section' },
-    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('mrdTitle')), h('div', { class: 'row' }, h('span', { class: 'muted small' }, rt('mrdAsOf', { date: fdate(f.asOf), file: f.file || '' })), upload, file)),
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('mrdTitle')), h('div', { class: 'row' }, h('span', { class: 'muted small' }, join([rt('mrdAsOf', { date: fdate(f.asOf), file: f.file || '' }), m.by ? rt('mrdBy', { who: m.by }) : null])), upload, file)),
     kv([
       [rt('mrdPaid'), join([rt('mrdEib', { sum: money(f.paidEib) }), rt('mrdLocal', { sum: money(f.paidLocal) }), f.paidPct != null ? rt('mrdPct', { pct: f.paidPct }) : null])],
       [rt('mrdLast'), f.last ? fdate(f.last) : null],
