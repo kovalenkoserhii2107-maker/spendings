@@ -2235,7 +2235,7 @@ function trackedDossier(id) {
           } }, t('tr.removeShared')) : null,
           isTracked(id) ? h('button', { class: 'btn btn-sm', onclick: async () => {
             if (!confirm(t('tr.offConfirm'))) return;
-            try { await cloud.untrack(id); location.hash = '#/tracked'; } catch (e) { toast(e.message, { bad: true }); }
+            try { await cloud.untrack(id); if (typeof regNoTrack === 'function') regNoTrack(id, (trackedRow(id) || {}).tid); location.hash = '#/tracked'; } catch (e) { toast(e.message, { bad: true }); }
           } }, t('tr.off')) : null)));
       return;
     }
@@ -2253,7 +2253,7 @@ function trackedDossier(id) {
     const off = h('button', {
       class: 'btn btn-sm', onclick: async () => {
         if (!confirm(t('tr.offConfirm'))) return;
-        try { await cloud.untrack(id); toast(t('tr.offDone')); location.hash = '#/tracked'; } catch (e) { toast(e.message, { bad: true }); }
+        try { await cloud.untrack(id); if (typeof regNoTrack === 'function') regNoTrack(id, (trackedRow(id) || {}).tid); toast(t('tr.offDone')); location.hash = '#/tracked'; } catch (e) { toast(e.message, { bad: true }); }
       },
     }, t('tr.off'));
     const payTable = (list) => h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
@@ -2692,7 +2692,7 @@ function tenderDossier(id, s, pick) {
   const org = { edrpou: t0.buyer, name: t0.buyer_name, role: 'buyer' };
   const off = isTracked(id) ? h('button', { class: 'btn btn-sm', onclick: async () => {
     if (!confirm(t('tr.offConfirm'))) return;
-    try { await cloud.untrack(id); location.hash = '#/tracked'; } catch (e) { toast(e.message, { bad: true }); }
+    try { await cloud.untrack(id); if (typeof regNoTrack === 'function') regNoTrack(id, (trackedRow(id) || {}).tid); location.hash = '#/tracked'; } catch (e) { toast(e.message, { bad: true }); }
   } }, t('tr.off')) : null;
   return [
     h('div', { class: 'org-head' },
@@ -4201,6 +4201,7 @@ async function boot() {
             state.mine = m;
             applyScope();
             if (m.ready) migrateOnce();
+            if (m.ready && typeof autoTrackSoon === 'function') autoTrackSoon();
             softRender();
           });
           loadDriveState();

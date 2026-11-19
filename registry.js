@@ -142,6 +142,11 @@ const RG = {
     pfXRating: "Оцінка",
     pfYes: "так", pfAnyBatch: "Усі пули",
     colStage: "Етап", riskShort: "ризик {n}",
+    autoProgress: "Автоконтроль: субпроєкт {n} з {total}, додано {added}…",
+    autoDone: "На контроль автоматично додано договорів і закупівель: {added}",
+    autoStatus: "Автоконтроль ({n} субпроєктів): додано {added}, не вдалося {failed}",
+    autoNote: "Договори субпроєктів {who} ставляться на контроль автоматично раз на добу.",
+    autoRun: "Перевірити зараз",
     colWork: "Робота експерта",
     signedOn: "договір від {date}",
     newSignals: "нових сигналів: {n}",
@@ -332,6 +337,11 @@ const RG = {
     pfXRating: "Rating",
     pfYes: "yes", pfAnyBatch: "All batches",
     colStage: "Stage", riskShort: "risk {n}",
+    autoProgress: "Auto control: sub-project {n} of {total}, {added} added…",
+    autoDone: "Put on control automatically: {added} contracts and procurements",
+    autoStatus: "Auto control ({n} sub-projects): {added} added, {failed} failed",
+    autoNote: "Contracts of {who}'s sub-projects go on control automatically once a day.",
+    autoRun: "Check now",
     colWork: "Expert's work",
     signedOn: "contract of {date}",
     newSignals: "new signals: {n}",
@@ -398,9 +408,9 @@ function rt(key, vars) {
 async function registryInit() {
   if (!cloud || !state.user) { REG.access = null; return; }
   REG.access = await cloud.registryAccess();
-  loadSubvention().then(() => { if (location.hash.startsWith('#/registry')) softRender(); });
+  loadSubvention().then(() => { if (/^#\/(registry|$)|^$/.test(location.hash)) softRender(); });
   // The registry also names the sub-projects of the tracked list: that page redraws too.
-  if (REG.access) cloud.watchRegistry((r) => { REG.rows = r.rows; REG.meta = r.meta; if (/^#\/(registry|tracked\/?$|$)|^$/.test(location.hash)) softRender(); });
+  if (REG.access) cloud.watchRegistry((r) => { REG.rows = r.rows; REG.meta = r.meta; autoTrackSoon(); if (/^#\/(registry|tracked\/?$|$)|^$/.test(location.hash)) softRender(); });
   softRender();
 }
 const hasRegistry = () => !!REG.access;
@@ -734,6 +744,67 @@ async function trackAll(rows) {
   if (added) nudgeSync();
   setStatus(rt('trackDone', { added, already, failed }), failed > 0);
   toast(rt('trackDone', { added, already, failed }), { long: true });
+}
+
+// ---- contracts on control by themselves ---------------------------------------------------------
+//
+// The contracts and running procurements of the sub-projects of these experts go on control in the
+// account of whoever on the team opens the app, without the "track" button: in force contracts, and
+// procurements with no contract yet (they turn into their contract when it is signed). Prozorro is
+// read again where it was not read this week. Once a day per device. One taken off control by hand
+// is kept off (registry/{code}.work.noTrack, for the whole team).
+const AUTO_EXPERTS = ['Maksym Kasap'];
+const AUTO_EVERY_H = 20;
+let autoTimer = null;
+function autoTrackSoon() {
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(() => autoTrack().catch((e) => console.error('auto track', e)), 4000);
+}
+// With Prozorro ids, or a Ukrainian name to find its works procurement by (as "Refresh from Prozorro" does).
+function autoRows() {
+  return [...REG.rows.values()].filter((r) => AUTO_EXPERTS.includes((r.t || {}).expert) && spStage(r).stage !== 'withdrawn' && (spTids(r).length || spNameUk(r)));
+}
+async function autoTrack(force) {
+  if (!REG.access || !cloud || !state.user || !state.mine.ready || REG.busy || !REG.rows.size) return;
+  let last = 0;
+  try { last = Number(localStorage.getItem('autoTrackAt') || 0); } catch (e) { /* private window */ }
+  if (!force && Date.now() - last < AUTO_EVERY_H * 3600e3) return;
+  const rows = autoRows();
+  if (!rows.length) return;
+  REG.busy = 'auto';
+  let added = 0, failed = 0, n = 0;
+  try {
+    for (const r of rows) {
+      n++;
+      if (n % 5 === 1) setStatus(rt('autoProgress', { n, total: rows.length, added }));
+      const tids = spTids(r);
+      let pz = r.pz;
+      const fresh = pz && pz.at && Date.now() - new Date(pz.at).getTime() < 7 * 864e5 && (tids.length || (pz.tenders || []).length) && tids.every((x) => (pz.tenders || []).some((y) => y.tid === x));
+      if (!fresh) {
+        try { pz = await refreshSp(r); } catch (e) { failed++; continue; }
+      }
+      const off = new Set(((r.work || {}).noTrack) || []);
+      for (const p of trackPicks(pz)) {
+        if (isTracked(p.cid) || off.has(p.cid)) continue;
+        // A procurement already on control follows its contract by itself.
+        const t0 = (pz.tenders || []).find((x) => x.tid === p.info.tid);
+        if (!p.cid.startsWith('tn') && t0 && isTracked('tn' + t0.id)) continue;
+        try { await cloud.track(p.cid, p.info); added++; } catch (e) { failed++; console.error('auto track', r.code, p.cid, e); }
+      }
+    }
+    try { localStorage.setItem('autoTrackAt', String(Date.now())); } catch (e) { /* private window */ }
+  } finally {
+    REG.busy = null;
+  }
+  if (added) { nudgeSync(); toast(rt('autoDone', { added }), { long: true }); }
+  setStatus(rt('autoStatus', { added, failed, n: rows.length }), failed > 0);
+}
+// Taken off control by hand: kept off for the sub-project (called by the dossier's "remove").
+function regNoTrack(cid, tid) {
+  if (!REG.access || !tid) return;
+  const r = [...REG.rows.values()].find((x) => spTids(x).includes(tid));
+  if (!r) return;
+  saveWork(r, (w) => { w.noTrack = [...new Set((w.noTrack || []).concat([cid]))].slice(-200); }).catch(() => {});
 }
 
 async function refreshMany(rows) {
@@ -1073,6 +1144,8 @@ function registryPage() {
       rows.length ? refreshBtn : null,
       // Only an expert's own sub-projects, into their own tracking, whatever the filters show.
       own.length ? h('button', { class: 'btn btn-dark', onclick: () => { if (confirm(rt('trackConfirm', { n: own.length }))) trackAll(own); } }, icon('star'), rt('trackAll', { n: own.length })) : null, status));
+  const autoNote = autoRows().length ? h('p', { class: 'notice small section' }, rt('autoNote', { who: AUTO_EXPERTS.join(', ') }), ' ',
+    h('button', { class: 'btn btn-sm', onclick: () => autoTrack(true) }, rt('autoRun'))) : null;
   const orphans = Object.entries((meta && meta.orphans) || {});
   // Payments the table's Payments sheet has under codes its SPs sheet has no row for.
   const orphanNote = orphans.length ? h('details', { class: 'notice small section orphans' },
@@ -1106,7 +1179,7 @@ function registryPage() {
   const set = (k) => (e) => { REGF[k] = e.target.value; REGF.page = 0; draw(); if (k === 'expert') drawRefresh(); };
   const q = h('input', { class: 'input', type: 'search', value: REGF.q, placeholder: rt('search'), 'aria-label': rt('search'), oninput: () => { REGF.q = q.value; REGF.page = 0; draw(); } });
   draw();
-  return [head, orphanNote, h('div', { class: 'table-card section' },
+  return [head, autoNote, orphanNote, h('div', { class: 'table-card section' },
     h('div', { class: 'table-tools' },
       pills([['', rt('all')], ['nolink', rt('fNoLink')], ['linked', rt('fLinked')], ['nocontract', rt('fNoContract')], ['risk', rt('fRisk')]], REGF.which, (v) => { REGF.which = v; REGF.page = 0; draw(); }),
       select([['', rt('anyExpert')]].concat(experts.map((x) => [x, x])), REGF.expert, set('expert'), rt('colExpert')),
