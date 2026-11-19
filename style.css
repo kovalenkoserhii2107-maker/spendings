@@ -976,3 +976,23 @@ details.fold[open] > summary { margin-bottom: 8px; }
 .sig-sp-title { display: flex; gap: 8px; align-items: baseline; min-width: 0; color: var(--ink); text-decoration: none; }
 .sig-sp-title:hover b { text-decoration: underline; }
 .ev-row.bad b { color: var(--red); }
+
+/* Selects: our own caret with room around it, the text cut with an ellipsis */
+select.select { -webkit-appearance: none; appearance: none; padding-right: 40px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235B5F66' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 14px center; background-size: 14px 14px; cursor: pointer; }
+select.select:focus { background-color: #fff; }
+/* The list's filter row: search grows, the fields keep sensible widths */
+@media (min-width: 761px) {
+  .table-tools.filters .filter-fields .select { flex: 0 1 200px; min-width: 150px; max-width: 240px; }
+}
+/* The sub-projects table: aligned to the top, steady column widths */
+.reg-table th, .reg-table td { vertical-align: top; }
+.reg-table th { font-size: 11.5px; letter-spacing: .04em; white-space: nowrap; }
+.reg-table td { padding-top: 14px; padding-bottom: 14px; }
+.reg-table col.rc-c { width: 128px; } .reg-table col.rc-s { width: 27%; } .reg-table col.rc-st { width: 160px; }
+.reg-table col.rc-k { width: 18%; } .reg-table col.rc-g { width: 92px; } .reg-table col.rc-r { width: 150px; } .reg-table col.rc-w { width: 15%; }
+.reg-table td .row { align-items: flex-start; }
+.reg-table .stage { margin-bottom: 4px; }
+.reg-table .alert-lines { display: flex; flex-direction: column; gap: 2px; width: 100%; font-size: 12px; font-weight: 600; color: var(--muted); }
+.reg-table .alert-lines span::before { content: '• '; color: #E5A000; }

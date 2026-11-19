@@ -142,6 +142,11 @@ const RG = {
     pfXRating: "Оцінка",
     pfYes: "так", pfAnyBatch: "Усі пули",
     colStage: "Етап", riskShort: "ризик {n}",
+    autoNote3: "Ваші субпроєкти ({who}) оновлюються самі раз на добу.",
+    orphansMenu: "Оплати без субпроєкту ({n})",
+    orphansMenuHint: "Коди з аркуша Payments, яких немає в SPs",
+    orphansText2: "Ці коди є на аркуші Payments (і в реєстрі оплат Мінрозвитку), але рядка в аркуші SPs немає, тож оплати не відносяться до жодного субпроєкту. Якщо субпроєкти ваші — додайте рядки в SPs; якщо ні — їх можна прибрати з Payments.",
+    colDone: "Виконано",
     newsNone2: "Монітор ще не веде договорів цього субпроєкту: вони стають на контроль самі, коли менеджер субпроєкту відкриває застосунок.",
     sigEyebrow: "Сигнали",
     sigTitle1: "Що змінилось",
@@ -463,6 +468,11 @@ const RG = {
     pfXRating: "Rating",
     pfYes: "yes", pfAnyBatch: "All batches",
     colStage: "Stage", riskShort: "risk {n}",
+    autoNote3: "Your sub-projects ({who}) update themselves once a day.",
+    orphansMenu: "Payments with no sub-project ({n})",
+    orphansMenuHint: "Codes in the Payments sheet missing from SPs",
+    orphansText2: "These codes are in the Payments sheet (and in Mindev's payments register), but the SPs sheet has no row for them, so their payments go to no sub-project. If the sub-projects are yours, add rows to SPs; if not, they can go from Payments.",
+    colDone: "Done",
     newsNone2: "The monitor follows no contract of this sub-project yet: they go on control by themselves when its manager opens the app.",
     sigEyebrow: "Signals",
     sigTitle1: "What changed",
@@ -1439,24 +1449,25 @@ function registryPage() {
   } });
   const drawRefresh = () => { const n = ofExpert().length; fill(refreshBtn, icon('refresh'), n ? rt('refreshN', { n }) : rt('refresh')); refreshBtn.title = n ? REGF.expert : rt('pickExpert'); };
   drawRefresh();
+  // Payments the table's Payments sheet has under codes its SPs sheet has no row for: a check of the
+  // table, not everyday work; it opens from the Data menu.
+  const orphans = Object.entries((meta && meta.orphans) || {}).sort((a, b) => a[0].localeCompare(b[0]));
+  const showOrphans = () => sheet(h('h2', { class: 'card-title' }, rt('orphansTitle', { n: orphans.length, sum: money(orphans.reduce((a, [, v]) => a + v, 0)) })),
+    h('p', { class: 'muted small' }, rt('orphansText2')),
+    h('div', { class: 'scroll' }, h('table', null, h('tbody', null, orphans.map(([c, v]) => h('tr', null, h('td', { class: 'num' }, h('b', null, c)), h('td', { class: 'r num' }, money(v))))))));
   // One visible action (Prozorro), the rest of the data work in one menu.
   const dataMenu = actionMenu(rt('dataMenu'), [
     [rt('upload'), () => file.click(), 'upload', rt('uploadHint')],
     rows.length ? [rt('mrdUpload'), () => mrdFile.click(), 'upload', rt('mrdUploadHint')] : null,
     rows.length ? [rt('export'), () => exportDialog(), 'download', rt('exportHint')] : null,
     [rt('addSp'), () => addSpDialog(null), 'plus', null],
+    orphans.length ? [rt('orphansMenu', { n: orphans.length }), showOrphans, 'alert', rt('orphansMenuHint')] : null,
   ], 'db');
   const lead = h('span', null, meta ? rt('imported', { at: ftime(meta.at && meta.at.toDate ? meta.at.toDate().toISOString() : meta.at), by: meta.byName || '—', n: meta.rows }) : rt('noTable'),
-    h('span', { class: 'lead-sub' }, rt('autoNote2', { who: myManager() }), ' ',
+    h('span', { class: 'lead-sub' }, rt('autoNote3', { who: myManager() }), ' ',
       h('button', { class: 'linkish', type: 'button', onclick: () => autoTrack(true) }, rt('autoRun'))));
   const head = pageHead(rt('eyebrow'), titleGrad(rt('title1'), rt('title2')), lead,
     h('div', { class: 'head-actions' }, rows.length ? refreshBtn : null, dataMenu, file, mrdFile, status));
-  const orphans = Object.entries((meta && meta.orphans) || {});
-  // Payments the table's Payments sheet has under codes its SPs sheet has no row for.
-  const orphanNote = orphans.length ? h('details', { class: 'notice small section orphans' },
-    h('summary', null, rt('orphansTitle', { n: orphans.length, sum: money(orphans.reduce((a, [, v]) => a + v, 0)) })),
-    h('p', null, rt('orphansText')),
-    h('ul', null, orphans.sort((a, b) => a[0].localeCompare(b[0])).map(([c, v]) => h('li', null, h('b', null, c), ' — ' + money(v))))) : null;
   if (!rows.length) return [head];
   const experts = [...new Set(rows.map(spManager).concat([myManager()]).filter(Boolean))].sort();
   const progs = [...new Set(rows.map((r) => (r.t || {}).programme).filter(Boolean))].sort();
@@ -1511,7 +1522,7 @@ function registryPage() {
   const set = (k) => (e) => { REGF[k] = e.target.value; REGF.page = 0; draw(); if (k === 'expert') drawRefresh(); };
   const q = h('input', { class: 'input grow', type: 'search', value: REGF.q, placeholder: rt('search'), 'aria-label': rt('search'), oninput: () => { REGF.q = q.value; REGF.page = 0; draw(); } });
   draw();
-  return [head, orphanNote, h('div', { class: 'table-card section' },
+  return [head, h('div', { class: 'table-card section' },
     filterBar(q, [
       select([['', rt('anyStage')]].concat(STAGES.map((x) => [x, rt('stage_' + x)])), REGF.stage, set('stage'), rt('colStage')),
       select([['', rt('anyExpert')]].concat(experts.map((x) => [x, x])), REGF.expert, set('expert'), rt('colExpert')),
@@ -1582,7 +1593,8 @@ function spWork(r) {
 
 function registryTable(rows) {
   if (!rows.length) return h('div', { class: 'empty' }, t('qs.none'));
-  const L = { c: rt('colCode'), s: rt('colSp'), st: rt('colStage'), k: rt('colContract'), g: rt('colProgress'), r: rt('colRisk'), w: rt('colWork') };
+  const L = { c: rt('colCode'), s: rt('colSp'), st: rt('colStage'), k: rt('colContract'), g: rt('colDone'), r: rt('colRisk'), w: rt('colWork') };
+  const oneManager = !!REGF.expert;
   return h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile reg-table' },
     h('colgroup', null, ['c', 's', 'st', 'k', 'g', 'r', 'w'].map((k) => h('col', { class: 'rc-' + k }))),
     h('thead', null, h('tr', null, [L.c, L.s, L.st, L.k, L.g, L.r, L.w].map((x) => h('th', null, x)))),
@@ -1594,18 +1606,20 @@ function registryTable(rows) {
       const rating = overallRating(scoresOf(r).scores);
       const open = () => { location.hash = '#/registry/' + encodeURIComponent(r.code); };
       return h('tr', { class: 'click', tabindex: 0, onclick: open, onkeydown: (e) => { if (e.key === 'Enter') open(); } },
-        td(L.c, { class: 'num' }, h('b', null, r.code), h('div', { class: 'cell-sub' }, join([tt.programme, tt.batch && 'B' + tt.batch])), spManager(r) ? h('div', { class: 'cell-sub clamp1' + (isMine(r) ? ' mine' : '') }, spManager(r)) : null, tt.manual ? h('div', { class: 'cell-sub' }, rt('manualTag')) : null),
+        td(L.c, { class: 'num' }, h('b', null, r.code), h('div', { class: 'cell-sub' }, join([tt.programme, tt.batch && 'B' + tt.batch])), !oneManager && spManager(r) ? h('div', { class: 'cell-sub clamp1' + (isMine(r) ? ' mine' : '') }, spManager(r)) : null, tt.manual ? h('div', { class: 'cell-sub' }, rt('manualTag')) : null),
         td(L.s, { class: 'w-text' }, h('div', { class: 'clamp' }, tt.name_uk || tt.name_en || '—'), h('div', { class: 'cell-sub clamp1' }, tt.beneficiary || '')),
         td(L.st, null, stageChip(st), st.late ? h('div', { class: 'cell-sub bad' }, rt('lateBy', { n: st.late })) : null,
           !tids.length ? h('div', { class: 'cell-sub' }, ((r.pz || {}).cand || []).length ? h('span', { class: 'warn-text' }, rt('candidates', { n: r.pz.cand.length })) : rt('notLinked'))
             : st.signed && ['contract', 'works'].includes(st.stage) ? h('div', { class: 'cell-sub' }, rt('signedOn', { date: fdate(st.signed) })) : null),
         td(L.k, { class: 'w-party' }, m ? [h('div', { class: 'cell-main clamp1' }, ((m.c.suppliers || [])[0] || {}).name || '—'), h('div', { class: 'cell-sub' }, join([m.c.number && '№ ' + m.c.number, m.c.value ? money(m.c.value.amount) : null]))]
           : tt.contractor ? tt.contractor : h('span', { class: 'faint' }, '—')),
-        td(L.g, { class: 'num' }, join([st.pct != null ? st.pct + '%' : null, paidShare(r) != null ? rt('paidShort', { pct: paidShare(r) }) : null]) || '—'),
+        // Before a works contract there is nothing to have done: a dash, not "0%".
+        td(L.g, { class: 'num' }, ['prep', 'tender', 'retender'].includes(st.stage) && !st.pct ? h('span', { class: 'faint' }, '—')
+          : [h('b', null, st.pct != null ? st.pct + '%' : '—'), paidShare(r) != null ? h('div', { class: 'cell-sub' }, rt('paidShort', { pct: paidShare(r) })) : null]),
         td(L.r, null, h('div', { class: 'row', style: 'gap:6px;flex-wrap:wrap' },
           rating ? h('span', { class: 'sev ' + ['', 'low', 'medium', 'high'][rating], title: rt('overall', { n: rating }) }, rt('riskShort', { n: rating })) : null,
           news.signals.length ? h('span', { class: 'sev high' }, rt('newSignals', { n: news.signals.length })) : null,
-          news.alerts.slice(0, 2).map((a) => h('span', { class: 'tag' }, t('tra.' + a))))),
+          news.alerts.length ? h('div', { class: 'alert-lines' }, news.alerts.slice(0, 3).map((a) => h('span', null, t('tra.' + a)))) : null)),
         td(L.w, { class: 'small' }, wk.next ? h('div', { class: wk.next.due && wk.next.due < today() ? 'bad' : '' }, h('b', null, wk.next.due ? fdate(wk.next.due) : '—'), ' ', h('span', { class: 'clamp1' }, wk.next.text)) : null,
           h('div', { class: 'cell-sub' }, wk.lastVisit ? rt('lastVisit', { date: fdate(wk.lastVisit) }) : rt('noVisit'))));
     }))));
