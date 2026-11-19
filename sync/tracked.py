@@ -488,7 +488,8 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     snap["kind"] = "treasury" if treasury_only else "contract"
     # What the UNDP working table keeps: course, bidders, AMCU, price, progress, subvention, matrix.
     snap["undp"] = undp.card(tender, contract, tc, signals, snap["totals"], acts_sum if tc is not None else None, (eib_paid or {}).get("total") or paid,
-                             audit, advance, key, today.isoformat(), acts=acts if tc is not None else None, eib_paid=eib_paid)
+                             audit, advance, key, today.isoformat(), acts=acts if tc is not None else None, eib_paid=eib_paid,
+                             related=related)
     if key.startswith("tn"):
         snap.update(contract_id=contract.get("id"), from_tender=True)
     if old and old.get("kind") == "tender":

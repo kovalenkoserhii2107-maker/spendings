@@ -162,3 +162,36 @@ def check(t):
             if f.get(k) in names:
                 f[k + "_name"] = names[f[k]][:160]
     return found
+
+
+JUSTIFY = re.compile(r"аномальн|обґрунтуван\w*\s+(?:ціни|вартост|тендерн)|обгрунтуван\w*\s+(?:ціни|вартост)", re.I)
+
+
+def bid_facts(t):
+    """Per lot: the bids' prices, the winner's, and whether the winner's price is abnormally low as
+    the Public Procurement Law defines it (40% under the mean of the other bids, or 30% under the
+    next one), with whether a justification of it is among the winner's files."""
+    bidders = _bidders(t)
+    won = {a.get("bid_id") for a in t.get("awards") or [] if a.get("status") == "active"}
+    raw = {b.get("id"): b for b in t.get("bids") or []}
+    out = {}
+    for lot in {x["lot"] for x in bidders}:
+        xs = [x for x in bidders if x["lot"] == lot and x.get("amount")]
+        if not xs:
+            continue
+        win = next((x for x in xs if x["bid"] in won), None)
+        others = sorted(x["amount"] for x in xs if x is not win)
+        f = {"amounts": sorted(x["amount"] for x in xs)}
+        if win and others:
+            mean, nxt = sum(others) / len(others), min(a for a in others if a >= win["amount"]) if any(a >= win["amount"] for a in others) else None
+            f["winner"] = win["amount"]
+            f["under_mean_pct"] = round((1 - win["amount"] / mean) * 100, 1)
+            if nxt:
+                f["under_next_pct"] = round((1 - win["amount"] / nxt) * 100, 1)
+            if f["under_mean_pct"] >= 40 or (f.get("under_next_pct") or 0) >= 30:
+                b = raw.get(win["bid"]) or {}
+                docs = [d.get("title") or "" for d in (b.get("documents") or []) + (b.get("financialDocuments") or []) + (b.get("eligibilityDocuments") or [])]
+                f["abnormal"] = True
+                f["justified"] = any(JUSTIFY.search(x) for x in docs)
+        out[lot or ""] = f
+    return out

@@ -2241,6 +2241,7 @@ function procurementCard(s, c) {
         [t('ud.amcuEval'), amcu('award')],
       ])),
     awards.length ? [h('h3', { class: 'card-sub', style: 'margin-top:14px' }, t('dos.awards')), awardsTable(awards)] : null,
+    priceCheckBlock(u.price_check),
     collusionBlock(u.collusion));
 }
 // Where the money comes from: the Cabinet's subvention for the project (or its community) by
@@ -2428,6 +2429,26 @@ function partiesCard(t0, c) {
   return h('div', { class: 'card pad section parties' },
     side('dos.buyer', t0.buyer_name, t0.buyer, 'buyer'),
     side('dos.supplier', sup.name, sup.code, 'supplier'));
+}
+
+// Is the price right: against similar EIB procedures, the law's abnormally low price, the plan,
+// and what supervision costs against the works.
+function priceCheckBlock(pc) {
+  if (!pc) return null;
+  const p = pc.peers, b = pc.bids, pl = pc.plan;
+  const pct = (x) => ni.format(x) + '%';
+  return [h('h3', { class: 'card-sub', style: 'margin-top:14px' }, t('pc.title')),
+    kv([
+      [t('pc.discount'), p ? h('span', null, h('b', null, pct(p.discount)), h('span', { class: 'muted' }, ' · ' + t('pc.peers', { median: pct(p.median), n: p.n, cpv: p.cpv })),
+        h('div', { class: 'small muted' }, t('pc.rank', { pct: p.rank_pct }))) : null],
+      [t('pc.bids'), b && b.amounts && b.amounts.length > 1 ? h('span', null, b.amounts.map((x) => money(x)).join(' · '),
+        b.under_next_pct != null ? h('div', { class: 'small muted' }, t('pc.under', { next: pct(b.under_next_pct), mean: pct(b.under_mean_pct) })) : null,
+        b.abnormal ? h('div', null, h('span', { class: 'sev ' + (b.justified ? 'medium' : 'high') }, t(b.justified ? 'pc.abnormalJ' : 'pc.abnormal'))) : null) : null],
+      [t('pc.plan'), pl ? h('span', null, money(pl.amount), pl.over_pct ? h('span', { class: 'sev medium', style: 'margin-left:6px' }, t('pc.overPlan', { pct: pct(pl.over_pct) })) : null) : null],
+      [t('pc.supervision'), pc.supervision ? t('pc.share', { sum: money(pc.supervision.amount), pct: pct(pc.supervision.pct) }) : null],
+      [t('pc.author'), pc.author ? t('pc.share', { sum: money(pc.author.amount), pct: pct(pc.author.pct) }) : null],
+    ]),
+    h('p', { class: 'muted small' }, t('pc.hint'))];
 }
 
 // Signs of collusion between bidders and of a link with the buyer, read from the bids.

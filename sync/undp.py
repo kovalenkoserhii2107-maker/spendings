@@ -14,6 +14,7 @@ import glob
 import json
 import os
 import re
+import statistics
 from datetime import date
 
 import contractor
@@ -102,6 +103,64 @@ def price(t, c, tc):
         "change_pct": round(change / first * 100, 1) if change is not None and first else None,
         "below_expected_pct": round((1 - won / expected) * 100, 1) if won and expected else None,
     }.items() if v is not None}
+
+
+# ---- is the price right -----------------------------------------------------------------------
+
+_PEERS = [None]
+COMPETITIVE_OUT = ("reporting", "negotiation", "negotiation.quick")
+
+
+def _peers():
+    """Discounts from the expected value in the EIB procedures, by CPV: [(cpv, tid, discount%)]."""
+    if _PEERS[0] is None:
+        rows = []
+        try:
+            with open(os.path.join(DATA, "eib.json"), encoding="utf-8") as f:
+                for x in json.load(f).get("items") or []:
+                    exp = (x.get("value") or {}).get("amount")
+                    if x.get("method") in COMPETITIVE_OUT or not exp:
+                        continue
+                    for a in x.get("awards") or []:
+                        if a.get("status") == "active" and a.get("amount"):
+                            d = (1 - a["amount"] / exp) * 100
+                            if -5 < d < 80:
+                                rows.append(((x.get("cpv") or "")[:8], x.get("tid"), d))
+        except (OSError, ValueError):
+            pass
+        _PEERS[0] = rows
+    return _PEERS[0]
+
+
+def price_check(t, c, pr, related, contract_stage):
+    """The price against similar EIB procedures, the law's abnormally low price, the plan, and what
+    supervision costs against the works."""
+    out = {}
+    disc = (pr or {}).get("below_expected_pct")
+    cpv = (t.get("cpv") or "")[:8]
+    if disc is not None and t.get("method") not in COMPETITIVE_OUT and cpv:
+        for n in (4, 3, 2):
+            peers = sorted(d for p, tid, d in _peers() if p[:n] == cpv[:n] and tid != t.get("tid"))
+            if len(peers) >= 8:
+                below = sum(1 for d in peers if d < disc)
+                out["peers"] = {"cpv": cpv[:n], "n": len(peers), "median": round(statistics.median(peers), 2),
+                                "rank_pct": round(below / len(peers) * 100), "discount": disc}
+                break
+    lot = (c or {}).get("lot") or ""
+    bf = (t.get("bid_facts") or {}).get(lot) or (next(iter((t.get("bid_facts") or {}).values()), None) if len(t.get("bid_facts") or {}) == 1 else None)
+    if bf:
+        out["bids"] = bf
+    plan = sum(p.get("amount") or 0 for p in t.get("plan_info") or [])
+    if plan:
+        now = (pr or {}).get("now") or (pr or {}).get("expected")
+        out["plan"] = {"amount": round(plan, 2), "over_pct": round((now / plan - 1) * 100, 1) if now and now > plan + 1 else None}
+    works = (pr or {}).get("now") if contract_stage else None
+    if works and related and (t.get("category") == "works" or cpv.startswith("45")):
+        for role in ("supervision", "author"):
+            v = sum(((r.get("value") or {}).get("amount") or 0) for r in related if r.get("role") == role and r.get("status") not in ("cancelled", "unsuccessful"))
+            if v:
+                out[role] = {"amount": round(v, 2), "pct": round(v / works * 100, 2)}
+    return {k: v for k, v in out.items() if v} or None
 
 
 def progress(value, acts_sum, paid, end, today, status=None):
@@ -375,7 +434,7 @@ def overall(sc):
     return 1
 
 
-def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contract_stage, fund=None, coll=None, lg=None):
+def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contract_stage, fund=None, coll=None, lg=None, pc=None):
     """Ratings 1–3 with the reasons, where there is something to judge by; 6 (the contractor's
     legal status) stays with the expert."""
     types = {x["type"] for x in signals or []}
@@ -396,12 +455,17 @@ def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contr
             put("r1", 2, "changes:%d" % len(changes), "extensions:%d" % ext if ext else None)
         else:
             put("r1", 1, "changes:%d" % len(changes) if changes else None)
-    high = sorted({f["kind"] for f in coll or [] if f.get("level") == "high"})
-    medium = sorted({f["kind"] for f in coll or [] if f.get("level") == "medium"})
+    high = sorted({"coll_" + f["kind"] for f in coll or [] if f.get("level") == "high"})
+    medium = sorted({"coll_" + f["kind"] for f in coll or [] if f.get("level") == "medium"})
+    bf, plan = (pc or {}).get("bids") or {}, (pc or {}).get("plan") or {}
+    if bf.get("abnormal"):
+        (medium if bf.get("justified") else high).append("abnormal_price")
+    if (plan.get("over_pct") or 0) > 0:
+        medium.append("over_plan")
     if "disqualified_lower_bid" in types or high:
-        put("r2", 3, "disqualified_lower_bid" if "disqualified_lower_bid" in types else None, *["coll_" + k for k in high])
+        put("r2", 3, "disqualified_lower_bid" if "disqualified_lower_bid" in types else None, *high)
     elif "single_bidder" in types or medium:
-        put("r2", 2, "single_bidder" if "single_bidder" in types else None, *["coll_" + k for k in medium])
+        put("r2", 2, "single_bidder" if "single_bidder" in types else None, *medium)
     elif (price_ or {}).get("won"):
         put("r2", 1)
     if subv:
@@ -458,13 +522,14 @@ def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contr
     return {"scores": sc, "why": why, "overall": overall(sc)}
 
 
-def card(t, c, tc, signals, totals, acts_sum, paid, audit, advance, own_key, today, contract_stage=True, acts=None, eib_paid=None):
+def card(t, c, tc, signals, totals, acts_sum, paid, audit, advance, own_key, today, contract_stage=True, acts=None, eib_paid=None, related=None):
     tl = timeline(t, c)
     pr = price(t, c, tc) if contract_stage else price(t, None, None)
     comp = complaints(t)
     subv = subvention(t)
     lot = (c or {}).get("lot")
     coll = [f for f in t.get("collusion") or [] if not f.get("lot") or not lot or f.get("lot") == lot] + owner_links(t, c)
+    pc = price_check(t, c, pr, related, contract_stage)
     lg = legal_card(((c or {}).get("suppliers") or [{}])[0].get("code"), (c or {}).get("signed"), today) if contract_stage else None
     record = contractor_record(((c or {}).get("suppliers") or [{}])[0].get("code"), own_key) if contract_stage else None
     value = ((c or {}).get("value") or {}).get("amount") or (t.get("value") or {}).get("amount")
@@ -476,7 +541,8 @@ def card(t, c, tc, signals, totals, acts_sum, paid, audit, advance, own_key, tod
         "funding": fund,
         "collusion": coll if t.get("collusion") is not None else None,
         "legal": lg,
-        "matrix": matrix(c, signals, totals, pr, subv, record, audit, comp, advance, contract_stage, fund, coll, lg),
+        "price_check": pc,
+        "matrix": matrix(c, signals, totals, pr, subv, record, audit, comp, advance, contract_stage, fund, coll, lg, pc),
     }.items() if v is not None}
 
 

@@ -438,6 +438,7 @@ def compact_tender(t, contracts):
         "docs": documents(t.get("documents")),
         "awards": _awards(t),
         "collusion": collusion.check(t),
+        "bid_facts": collusion.bid_facts(t) or None,
         "bidder_codes": sorted({str(((b.get("tenderers") or [{}])[0].get("identifier") or {}).get("id") or "") for b in t.get("bids") or []} - {""}) or None,
         "complaints": _complaints(t),
         "questions_count": len(t.get("questions") or []) or None,
