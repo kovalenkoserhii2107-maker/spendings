@@ -142,6 +142,39 @@ const RG = {
     pfXRating: "Оцінка",
     pfYes: "так", pfAnyBatch: "Усі пули",
     colStage: "Етап", riskShort: "ризик {n}",
+    tab_docs: "Документи",
+    dTitle: "Документи субпроєкту",
+    dTotal: "файлів {n} · посилань {links}",
+    dLead: "Усе, що монітор може дістати: документи закупівель, договори й додаткові угоди, файли моніторингу ДАСУ — для закупівель на контролі; для інших — посилання на Prozorro. Посилання з таблиці команди, DREAM і розпорядження КМУ — нижче.",
+    dKind_tender: "Закупівля",
+    dKind_contract: "Договір",
+    dKind_change: "Зміни",
+    dKind_sasu: "ДАСУ",
+    dKind_link: "Посилання",
+    dSearch: "Пошук за назвою файлу",
+    dGeneral: "Посилання",
+    dDream: "проєкт у DREAM",
+    dSubv: "розпорядження КМУ {n}",
+    dTable: "таблиця команди",
+    dTableContract: "Договір {no} (посилання з таблиці)",
+    dTableMods: "Зміни до договору {no} (посилання з таблиці)",
+    dTender: "Документи закупівлі",
+    dContract: "Договір № {no} {date}",
+    dChanges: "Зміни до договору № {no}",
+    dSasu: "Моніторинг ДАСУ",
+    dTableLinks: "Посилання з таблиці команди",
+    dSasuOf_decision: "рішення про моніторинг",
+    dSasuOf_conclusion: "висновок",
+    dSasuOf_post: "листування",
+    dSasuOf_elimination: "звіт про усунення",
+    dSasuConclusion: "Висновок ДАСУ {id} (PDF з Prozorro)",
+    dSasuPdf: "висновок, PDF",
+    dNoneHere: "Документів за цим фільтром немає.",
+    dNoDocs: "Prozorro не має файлів для цієї закупівлі.",
+    dNotFollowed: "Закупівля не на контролі, тож монітор не зберігає її файлів (на Prozorro документів: {n}).",
+    dOpenPz: "Відкрити документи на Prozorro",
+    dSheetOnly: "Закупівля є лише в таблиці команди, без ідентифікатора Prozorro.",
+    dNothing: "Нічого не знайдено.",
     h_failedProc: "невдала закупівля {tid}",
     h_amcuMany: "задоволених скарг у закупівлях субпроєкту: {n}",
     fromContracts: "договори {who}: {why}",
@@ -667,6 +700,39 @@ const RG = {
     pfXRating: "Rating",
     pfYes: "yes", pfAnyBatch: "All batches",
     colStage: "Stage", riskShort: "risk {n}",
+    tab_docs: "Documents",
+    dTitle: "Documents of the sub-project",
+    dTotal: "{n} files · {links} links",
+    dLead: "Everything the monitor can reach: procurement documents, contracts and amendments, State Audit files — for the procurements on control; for the others, links to Prozorro. Links from the team's table, DREAM and the Cabinet's order below.",
+    dKind_tender: "Procurement",
+    dKind_contract: "Contract",
+    dKind_change: "Amendments",
+    dKind_sasu: "SASU",
+    dKind_link: "Links",
+    dSearch: "Search by file name",
+    dGeneral: "Links",
+    dDream: "project in DREAM",
+    dSubv: "Cabinet order {n}",
+    dTable: "team's table",
+    dTableContract: "Contract {no} (link from the table)",
+    dTableMods: "Amendments to contract {no} (link from the table)",
+    dTender: "Procurement documents",
+    dContract: "Contract No. {no} {date}",
+    dChanges: "Amendments to contract No. {no}",
+    dSasu: "State Audit monitoring",
+    dTableLinks: "Links from the team's table",
+    dSasuOf_decision: "decision to monitor",
+    dSasuOf_conclusion: "conclusion",
+    dSasuOf_post: "correspondence",
+    dSasuOf_elimination: "removal report",
+    dSasuConclusion: "SASU conclusion {id} (PDF from Prozorro)",
+    dSasuPdf: "conclusion, PDF",
+    dNoneHere: "No documents for this filter.",
+    dNoDocs: "Prozorro has no files for this procurement.",
+    dNotFollowed: "Not on control, so the monitor keeps none of its files ({n} documents on Prozorro).",
+    dOpenPz: "Open the documents on Prozorro",
+    dSheetOnly: "Only in the team's table, with no Prozorro id.",
+    dNothing: "Nothing found.",
     h_failedProc: "failed procurement {tid}",
     h_amcuMany: "complaints upheld in the sub-project's procurements: {n}",
     fromContracts: "contracts {who}: {why}",
@@ -2070,7 +2136,7 @@ function registryTable(rows) {
 
 // ---- one sub-project ------------------------------------------------------------------------
 
-const SP_TABS = ['overview', 'procurement', 'contracts', 'finance', 'work'];
+const SP_TABS = ['overview', 'procurement', 'contracts', 'finance', 'work', 'docs'];
 function registryCard(code, tab, sub) {
   const r = REG.rows.get(code) || [...REG.rows.values()].find((x) => x.code === code);
   if (!REG.access) return registryPage();
@@ -2092,7 +2158,7 @@ function registryCard(code, tab, sub) {
     h('div', { class: 'org-actions' }, h('div', { class: 'row' }, spDream(r) ? ext(dreamUrl(spDream(r)), 'DREAM', 'btn') : null, tt.manual ? h('button', { class: 'btn', onclick: () => addSpDialog(r) }, rt('editSp')) : null)));
   // One sub-project, its parts as tabs: where it stands, its procurements, its contracts, its money,
   // the expert's work. The address keeps the tab (#/registry/CODE/contracts).
-  const count = { procurement: spTids(r).length || (r.tenders || []).length, contracts: spContracts(r).length, work: ((r.work || {}).tasks || []).filter((x) => !x.done).length };
+  const count = { procurement: spTids(r).length || (r.tenders || []).length, contracts: spContracts(r).length, work: ((r.work || {}).tasks || []).filter((x) => !x.done).length , docs: ((state.trackedIndex || {}).items || []).filter((y) => spTids(r).includes(y.tid) && onTeamList(y.key)).reduce((n, y) => n + (y.docs || 0), 0)};
   const tabs = h('nav', { class: 'section-tabs pills sp-tabs', 'aria-label': rt('nav') }, SP_TABS.map((k) => h('a', { href: '#/registry/' + encodeURIComponent(r.code) + '/' + k, class: k === tab ? 'on' : '' },
     rt('tab_' + k), count[k] ? h('em', { class: 'count' }, count[k]) : null, k === 'overview' && news.signals.length ? h('em', { class: 'count red' }, news.signals.length) : null)));
   const body = {
@@ -2101,6 +2167,7 @@ function registryCard(code, tab, sub) {
     contracts: () => contractsTab(r),
     finance: () => financeTab(r),
     work: () => workTab(r),
+    docs: () => docsTab(r),
   }[tab]();
   return [head, tabs].concat(body);
 }
@@ -2722,6 +2789,104 @@ function procDetail(r, key) {
     fill(deep, h('p', { class: 'muted small section' }, rt('pdNotFollowed')));
   }
   return [head, contracts, control, rules, sheet, marks, deep];
+}
+
+// ---- the Documents tab ----------------------------------------------------------------------------
+//
+// Every document the monitor can reach for the sub-project, by procedure (works, supervision,
+// consulting engineer, the rest; newest first): the procurement's documents, the contract and its
+// amendments, the State Audit Service's decisions, conclusions and correspondence. Prozorro's files
+// are kept for the procedures on control (their snapshots); for the others the tab says how many
+// there are and opens them on Prozorro. Links from the team's table, DREAM and the Cabinet's
+// subvention order come first.
+const DOCF = { q: '', kind: '' };
+const DOC_KINDS = ['tender', 'contract', 'change', 'sasu', 'link'];
+function docsTab(r) {
+  const tt = r.t || {};
+  const items = procItems(r).slice().sort((a, b) => PROC_ROLES.indexOf(a.role) - PROC_ROLES.indexOf(b.role) || String(b.day || '').localeCompare(String(a.day || '')));
+  const rows = ((state.trackedIndex || {}).items || []).filter((y) => spTids(r).includes(y.tid) && onTeamList(y.key));
+  const box = h('div', null, h('div', { class: 'card empty section' }, t('ui.loading')));
+  const sv = subvMatch(r);
+  const dec = sv ? (SUBV.decrees || []).find((d) => d.nreg === sv.nreg) : null;
+  const isUrl = (x) => /^https?:\/\//.test(String(x || ''));
+  // SP-level links: DREAM, the subvention order, the team's links to contracts and amendments.
+  const links = [
+    spDream(r) ? { kind: 'link', title: 'DREAM ' + spDream(r), type: rt('dDream'), url: dreamUrl(spDream(r)) } : null,
+    dec && dec.url ? { kind: 'link', title: dec.title || dec.nreg, type: rt('dSubv', { n: dec.nreg }), url: dec.url } : null,
+  ].concat((r.tenders || []).flatMap((x) => [
+    isUrl(x.contract_link) ? { kind: 'link', title: rt('dTableContract', { no: x.contract_no || x.name || '' }), type: rt('dTable'), url: x.contract_link, pz: x.pz } : null,
+    isUrl(x.mods_link) ? { kind: 'link', title: rt('dTableMods', { no: x.contract_no || '' }), type: rt('dTable'), url: x.mods_link, pz: x.pz } : null,
+  ])).filter(Boolean);
+  (async () => {
+    const snaps = await Promise.all(rows.map(async (y) => { try { return { y, s: await loadTracked(y.key) }; } catch (e) { return { y, s: null }; } }));
+    let eib = null;
+    try { eib = await loadEib(); } catch (e) { eib = null; }
+    const eibDocs = Object.fromEntries(((eib || {}).items || []).map((x) => [x.tid, x.docs]));
+    // Per procedure: its documents from every snapshot under it, each file once.
+    const byTid = {};
+    for (const { y, s } of snaps) {
+      if (!s) continue;
+      const g = byTid[y.tid] = byTid[y.tid] || { docs: new Map(), contracts: new Map(), sasu: new Map() };
+      for (const d of ((s.tender || {}).docs || [])) g.docs.set(d.id || d.url, Object.assign({ kind: 'tender' }, d));
+      if (s.contract && s.contract.id) {
+        const c = g.contracts.get(s.contract.id) || { c: s.contract, docs: new Map() };
+        for (const d of s.contract.docs || []) c.docs.set(d.id || d.url, Object.assign({ kind: isChangeDoc(d) ? 'change' : 'contract' }, d));
+        g.contracts.set(s.contract.id, c);
+      }
+      for (const m of s.sasu || []) g.sasu.set(m.id, m);
+    }
+    const draw = () => {
+      const words = DOCF.q.toLowerCase().split(/\s+/).filter(Boolean);
+      const keep = (d) => (!DOCF.kind || d.kind === DOCF.kind) && (!words.length || words.every((w) => String(d.title || '').toLowerCase().includes(w) || String(d.type || '').toLowerCase().includes(w)));
+      const row = (d) => h('a', { class: 'doc', href: d.url, target: '_blank', rel: 'noopener noreferrer' }, icon('file'),
+        h('span', null, h('b', null, d.title || '—'), h('small', null, join([d.typeLabel || (d.type ? label('pzd.', d.type) : null), d.date ? fdate(String(d.date).slice(0, 10)) : null]))), icon('ext'));
+      const list = (docs) => { const shown = docs.filter(keep).sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))); return shown.length ? h('div', { class: 'doc-list' }, shown.map(row)) : null; };
+      const part = (title, docs) => { const l = list(docs); return l ? h('div', { class: 'doc-part' }, h('h3', { class: 'card-sub' }, title, h('span', { class: 'count-inline' }, docs.filter(keep).length)), l) : null; };
+      let total = 0, counts = { tender: 0, contract: 0, change: 0, sasu: 0, link: links.length };
+      const cards = items.map((it) => {
+        const g = it.tid ? byTid[it.tid] : null;
+        const tender = g ? [...g.docs.values()] : [];
+        const cons = g ? [...g.contracts.values()] : [];
+        const sasuDocs = g ? [...g.sasu.values()].flatMap((m) => (m.docs || []).map((d) => Object.assign({ kind: 'sasu', typeLabel: rt('dSasuOf_' + (d.of || 'post')) + ' · ' + m.id }, d))
+          .concat(m.conclusion_pdf ? [{ kind: 'sasu', id: m.id + ':pdf', title: rt('dSasuConclusion', { id: m.id }), typeLabel: rt('dSasuPdf'), url: m.conclusion_pdf, date: m.conclusion_published || m.conclusion_date }] : [])) : [];
+        const own = links.filter((l) => l.pz && l.pz === it.tid);
+        counts.tender += tender.length; counts.sasu += sasuDocs.length;
+        for (const c of cons) for (const d of c.docs.values()) counts[d.kind] += 1;
+        const parts = [part(rt('dTender'), tender)]
+          .concat(cons.map((c) => {
+            const all = [...c.docs.values()];
+            return [part(rt('dContract', { no: c.c.number || '—', date: c.c.signed ? fdate(c.c.signed) : '' }), all.filter((d) => d.kind === 'contract')),
+              part(rt('dChanges', { no: c.c.number || '—' }), all.filter((d) => d.kind === 'change'))];
+          }).flat())
+          .concat([part(rt('dSasu'), sasuDocs), part(rt('dTableLinks'), own)]).filter(Boolean);
+        const n = parts.length;
+        total += tender.length + sasuDocs.length + cons.reduce((a, c) => a + c.docs.size, 0);
+        if (!n && (DOCF.q || DOCF.kind) && g) return null;
+        const head = h('div', { class: 'card-head' },
+          h('div', null, h('h2', { class: 'card-title' }, rt('role_' + it.role), it.of > 1 ? h('span', { class: 'tag', style: 'margin-left:8px' }, rt('pAttempt', { n: it.attempt, of: it.of })) : null),
+            h('div', { class: 'small muted clamp' }, join([it.tid, (it.t0 && it.t0.title) || (it.x && it.x.name)]))),
+          it.tid ? ext(pzUrl(it.tid), 'Prozorro', 'btn btn-sm') : null);
+        return h('section', { class: 'card pad section' }, head,
+          n ? parts : g ? h('p', { class: 'muted small' }, rt(DOCF.q || DOCF.kind ? 'dNoneHere' : 'dNoDocs'))
+            : h('p', { class: 'muted small' }, it.tid ? rt('dNotFollowed', { n: eibDocs[it.tid] != null ? eibDocs[it.tid] : '?' }) : rt('dSheetOnly'),
+              it.tid ? [' ', h('a', { href: pzUrl(it.tid), target: '_blank', rel: 'noopener noreferrer' }, rt('dOpenPz'))] : null));
+      }).filter(Boolean);
+      const general = links.filter((l) => !l.pz);
+      fill(box,
+        h('div', { class: 'card pad section' },
+          h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('dTitle')), h('span', { class: 'muted small' }, rt('dTotal', { n: total, links: links.length }))),
+          h('p', { class: 'muted small' }, rt('dLead')),
+          h('div', { class: 'row', style: 'gap:10px;flex-wrap:wrap' },
+            pills([['', t('ui.all')]].concat(DOC_KINDS.map((k) => [k, rt('dKind_' + k), counts[k] || null])), DOCF.kind, (v) => { DOCF.kind = v; draw(); }),
+            (() => { const q = h('input', { class: 'input', type: 'search', value: DOCF.q, placeholder: rt('dSearch'), 'aria-label': rt('dSearch'), style: 'max-width:280px' });
+              q.oninput = () => { DOCF.q = q.value; clearTimeout(q._t); q._t = setTimeout(() => { draw(); const n = box.querySelector('input[type=search]'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 250); };
+              return q; })()),
+          general.filter(keep).length ? h('div', { class: 'doc-part', style: 'margin-top:12px' }, h('h3', { class: 'card-sub' }, rt('dGeneral')), list(general)) : null),
+        cards.length ? cards : h('div', { class: 'card empty section' }, rt('dNothing')));
+    };
+    draw();
+  })();
+  return [box];
 }
 
 // ---- the expert's work: tasks, weekly journal, marks on procurements --------------------------
