@@ -57,27 +57,40 @@ def main():
     codes = codes_on_control()
     log("ЄДР: компаній на контролі %d" % len(codes))
     # The register: from the site, or from a copy downloaded in the browser into Downloads
-    # (data.gov.ua turns automated downloads away at times) when it is newer than the last reading.
+    # (data.gov.ua turns automated downloads away at times). The copy is read when it is newer than
+    # the last reading, or when companies came on control that were never read: an older copy
+    # still tells their state, and what a newer reading said of the others is kept.
     try:
         with open(os.path.join(DATA, "edr.json"), encoding="utf-8") as f:
-            last = json.load(f).get("at") or ""
+            prev = json.load(f)
     except (OSError, ValueError):
-        last = ""
+        prev = {}
+    last = prev.get("at") or ""
+    known = set(prev.get("items") or {}) | set(prev.get("missing") or [])
     copies = sorted(glob.glob(os.path.expanduser("~/Downloads/uo*.zip")), key=os.path.getmtime)
-    local = copies[-1] if copies and time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(os.path.getmtime(copies[-1]))) > last else None
+    newest = copies[-1] if copies else None
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(os.path.getmtime(newest))) if newest else ""
+    local = newest if newest and (stamp > last or (codes - known)) else None
     if codes:
         try:
+            older, src = False, "site"
             try:
                 found = legal.scan_edr(codes, log)
             except Exception as e:  # noqa: BLE001
                 if not local:
                     raise
-                log("  ЄДР з сайту: %s — читаю завантажену копію %s" % (e, os.path.basename(local)))
+                log("  ЄДР з сайту: %s — читаю завантажену копію %s (%s)" % (e, os.path.basename(local), stamp[:10]))
                 found = legal.scan_edr(codes, log, path=local)
-            out = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "items": found,
-                   "missing": sorted(codes - set(found))}
+                older, src = stamp <= last, "copy " + stamp[:10]
+            items = dict(found)
+            if older:
+                # A copy older than the last reading only fills in the companies that reading lacked.
+                items = dict(found, **(prev.get("items") or {}))
+            out = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "items": {c: v for c, v in items.items() if c in codes},
+                   "missing": sorted(codes - set(items)), "source": src}
             with open(os.path.join(DATA, "edr.json"), "w", encoding="utf-8") as f:
                 json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+            log("  ЄДР: знайдено %d з %d" % (len(out["items"]), len(codes)))
         except Exception as e:  # noqa: BLE001
             ok = False
             log("! ЄДР: %s" % e)
