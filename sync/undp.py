@@ -435,7 +435,27 @@ def overall(sc):
     return 1
 
 
-def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contract_stage, fund=None, coll=None, lg=None, pc=None, rl=None):
+PRICE_UP_RED = 15  # % of the original price: the EIB's Guide to Procurement sends such changes to the Bank
+LEGAL_STATUS = {"terminated", "bankruptcy", "terminating", "young"}
+TERMINATE = re.compile(r"розірв|припин\w* (дію )?договор", re.I)
+OVERPAID = re.compile(r"зайв\w* (сплач|оплач|перерах)|переплат|завищен\w* (варт|обсяг)|надмірн\w* сплач", re.I)
+
+
+def sasu_severe(m, today):
+    """Why a State Audit violation rates 3, or None: not removed by its deadline, the contract to be
+    ended, money overpaid."""
+    text = " ".join([m.get("obligations") or "", m.get("conclusion") or "", m.get("findings") or ""])
+    if TERMINATE.search(m.get("obligations") or ""):
+        return "sasu_terminate"
+    if OVERPAID.search(text):
+        return "sasu_overpaid"
+    due = m.get("elimination_due")
+    if due and due < (today or "") and not m.get("elimination_date"):
+        return "sasu_not_removed"
+    return None
+
+
+def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contract_stage, fund=None, coll=None, lg=None, pc=None, rl=None, today=None):
     """Ratings 1–3 with the reasons, where there is something to judge by; 6 (the contractor's
     legal status) stays with the expert."""
     types = {x["type"] for x in signals or []}
@@ -446,14 +466,20 @@ def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contr
         if reason:
             why[k] = [r for r in reason if r]
 
+    # The team's rules (approved 20.11.2026): 3 from a cumulative price rise above 15% (the EIB's
+    # Guide sends such a change to the Bank), 2 for any rise up to that, three or more extensions,
+    # or five or more amendments.
     if contract_stage:
         changes = [ch for ch in (c or {}).get("changes") or []]
         ext = sum(1 for ch in changes if {"durationExtension", "fiscalYearExtension"} & set(ch.get("types") or []))
         pct = (price_ or {}).get("change_pct")
-        if (pct or 0) > 10 or "price_up" in types:
-            put("r1", 3, "price_up:%s" % pct)
-        elif len(changes) >= 5 or ext >= 3 or "chain_extensions" in types:
-            put("r1", 2, "changes:%d" % len(changes), "extensions:%d" % ext if ext else None)
+        up = [x for x in signals or [] if x.get("type") == "price_up"]
+        up_pct = max([(x.get("params") or {}).get("pct") or 0 for x in up] + [pct or 0])
+        if up_pct > PRICE_UP_RED:
+            put("r1", 3, "price_up:%s" % up_pct)
+        elif up_pct > 0 or up or len(changes) >= 5 or ext >= 3 or "chain_extensions" in types:
+            put("r1", 2, "price_up:%s" % up_pct if up_pct > 0 else None, "changes:%d" % len(changes) if len(changes) >= 5 else None,
+                "extensions:%d" % ext if ext >= 3 else None, "chain_extensions" if "chain_extensions" in types else None)
         else:
             put("r1", 1, "changes:%d" % len(changes) if changes else None)
     high = sorted({"coll_" + f["kind"] for f in coll or [] if f.get("level") == "high"})
@@ -497,29 +523,44 @@ def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contr
         fl = {f["kind"]: f["level"] for f in (record.get("flags") or [])}
         lvl = 3 if n >= 2 or fl.get("overloaded") == "high" else 2 if n or fl else 1
         put("r5", lvl, "troubled:%d" % n if n else None, "overloaded" if "overloaded" in fl else None, "newcomer" if "newcomer" in fl else None)
+    # 6 is the contractor's legal standing only (bankruptcy, liquidation, reorganisation, a company
+    # under a year old). Sanctions, owners from RU/BY, hidden owners and AMCU bid-rigging decisions
+    # belong to the Anti-Corruption & Integrity block, which its analyst rates: they are shown
+    # ("rx", other) but do not rate 6.
     if lg is not None:
         fl = lg.get("flags") or []
-        hi = [f["kind"] for f in fl if f["level"] == "high"]
-        md = [f["kind"] for f in fl if f["level"] == "medium"]
+        hi = [f["kind"] for f in fl if f["kind"] in LEGAL_STATUS and f["level"] == "high"]
+        md = [f["kind"] for f in fl if f["kind"] in LEGAL_STATUS and f["level"] == "medium"]
+        integrity = [f for f in fl if f["kind"] not in LEGAL_STATUS]
         if hi:
             put("r6", 3, *["legal_" + k for k in hi])
         elif md:
             put("r6", 2, *["legal_" + k for k in md])
-        elif lg.get("edr") or lg.get("sanctions") is not None:
+        elif lg.get("edr"):
             put("r6", 1)
+        if integrity:
+            put("rx", 3 if any(f["level"] == "high" for f in integrity) else 2, *["legal_" + f["kind"] for f in integrity])
+    # 7: a violation the buyer removed, or is still in time to remove, or appeals is 2; 3 only when it
+    # was not removed by the conclusion's deadline, or the conclusion demands the contract be ended,
+    # or the audit found money overpaid.
     if audit is not None:
-        if any(m.get("violation") for m in audit):
-            put("r7", 3, "sasu_violation")
+        bad = [m for m in audit if m.get("violation")]
+        severe = [m for m in bad if sasu_severe(m, today)]
+        if severe:
+            put("r7", 3, *sorted({sasu_severe(m, today) for m in severe}))
+        elif bad:
+            put("r7", 2, "sasu_violation_fixed" if all(m.get("elimination_date") for m in bad) else "sasu_violation")
         elif any(m.get("status") in ("draft", "active") for m in audit):
             put("r7", 2, "sasu_active")
         else:
             put("r7", 1)
+    # 8: an upheld complaint whose decision was carried out is 2; two or more upheld is 3.
     up = sum((comp or {}).get(of, {}).get("upheld", 0) for of in ("tender", "award"))
     op = sum((comp or {}).get(of, {}).get("open", 0) for of in ("tender", "award"))
-    if up:
+    if up >= 2:
         put("r8", 3, "amcu_upheld:%d" % up)
-    elif op:
-        put("r8", 2, "amcu_open:%d" % op)
+    elif up or op:
+        put("r8", 2, "amcu_upheld:%d" % up if up else None, "amcu_open:%d" % op if op else None)
     else:
         put("r8", 1)
     for k in KEYS:
@@ -552,7 +593,7 @@ def card(t, c, tc, signals, totals, acts_sum, paid, audit, advance, own_key, tod
         "legal": lg,
         "price_check": pc,
         "rules": rl,
-        "matrix": matrix(c, signals, totals, pr, subv, record, audit, comp, advance, contract_stage, fund, coll, lg, pc, rl),
+        "matrix": matrix(c, signals, totals, pr, subv, record, audit, comp, advance, contract_stage, fund, coll, lg, pc, rl, today),
     }.items() if v is not None}
 
 

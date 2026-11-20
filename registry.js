@@ -142,6 +142,25 @@ const RG = {
     pfXRating: "Оцінка",
     pfYes: "так", pfAnyBatch: "Усі пули",
     colStage: "Етап", riskShort: "ризик {n}",
+    h_failedProc: "невдала закупівля {tid}",
+    h_amcuMany: "задоволених скарг у закупівлях субпроєкту: {n}",
+    fromContracts: "договори {who}: {why}",
+    factLabel: "Факт для Red Flag: {text}",
+    factManual: "оцінено експертом вручну — додайте факт і джерело",
+    signoffWait: "Знижено з 3 ({who}, {date}) — потребує підтвердження Risk Mitigation and Compliance Analyst",
+    signoffBtn: "Підтвердити",
+    signoffSelf: "підтвердити має інша людина",
+    signoffOk: "Зниження з 3 підтвердив {who}, {date}",
+    ruleLabel: "Правило",
+    rule_r1: "3 — ціна зросла більш ніж на 15% від початкової; 2 — будь-яке подорожчання до 15%, 3 і більше продовжень строку або 5 і більше додаткових угод; 1 — змін немає або лише технічні.",
+    rule_r2: "3 — відхилено дешевшу пропозицію без підстав, аномально низьку ціну прийнято без обґрунтування, ознаки змови, порушено правило програми; 2 — одна пропозиція (також для технагляду й інженера-консультанта), знижка менше 2%, ціна вища за план; 1 — конкурентні торги без аномалій.",
+    rule_r3: "3 — субвенцію знято або залишено символічну, статус «Suspended», нестача понад 25% потреби року; 2 — субвенцію зменшено, статус «Insufficient», збільшення вартості на розгляді; 1 — коштів досить.",
+    rule_r4: "Для всіх субпроєктів із договором робіт, зокрема завершених. 3 — прострочено понад 10% суми до оплати або понад 30 днів, оплата ЄІБ чекає понад 30 днів, аванс не закрито; 2 — будь-яка прострочка, оплата ЄІБ чекає понад 15 днів; 1 — оплати в строк.",
+    rule_r5: "3 — два й більше проблемні договори програм або відкриті договори понад подвійний річний оборот; 2 — один проблемний договір, новачок без аналогічних договорів; 1 — без зауважень.",
+    rule_r6: "Лише правовий статус підрядника: 3 — банкрутство, ліквідація, припинення; 2 — податковий борг, реорганізація, компанія молодша за рік; 1 — діє. Санкції, PEP і бенефіціари, конфлікт інтересів оцінює Anti-Corruption Analyst у блоці доброчесності.",
+    rule_r7: "3 — порушення не усунуто в строк, висновок вимагає розірвати договір або встановлено зайву оплату; 2 — порушення усунуто чи оскаржується, моніторинг триває; 1 — без порушень. Невдалі закупівлі — 12 місяців і не вище 2.",
+    rule_r8: "3 — дві й більше задоволені скарги або рішення АМКУ не виконано; 2 — скарга на розгляді або задоволена й виконана; 1 — скарг немає чи їх відхилено. Невдалі закупівлі — 12 місяців і не вище 2.",
+    rule_rx: "У формулу не входить: ознаки для інших блоків Risk Matrix (доброчесність, будівництво, E&S).",
     pdOpenBtn: "Деталі",
     pdBack: "Усі закупівлі субпроєкту",
     pdNotFound: "Такої закупівлі в субпроєкті немає (можливо, її відв’язали).",
@@ -648,6 +667,25 @@ const RG = {
     pfXRating: "Rating",
     pfYes: "yes", pfAnyBatch: "All batches",
     colStage: "Stage", riskShort: "risk {n}",
+    h_failedProc: "failed procurement {tid}",
+    h_amcuMany: "complaints upheld in the sub-project's procurements: {n}",
+    fromContracts: "contracts {who}: {why}",
+    factLabel: "Fact for the Red Flag: {text}",
+    factManual: "rated by hand — add the fact and its source",
+    signoffWait: "Lowered from 3 ({who}, {date}) — needs the Risk Mitigation and Compliance Analyst's confirmation",
+    signoffBtn: "Confirm",
+    signoffSelf: "someone else has to confirm",
+    signoffOk: "Lowering from 3 confirmed by {who}, {date}",
+    ruleLabel: "Rule",
+    rule_r1: "3 — price up more than 15% of the original; 2 — any rise up to 15%, three or more extensions or five or more amendments; 1 — no changes or technical ones only.",
+    rule_r2: "3 — a cheaper bid rejected without grounds, an abnormally low price accepted unjustified, collusion signs, a programme rule broken; 2 — a single bid (supervision and consulting engineer too), discount under 2%, price above the plan; 1 — competitive, no anomalies.",
+    rule_r3: "3 — subvention removed or token, «Suspended», gap over 25% of the year's need; 2 — subvention cut, «Insufficient», cost increase under review; 1 — enough money.",
+    rule_r4: "For every sub-project with a works contract, finished ones too. 3 — over 10% of the amount due or over 30 days overdue, an EIB payment waiting over 30 days, advance not closed; 2 — any delay, EIB payment waiting over 15 days; 1 — paid on time.",
+    rule_r5: "3 — two or more troubled programme contracts or open contracts over twice the turnover; 2 — one troubled contract, a newcomer; 1 — no concerns.",
+    rule_r6: "Legal standing only: 3 — bankruptcy, liquidation, termination; 2 — tax debt, reorganisation, company under a year old; 1 — active. Sanctions, PEP and owners, conflicts of interest are rated by the Anti-Corruption Analyst.",
+    rule_r7: "3 — violation not removed in time, the conclusion demands ending the contract or money overpaid; 2 — removed or appealed, monitoring under way; 1 — no violation. Failed procurements: 12 months, at most 2.",
+    rule_r8: "3 — two or more upheld complaints or an AMCU decision not carried out; 2 — under review, or upheld and carried out; 1 — none or rejected. Failed procurements: 12 months, at most 2.",
+    rule_rx: "Not in the formula: signs for the other Risk Matrix blocks (integrity, construction, E&S).",
     pdOpenBtn: "Details",
     pdBack: "All procurements of the sub-project",
     pdNotFound: "No such procurement in this sub-project (it may have been unlinked).",
@@ -1521,20 +1559,33 @@ function riskHints(r) {
   const tt = r.t || {};
   const pzT = (r.pz || {}).tenders || [];
   const main = mainContract(r);
+  // The team's rules, approved 20.11.2026 (the rules doc, section by section). What Prozorro shows
+  // here is the sub-project's procedures; the contracts on control add their own ratings (contractHints).
   if (main && main.c.changes) {
     const types = (main.c.change_types || []).map((x) => label('pzr.', x) || x).join(', ');
     add('r1', main.c.changes >= 5 ? 'medium' : 'low', rt('h_changes', { n: main.c.changes, types }));
   }
+  // State Audit and AMCU: a procedure that gave no contract counts 12 months and at most 2.
+  let upheld = 0;
   for (const t0 of pzT) {
-    if (t0.sasu && t0.sasu.violation) add('r7', 'high', rt('h_sasuViol', { ids: (t0.sasu.ids || []).join(', ') }));
-    else if (t0.sasu && t0.sasu.active) add('r7', 'medium', rt('h_sasuActive'));
-    if (t0.complaints && t0.complaints.n) add('r8', t0.complaints.open ? 'medium' : 'low', rt('h_amcu', { n: t0.complaints.n, open: t0.complaints.open, sat: t0.complaints.satisfied }));
+    const noContract = ['unsuccessful', 'cancelled'].includes(t0.status) && !(t0.contracts || []).some((c) => c.status !== 'cancelled');
+    if (noContract && t0.date && t0.date < addDays(today(), -365)) continue;
+    const tag = noContract ? ' · ' + rt('h_failedProc', { tid: t0.tid }) : '';
+    // A violation is 2 until the sync (on a contract on control) sees it not removed, the contract to end or money overpaid.
+    if (t0.sasu && t0.sasu.violation) add('r7', 'medium', rt('h_sasuViol', { ids: (t0.sasu.ids || []).join(', ') }) + tag);
+    else if (t0.sasu && t0.sasu.active) add('r7', 'medium', rt('h_sasuActive') + tag);
+    const cp = t0.complaints || {};
+    if (!noContract) upheld += cp.satisfied || 0;
+    if (cp.n && (cp.open || cp.satisfied)) add('r8', 'medium', rt('h_amcu', { n: cp.n, open: cp.open || 0, sat: cp.satisfied || 0 }) + tag);
+    else if (cp.n) add('r8', 'low', rt('h_amcu', { n: cp.n, open: 0, sat: 0 }) + tag);
     if (t0.disqualified) add('rx', 'low', t0.tid + ': ' + rt('h_disq', { n: t0.disqualified }));
   }
+  if (upheld >= 2) add('r8', 'high', rt('h_amcuMany', { n: upheld }));
   const failed = (r.tenders || []).filter((x) => /No Bids|All Rejected|Cancel/i.test(x.status || '')).length
     + pzT.filter((x) => x.status === 'unsuccessful' && !(r.tenders || []).some((y) => y.pz === x.tid)).length;
   if (failed >= 2) add('rx', 'medium', rt('h_failed', { n: failed }));
-  if (/Insufficient|Suspended/i.test(tt.funding || '')) add('r3', 'medium', rt('h_funding', { s: tt.funding }));
+  if (/Suspended/i.test(tt.funding || '')) add('r3', 'high', rt('h_funding', { s: tt.funding }));
+  else if (/Insufficient/i.test(tt.funding || '')) add('r3', 'medium', rt('h_funding', { s: tt.funding }));
   const pct = pctOf(tt.pct);
   if (tt.completion && tt.completion < today() && pct != null && pct < 100) add('rx', 'high', rt('h_overdue', { date: fdate(tt.completion), pct }));
   const paidPct = paidShare(r);
@@ -1548,7 +1599,7 @@ function riskHints(r) {
     if (others.length) {
       add('r5', 'low', rt('h_contractorElse', { list: others.map((x) => x.code).join(', ') }));
       const bad = others.filter((x) => TROUBLE.test((x.t || {}).comment || '') || ((mainContract(x) || {}).c || {}).status === 'terminated');
-      if (bad.length) add('r5', 'medium', rt('h_contractorTrouble', { list: bad.map((x) => x.code).join(', ') }));
+      if (bad.length) add('r5', bad.length >= 2 ? 'high' : 'medium', rt('h_contractorTrouble', { list: bad.map((x) => x.code).join(', ') }));
     }
   }
   return out;
@@ -1711,26 +1762,47 @@ function subvRisk(r) {
   return [];
 }
 function allRisk(r) {
-  const extra = subvRisk(r), fromContracts = contractHints(r), fromMrd = mrdHints(r);
-  if (!extra.length && !Object.keys(fromContracts).length && !Object.keys(fromMrd).length) return r.risk || {};
-  const out = Object.assign({}, r.risk || {});
-  if (extra.length) out.r3 = (out.r3 || []).concat(extra);
-  for (const src of [fromContracts, fromMrd]) for (const [k, list] of Object.entries(src)) out[k] = (out[k] || []).concat(list);
+  // Worked out now from what the sub-project holds, so a change of the rules shows at once (the
+  // copy saved with the last refresh is only for sub-projects never read from Prozorro).
+  const base = r.pz ? riskHints(r) : (r.risk || {});
+  const extra = subvRisk(r), fromContracts = contractHints(r, extra.length > 0), fromMrd = mrdHints(r);
+  const out = {};
+  for (const src of [base, { r3: extra }, fromContracts, fromMrd]) for (const [k, list] of Object.entries(src)) out[k] = (out[k] || []).concat(list || []);
+  // One fact once: the same words from two sources (a procurement and its contract) say it once.
+  for (const k of Object.keys(out)) {
+    const seen = new Set();
+    out[k] = out[k].filter((x) => { const key = String(x.text).toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true; });
+    if (!out[k].length) delete out[k];
+  }
   return out;
 }
 // One matrix, the sub-project's: what the monitor rated on its contracts on control (prices,
 // collusion, payments, the contractor's standing, the programme rules) comes in as hints to it.
-function contractHints(r) {
-  const out = {};
+function contractHints(r, spSubvention) {
+  // The same reason on several contracts (a procurement and the contract it became, the works and
+  // the supervision) is one line naming them all; the subvention, once said for the sub-project, is
+  // not repeated per contract.
+  const SUBV_WHY = /^(subvention_|funding_gap)/;
+  const groups = new Map();
   for (const x of spTracked(r)) {
     const mx = x.matrix;
     if (!mx) continue;
     const who = x.number ? '№ ' + x.number : x.tid;
     for (const [k, v] of Object.entries(mx.scores || {})) {
       if (v < 2) continue;
-      const why = ((mx.why || {})[k] || []).map((w) => (typeof udWhy === 'function' ? udWhy(w) : w)).join(', ');
-      (out[k] = out[k] || []).push({ level: v === 3 ? 'high' : 'medium', text: rt('fromContract', { who, why: why || rt('lvl' + v) }), contract: x.key });
+      const whys = ((mx.why || {})[k] || []).filter((w) => !(k === 'r3' && spSubvention && SUBV_WHY.test(String(w))));
+      if (k === 'r3' && spSubvention && !whys.length && ((mx.why || {})[k] || []).length) continue;
+      const why = whys.map((w) => (typeof udWhy === 'function' ? udWhy(w) : w)).join(', ') || rt('lvl' + v);
+      const key = k + '|' + v + '|' + why;
+      const g = groups.get(key) || { k, v, why, who: [], contract: x.key };
+      if (!g.who.includes(who)) g.who.push(who);
+      groups.set(key, g);
     }
+  }
+  const out = {};
+  for (const g of groups.values()) {
+    (out[g.k] = out[g.k] || []).push({ level: g.v === 3 ? 'high' : 'medium', contract: g.contract,
+      text: rt(g.who.length > 1 ? 'fromContracts' : 'fromContract', { who: g.who.join(', '), why: g.why }) });
   }
   return out;
 }
@@ -1839,7 +1911,7 @@ function registryPage() {
   const facts = new Map(rows.map((r) => {
     const st = spStage(r), news = spNews(spTracked(r)), wk = spWork(r), f = mrdFacts(r);
     const overdueTask = wk.next && wk.next.due && wk.next.due < today();
-    const waiting = f ? f.waiting.filter((x) => x.days > 14).length : 0;
+    const waiting = f ? f.waiting.filter((x) => x.days > 15).length : 0;
     return [r.code, { st, news, wk, rating: overallRating(scoresOf(r).scores), overdueTask, waiting,
       attention: !!(st.late || news.signals.length || overdueTask || waiting) }];
   }));
@@ -2313,11 +2385,26 @@ function scorePicker(score, onpick, label, title) {
   return wrap;
 }
 
+const KEY_RISKS = ['r2', 'r3', 'r4', 'r7'];
 function risksCard(r) {
   const { scores, from } = scoresOf(r);
   const sug = suggestedScores(r);
   const overall = overallRating(scores);
-  const save = (patch) => cloud.updateRegistry(r.code, { scores: Object.assign({}, r.scores || {}, patch) });
+  const risk = allRisk(r) || {};
+  const signoff = r.signoff || {}, notes = r.scoreNotes || {};
+  // One write: the ratings, a sign-off wanted when a 3 is lowered (four eyes: Risk Mitigation and
+  // Compliance Analyst), and for a 3 on a key risk the fact behind it, where the Red Flag form starts.
+  const save = (patch) => {
+    const so = Object.assign({}, signoff), nt = Object.assign({}, notes), at = new Date().toISOString();
+    for (const [k, v] of Object.entries(patch)) {
+      if (scores[k] === 3 && (v == null || v < 3)) so[k] = { from: 3, to: v, by: myExpert(), uid: (state.user || {}).uid || '', at };
+      else if (v === 3) delete so[k];
+      if (v === 3 && KEY_RISKS.includes(k)) nt[k] = { text: (risk[k] || []).map((x) => x.text).join(' · ').slice(0, 900) || rt('factManual'), by: myExpert(), at };
+      else if (v !== 3) delete nt[k];
+    }
+    return cloud.updateRegistry(r.code, { scores: Object.assign({}, r.scores || {}, patch), signoff: so, scoreNotes: nt });
+  };
+  const confirm = (k) => cloud.updateRegistry(r.code, { signoff: Object.assign({}, signoff, { [k]: Object.assign({}, signoff[k], { ok: myExpert(), okAt: new Date().toISOString() }) }) });
   const pending = SCORE_KEYS.filter((k) => sug[k] != null && from[k] === 'hint');
   return h('div', { class: 'card pad' },
     h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('risks')),
@@ -2325,15 +2412,21 @@ function risksCard(r) {
     h('p', { class: 'muted small' }, rt('risksHint')),
     pending.length ? h('div', { class: 'row', style: 'margin-bottom:10px' }, h('button', { class: 'btn btn-sm btn-dark', onclick: () => save(Object.fromEntries(pending.map((k) => [k, sug[k]]))) }, icon('check'), rt('acceptHints', { n: pending.length }))) : null,
     h('div', { class: 'checklist' }, RISK_KEYS.map((k) => {
-      const items = (allRisk(r) || {})[k] || [];
+      const items = risk[k] || [];
       if (k === 'rx' && !items.length) return null;
       const score = scores[k];
       const lv = k === 'rx' ? (items.some((x) => x.level === 'high') ? 'bad' : 'warn') : score === 3 ? 'bad' : score === 2 ? 'warn' : score === 1 ? 'ok' : 'na';
       const pick = k !== 'rx' ? scorePicker(score, (v) => save({ [k]: v }), rt(k), rt('from_' + (from[k] || 'none'))) : null;
+      const so = signoff[k], mine = so && so.uid && so.uid === ((state.user || {}).uid || '');
       return h('div', { class: 'chk ' + lv },
         pick || h('span', { class: 'chk-ico' }, '!'),
         h('div', null, h('b', null, rt(k)), h('div', { class: 'small muted' }, items.length ? items.map((x) => x.text).join(' · ') : '—'),
-          from[k] && from[k] !== 'own' ? h('div', { class: 'faint small' }, rt('from_' + from[k])) : null));
+          from[k] && from[k] !== 'own' ? h('div', { class: 'faint small' }, rt('from_' + from[k])) : null,
+          score === 3 && notes[k] ? h('div', { class: 'small' }, rt('factLabel', { text: notes[k].text })) : null,
+          so && !so.ok ? h('div', { class: 'row small warn-text', style: 'gap:8px;flex-wrap:wrap;margin-top:4px' }, rt('signoffWait', { who: so.by || '—', date: fdate(String(so.at || '').slice(0, 10)) }),
+            mine ? h('span', { class: 'faint' }, rt('signoffSelf')) : h('button', { class: 'btn btn-sm', type: 'button', onclick: () => confirm(k) }, icon('check'), rt('signoffBtn'))) : null,
+          so && so.ok ? h('div', { class: 'faint small' }, rt('signoffOk', { who: so.ok, date: fdate(String(so.okAt || '').slice(0, 10)) })) : null,
+          h('details', { class: 'howto small' }, h('summary', null, rt('ruleLabel')), h('p', { class: 'muted' }, rt('rule_' + k)))));
     })));
 }
 
@@ -3249,7 +3342,7 @@ function portfolioData() {
   const pays = facts.flatMap(({ r, f }) => (r.mrd.payments || []).filter((x) => x.paid && inYear(x.paid, y) && f.lag(x) != null && f.lag(x) >= 0 && f.lag(x) < 400).map((x) => f.lag(x)));
   const mrd = facts.length ? {
     sps: facts.length, asOf: facts.map((x) => x.f.asOf).sort().pop(), n: pays.length, med: median(pays), p90: pays.length ? pays.slice().sort((a, b) => a - b)[Math.floor(pays.length * 0.9)] : null,
-    waiting: facts.filter((x) => x.f.waiting.some((w) => w.days > 14)).map((x) => ({ r: x.r, days: Math.max(...x.f.waiting.map((w) => w.days)), n: x.f.waiting.length })).sort((a, b) => b.days - a.days),
+    waiting: facts.filter((x) => x.f.waiting.some((w) => w.days > 15)).map((x) => ({ r: x.r, days: Math.max(...x.f.waiting.map((w) => w.days)), n: x.f.waiting.length })).sort((a, b) => b.days - a.days),
     afterTerm: facts.filter((x) => x.f.afterTerm.length).map((x) => x.r), noPcr: facts.filter((x) => x.f.noPcr).map((x) => x.r),
   } : null;
   return { all, rows, tenders, fin, judged, bad: fin.filter((v) => v.verdict === 'bad'), kpi, building, fewVisits, noTs, noCsc, ratings, funding, acts, costChecked, mrd };
@@ -3548,7 +3641,7 @@ function mrdHints(r) {
   const f = mrdFacts(r), out = {};
   if (!f) return out;
   const add = (k, level, text) => (out[k] = out[k] || []).push({ level, text });
-  const long = f.waiting.filter((x) => x.days > 14);
+  const long = f.waiting.filter((x) => x.days > 15);
   if (long.length) add('r4', long.some((x) => x.days > 30) ? 'high' : 'medium', rt('h_mrdWaiting', { n: long.length, days: Math.max(...long.map((x) => x.days)) }));
   if (f.slow.length) add('r4', 'medium', rt('h_mrdSlow', { n: f.slow.length, of: f.year.length }));
   if (f.afterTerm.length) add('rx', 'medium', rt('h_mrdAfterTerm', { n: f.afterTerm.length, date: fdate(f.term) }));
@@ -3572,7 +3665,7 @@ function mrdCard(r) {
     kv([
       [rt('mrdPaid'), join([rt('mrdEib', { sum: money(f.paidEib) }), rt('mrdLocal', { sum: money(f.paidLocal) }), f.paidPct != null ? rt('mrdPct', { pct: f.paidPct }) : null])],
       [rt('mrdLast'), f.last ? fdate(f.last) : null],
-      [rt('mrdWaitingL'), f.waiting.length ? h('span', { class: f.waiting.some((x) => x.days > 14) ? 'bad' : '' }, rt('mrdWaitingV', { n: f.waiting.length, days: Math.max(...f.waiting.map((x) => x.days)) })) : rt('mrdNoWaiting')],
+      [rt('mrdWaitingL'), f.waiting.length ? h('span', { class: f.waiting.some((x) => x.days > 15) ? 'bad' : '' }, rt('mrdWaitingV', { n: f.waiting.length, days: Math.max(...f.waiting.map((x) => x.days)) })) : rt('mrdNoWaiting')],
       [rt('mrdSpeed'), f.year.length ? rt('mrdSpeedV', { med: median(f.year.map(f.lag)), n: f.year.length, slow: f.slow.length }) : null],
       [rt('mrdTerm'), f.term ? h('span', { class: f.afterTerm.length ? 'bad' : '' }, join([fdate(f.term), f.afterTerm.length ? rt('mrdAfterTerm', { n: f.afterTerm.length }) : null])) : null],
     ]),

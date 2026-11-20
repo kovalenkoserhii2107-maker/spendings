@@ -215,7 +215,7 @@ service cloud.firestore {
     match /registry/{code} {
       allow read: if isRegistry();
       allow create, update: if isRegistry() && code.matches('^[0-9A-Za-zА-Яа-яІіЇїЄє_.-]{2,60}$')
-        && request.resource.data.keys().hasOnly(['code', 't', 'tenders', 'paid', 'paid_parts', 'paid_2026', 'link', 'pz', 'risk', 'note', 'scores', 'work', 'mrd',
+        && request.resource.data.keys().hasOnly(['code', 't', 'tenders', 'paid', 'paid_parts', 'paid_2026', 'link', 'pz', 'risk', 'note', 'scores', 'signoff', 'scoreNotes', 'work', 'mrd',
                                                  'updatedBy', 'updatedByName', 'updatedAt'])
         && (!('note' in request.resource.data) || str(request.resource.data.note, 4000));
       allow delete: if false;
