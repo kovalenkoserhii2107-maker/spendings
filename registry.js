@@ -344,6 +344,7 @@ const RG = {
     mrdTitle: "Оплати ЄІБ за реєстром Мінрозвитку",
     mrdNone: "Реєстр оплат Мінрозвитку ще не завантажено: там оплати з коштів позики ЄІБ (рахунки в Укрексімбанку), яких Казначейство не показує.",
     mrdAsOf: "завантажено {date} {file}",
+    mrdNoRows: "Реєстр Мінрозвитку завантажено ({date}, {file}), але рядків із шифром {code} у ньому немає: за цим субпроєктом ще не було оплат із позики ЄІБ, або в реєстрі він записаний під іншим шифром.",
     mrdPaid: "Сплачено",
     mrdEib: "ЄІБ {sum}",
     mrdLocal: "місцевий бюджет {sum}",
@@ -792,6 +793,7 @@ const RG = {
     mrdTitle: "EIB payments by Mindev's register",
     mrdNone: "The Mindev payments register is not uploaded yet: it has the payments from the EIB loan (Ukreximbank accounts), which the Treasury does not show.",
     mrdAsOf: "uploaded {date} {file}",
+    mrdNoRows: "The Mindev register was uploaded ({date}, {file}), but it has no rows with the code {code}: either no EIB loan payments yet for this sub-project, or the register lists it under another code.",
     mrdPaid: "Paid",
     mrdEib: "EIB {sum}",
     mrdLocal: "local budget {sum}",
@@ -3196,6 +3198,20 @@ function parseMrd(XLSX, wb) {
   }
   return out;
 }
+// The register's code to the sub-project's: as it is, its "-A" line ("KV04_02-A", "KV04_02A"), the
+// table's "-A" row when the register has the plain code, or any code the table row lists.
+function mrdRegCode(c) {
+  const tries = [c, c.replace(/-A$/, ''), c.replace(/(_\d+)A$/, '$1'), c + '-A'];
+  for (const k of tries) if (REG.rows.has(k)) return k;
+  const r = [...REG.rows.values()].find((x) => ((x.t || {}).codes || []).includes(c));
+  return r ? r.code : null;
+}
+// The last time anyone uploaded the register (kept on every sub-project it wrote).
+function mrdLastUpload() {
+  let last = null;
+  for (const r of REG.rows.values()) if (r.mrd && r.mrd.at && (!last || r.mrd.at > last.at)) last = r.mrd;
+  return last;
+}
 async function importMrd(file) {
   if (REG.busy) return;
   REG.busy = 'mrd';
@@ -3204,13 +3220,12 @@ async function importMrd(file) {
     const XLSX = await loadXlsx();
     const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
     const found = parseMrd(XLSX, wb);
-    const regCode = (c) => (REG.rows.has(c) ? c : REG.rows.has(c.replace(/-A$/, '')) ? c.replace(/-A$/, '') : null);
     const at = new Date().toISOString(), fileName = file.name.slice(0, 200);
     // Several file codes of one sub-project ("-A" lines) go together.
     const bySp = new Map();
     let missing = 0;
     for (const [code, sp] of found) {
-      const rc = regCode(code);
+      const rc = mrdRegCode(code);
       if (!rc) { missing++; continue; }
       const cur = bySp.get(rc) || { sheet: sp.sheet, contracts: [], payments: [] };
       cur.contracts.push(...sp.contracts.map((c) => Object.assign({ code }, c)));
@@ -3300,7 +3315,11 @@ function mrdCard(r) {
   const f = mrdFacts(r), m = r.mrd;
   const file = h('input', { type: 'file', accept: '.xlsx', hidden: true, onchange: () => file.files[0] && importMrd(file.files[0]) });
   const upload = h('button', { class: 'btn btn-sm', onclick: () => file.click() }, icon('cloud'), rt('mrdUpload'));
-  if (!f) return h('div', { class: 'card pad section' }, h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('mrdTitle')), h('div', { class: 'row' }, upload, file)), h('p', { class: 'muted small' }, rt('mrdNone')));
+  if (!f) return h('div', { class: 'card pad section' }, h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('mrdTitle')), h('div', { class: 'row' }, upload, file)), h('p', { class: 'muted small' }, (() => {
+    // Uploaded, but this sub-project has no rows there: say so, not "not uploaded".
+    const last = mrdLastUpload();
+    return last ? rt('mrdNoRows', { code: r.code, date: fdate(String(last.at).slice(0, 10)), file: last.file || '' }) : rt('mrdNone');
+  })()));
   const kindL = (k) => rt('mrdK_' + k);
   const pays = (m.payments || []).slice().reverse();
   return h('div', { class: 'card pad section' },
