@@ -1609,14 +1609,16 @@ function mainContract(r) {
 // for the works over the contract price (Prozorro, or the table's).
 function paidShare(r) {
   const tt = r.t || {};
-  if (tt.paid_pct != null) return pctOf(tt.paid_pct);
+  if (pctOf(tt.paid_pct) != null) return pctOf(tt.paid_pct);
   const m = mainContract(r);
-  const value = (m && m.c.value && m.c.value.amount) || tt.contract_value || tt.contract_sum;
-  return r.paid != null && value ? Math.round((r.paid / value) * 100) : null;
+  const value = toNum((m && m.c.value && m.c.value.amount) || tt.contract_value || tt.contract_sum);
+  const paid = toNum(r.paid);
+  return paid != null && value ? Math.round((paid / value) * 100) : null;
 }
 
-const daysSince = (d) => (d ? Math.round((Date.now() - new Date(d).getTime()) / 864e5) : null);
-const pctOf = (x) => (x == null ? null : x <= 1.5 ? Math.round(x * 100) : Math.round(x));
+const daysSince = (d) => { if (!d) return null; const n = Math.round((Date.now() - new Date(d).getTime()) / 864e5); return Number.isFinite(n) ? n : null; };
+// A share as a whole percent: 0.998 and "99,8%" are both 100; a value that is not a number, null.
+const pctOf = (x) => { const n = toNum(x); return n == null ? null : typeof x === 'string' && x.includes('%') ? Math.round(n) : n <= 1.5 ? Math.round(n * 100) : Math.round(n); };
 const TROUBLE = /призупин|розірв|не викону|зупинен|terminated|suspend/i;
 
 function riskHints(r) {
@@ -2338,7 +2340,7 @@ function statusCard(r) {
   const sup = m ? (m.c.suppliers || [])[0] || {} : {};
   const view = h('div', { class: 'st-edit' });
   const pctIn = h('input', { class: 'input', type: 'number', min: 0, max: 100, step: 1, inputmode: 'numeric', 'aria-label': rt('stPct') });
-  pctIn.value = s.pct != null ? pctOf(s.pct) : '';
+  pctIn.value = pctOf(s.pct) != null ? pctOf(s.pct) : '';
   const dayIn = h('input', { class: 'input', type: 'date', 'aria-label': rt('stUpd') });
   dayIn.value = today();
   const textIn = h('textarea', { class: 'input', rows: 10, maxlength: 4000, 'aria-label': rt('stComment') });
@@ -2359,7 +2361,7 @@ function statusCard(r) {
     h('div', { class: 'grid-2 st-grid' },
       kv([
         [t('eib.buyer'), join([tt.beneficiary, tt.beneficiary_id])],
-        [rt('finance'), join([tt.invest_eur != null ? 'Invest ' + ni.format(tt.invest_eur) + ' €' : null, tt.eib_eur != null ? 'EIB ' + ni.format(tt.eib_eur) + ' €' : null])],
+        [rt('finance'), join([toNum(tt.invest_eur) != null ? 'Invest ' + ni.format(toNum(tt.invest_eur)) + ' €' : null, toNum(tt.eib_eur) != null ? 'EIB ' + ni.format(toNum(tt.eib_eur)) + ' €' : null])],
         [rt('stContract'), m ? h('span', null, h('b', null, sup.name || '—'), h('div', { class: 'cell-sub' }, join([m.c.number && '№ ' + m.c.number, m.c.value ? money(m.c.value.amount) : null, m.c.end ? '→ ' + fdate(m.c.end) : null,
             m.c.status !== 'active' ? label('pzc.', m.c.status) : null])))
           : tt.contractor || null],
@@ -2373,7 +2375,7 @@ function statusCard(r) {
   // First what it says; the form only on "Edit".
   const showView = () => fill(view,
     h('div', { class: 'st-row' },
-      h('div', { class: 'field' }, h('span', null, rt('stPct')), h('b', { class: 'st-val num' }, s.pct != null ? pctOf(s.pct) + '%' : '—')),
+      h('div', { class: 'field' }, h('span', null, rt('stPct')), h('b', { class: 'st-val num' }, pctOf(s.pct) != null ? pctOf(s.pct) + '%' : '—')),
       h('div', { class: 'field' }, h('span', null, rt('stUpd')), h('b', { class: 'st-val num' }, s.upd ? fdate(s.upd) : '—'))),
     h('div', { class: 'field' }, h('span', null, rt('stComment')), h('div', { class: 'st-text' }, s.comment || h('span', { class: 'muted' }, '—'))),
     was,
@@ -2383,7 +2385,7 @@ function statusCard(r) {
       h('div', { class: 'st-row' }, h('label', { class: 'field' }, h('span', null, rt('stPct')), pctIn), h('label', { class: 'field' }, h('span', null, rt('stUpd')), dayIn)),
       h('label', { class: 'field' }, h('span', null, rt('stComment')), textIn),
       was,
-      h('div', { class: 'row' }, saveBtn, h('button', { class: 'btn btn-sm', onclick: () => { pctIn.value = s.pct != null ? pctOf(s.pct) : ''; dayIn.value = today(); textIn.value = s.comment || ''; showView(); } }, rt('cancel')), msg));
+      h('div', { class: 'row' }, saveBtn, h('button', { class: 'btn btn-sm', onclick: () => { pctIn.value = pctOf(s.pct) != null ? pctOf(s.pct) : ''; dayIn.value = today(); textIn.value = s.comment || ''; showView(); } }, rt('cancel')), msg));
     // As tall as what is written (up to a screen), the cursor at its end.
     requestAnimationFrame(() => { textIn.style.height = Math.min(window.innerHeight * 0.7, Math.max(240, textIn.scrollHeight + 4)) + 'px'; textIn.focus(); textIn.setSelectionRange(textIn.value.length, textIn.value.length); });
   };
@@ -2556,7 +2558,7 @@ function procItem(r, it, save, linkIds, off) {
       h('div', null, h('dt', null, rt('pMethod')), h('dd', null, (t0 && t0.method ? label('pzt.', t0.method) : x && x.method) || '—')),
       h('div', null, h('dt', null, rt('pExpected')), h('dd', { class: 'num' }, t0 && t0.value ? money(t0.value.amount, t0.value.currency) : x && x.est != null ? money(x.est) : '—')),
       h('div', null, h('dt', null, rt('pDates')), h('dd', { class: 'num' }, issued || opening ? join([issued && fdate(issued), opening && '→ ' + fdate(opening)]) : '—',
-        issued && opening ? h('small', null, ' · ' + rt('pDays', { n: dayDiff(issued, opening) })) : null)),
+        dayDiff(issued, opening) != null ? h('small', null, ' · ' + rt('pDays', { n: dayDiff(issued, opening) })) : null)),
       h('div', null, h('dt', null, rt('pBids')), h('dd', null, bids != null ? join([String(bids), t0 && t0.disqualified ? rt('pRejected', { n: t0.disqualified }) : null]) : '—')),
       h('div', { class: 'wide' }, h('dt', null, rt('pContract')), h('dd', null, c ? h('span', null, h('b', null, party(sup.name, sup.code)), ' · ', join([c.number ? '№ ' + c.number : null, c.signed ? fdate(c.signed) : null,
         c.value ? money(c.value.amount, c.value.currency) : null, c.end ? rt('pTo', { date: fdate(c.end) }) : null, c.changes ? rt('pChanges', { n: c.changes }) : null, label('pzc.', c.status)]))
@@ -2706,7 +2708,7 @@ function procDetail(r, key) {
       ]),
       kv([
         [rt('pdIssued'), dd(T.date || X.issued)],
-        [rt('pdOpening'), join([dd(T.deadline || X.opening), (T.date || X.issued) && (T.deadline || X.opening) ? rt('pDays', { n: dayDiff(T.date || X.issued, T.deadline || X.opening) }) : null])],
+        [rt('pdOpening'), join([dd(T.deadline || X.opening), dayDiff(T.date || X.issued, T.deadline || X.opening) != null ? rt('pDays', { n: dayDiff(T.date || X.issued, T.deadline || X.opening) }) : null])],
         [rt('pdAuction'), dd(X.auction)],
         [rt('pdAward'), dd(X.award)],
         [rt('pdEval'), join([X.eval_report, dd(X.eval_date)])],
@@ -3411,7 +3413,7 @@ const PROC_KEYS = ['period', 'standstill', 'bid_security', 'method', 'eligibilit
 const DONE_ST = ['Contract Signed', 'No Bids', 'All Rejected', 'Cancelled'];
 const progKey = (p) => (/III|\b3\b/.test(p || '') ? 'urp3' : /UERP|\bERP\b|НКПВУ/i.test(p || '') ? 'uerp' : /URP|ПВУ/i.test(p || '') ? 'urp' : null);
 const tKind = (k) => (/^(Ad_)?W$/i.test(k || '') ? 'works' : /^TS$/i.test(k || '') ? 'ts' : /^IC$/i.test(k || '') ? 'csc' : null);
-const dayDiff = (a, b) => (a && b ? Math.round((Date.parse(b) - Date.parse(a)) / 864e5) : null);
+const dayDiff = (a, b) => { if (!a || !b) return null; const d = Math.round((Date.parse(b) - Date.parse(a)) / 864e5); return Number.isFinite(d) ? d : null; };
 function editionOf(prog, day) {
   if (prog === 'urp3') { const ed = day >= EDITION_FROM.urp3_2026 ? 'urp3_2026' : 'urp3_2024'; return { ed, strict: day >= EDITION_FROM[ed] }; }
   if (prog) return day >= EDITION_FROM.urp_2026 ? { ed: 'urp_2026', strict: true } : { ed: 'urp_2024', strict: day >= EDITION_FROM.urp_2024 };
@@ -3983,7 +3985,7 @@ function spSignalsPage() {
 // paid, whether this year's money is enough. Four figures on top; then the structure (the loan and the
 // local budget, paid and still to pay), the Cabinet's subvention by edition with the year's adequacy,
 // and the EIB payments by Mindev's register one by one.
-const numOf = (x) => (x == null || x === '' ? null : typeof x === 'number' ? x : Number(String(x).replace(/\s/g, '').replace(',', '.')) || null);
+const numOf = (x) => toNum(x);
 function financeTab(r) {
   const tt = r.t || {}, sv = subvMatch(r), f = mrdFacts(r), m = mainContract(r);
   const live = m && m.c.status === 'active' ? m : null;

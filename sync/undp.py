@@ -437,7 +437,7 @@ def overall(sc):
 
 PRICE_UP_RED = 15  # % of the original price: the EIB's Guide to Procurement sends such changes to the Bank
 LEGAL_STATUS = {"terminated", "bankruptcy", "terminating", "young"}
-TERMINATE = re.compile(r"розірв|припин\w* (дію )?договор", re.I)
+TERMINATE = re.compile(r"розірв|припин\w* (дію |дії )?договор|припин\w* зобов\S* за договор", re.I)
 OVERPAID = re.compile(r"зайв\w* (сплач|оплач|перерах)|переплат|завищен\w* (варт|обсяг)|надмірн\w* сплач", re.I)
 
 

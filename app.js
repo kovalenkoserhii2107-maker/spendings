@@ -147,9 +147,18 @@ function buildFormatters() {
   ni = new Intl.NumberFormat(loc);
 }
 buildFormatters();
+// A number from wherever it comes: the team's table writes "€ 592 630", "99,8%" or "1 234,5".
+function toNum(x) {
+  if (x == null || x === '') return null;
+  if (typeof x === 'number') return Number.isFinite(x) ? x : null;
+  const s = String(x).replace(/[\s\u00a0\u202f]/g, '').replace(/[^0-9,.\-]/g, '');
+  const n = Number(s.includes(',') && !s.includes('.') ? s.replace(',', '.') : s.replace(/,/g, ''));
+  return Number.isFinite(n) && /\d/.test(s) ? n : null;
+}
 function money(amount, currency) {
-  if (amount == null) return '—';
-  return nf.format(amount) + (currency && currency !== 'UAH' ? ' ' + currency : ' ₴');
+  const n = toNum(amount);
+  if (n == null) return '—';
+  return nf.format(n) + (currency && currency !== 'UAH' ? ' ' + currency : ' ₴');
 }
 function mshort(x) {
   if (x == null) return '—';
@@ -2585,7 +2594,13 @@ function liveRelated(t0) {
 
 // The parts of the card built from what the sync collects for the UNDP working table (snap.undp).
 const UD_KEYS = ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8'];
-const udWhy = (x) => { const [code, n] = String(x).split(':'); return t('ud.why.' + code, { n }); };
+// A reason of the matrix in words: a programme rule by its own name; a code with no label, readable.
+const udWhy = (x) => {
+  const [code, n] = String(x).split(':');
+  if (code.startsWith('rule_')) { const k = 'rl.k.' + code.slice(5), v = t(k); return v === k ? code.slice(5).replace(/_/g, ' ') : v; }
+  const k = 'ud.why.' + code, v = t(k, { n });
+  return v === k ? code.replace(/_/g, ' ') + (n ? ' ' + n : '') : v;
+};
 const edFmt = (e) => fdate(String(e).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'));
 function riskChip(s) {
   const n = ((s.undp || {}).matrix || {}).overall;
