@@ -4263,7 +4263,7 @@ function render() {
   else if (route === 'org' && /^\d+$/.test(parts[1] || '')) { page = orgPage(parts[1], parts[2], parts[3]); key = 'tracked'; }
   else if (route === 'registry' && typeof registryPage === 'function') {
     if (parts[1] === 'summary' && typeof portfolioPage === 'function') { page = portfolioPage(); key = 'portfolio'; }
-    else { page = parts[1] ? registryCard(decodeURIComponent(parts[1]), parts[2]) : registryPage(); key = 'home'; }
+    else { page = parts[1] ? registryCard(decodeURIComponent(parts[1]), parts[2], parts[3] ? decodeURIComponent(parts[3]) : null) : registryPage(); key = 'home'; }
   }
   else if (!route && typeof hasRegistry === 'function' && hasRegistry()) { page = registryPage(); key = 'home'; }
   else if (route === 'feed') page = feedPage(parts[1]);

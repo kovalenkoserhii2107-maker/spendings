@@ -142,6 +142,63 @@ const RG = {
     pfXRating: "Оцінка",
     pfYes: "так", pfAnyBatch: "Усі пули",
     colStage: "Етап", riskShort: "ризик {n}",
+    pdOpenBtn: "Деталі",
+    pdBack: "Усі закупівлі субпроєкту",
+    pdNotFound: "Такої закупівлі в субпроєкті немає (можливо, її відв’язали).",
+    pdYes: "так",
+    pdNo: "ні",
+    pdId: "Ідентифікатор",
+    pdCpv: "Предмет (CPV)",
+    pdFunders: "Донори",
+    pdIssued: "Оголошено",
+    pdOpening: "Розкриття пропозицій",
+    pdAuction: "Аукціон",
+    pdAward: "Рішення про переможця",
+    pdEval: "Звіт про оцінку",
+    pdContracts: "Договори за процедурою",
+    pdFrom: "з {date}",
+    pdLastChange: "остання {date}",
+    pdControl: "Скарги й контроль",
+    pdAmcu: "Скарги до АМКУ (Prozorro)",
+    pdAmcuV: "{n}; розглядаються {open}; задоволено {ok}",
+    pdNone: "немає",
+    pdAmcuTd: "Скарги на ТД (таблиця)",
+    pdAmcuEval: "Скарги на оцінку (таблиця)",
+    pdSasu: "Моніторинг ДАСУ",
+    pdSasuV: "моніторингів: {n}",
+    pdSasuActive: "триває",
+    pdSasuSheet: "ДАСУ (таблиця)",
+    pdRuleOk: "відповідає",
+    pdRuleBad: "порушено",
+    pdServer: "За даними договорів на контролі:",
+    pdSheet: "Дані таблиці команди (Tenders)",
+    pdAnalyst: "Аналітик",
+    pdKind: "Вид (W/TS/IC)",
+    pdStatus: "Статус у таблиці",
+    pdQr: "Запитання й відповіді",
+    pdBidders: "Учасники",
+    pdAc: "Оцінка AC",
+    pdPrice: "Перевірка ціни",
+    pdObs: "Спостереження щодо закупівлі",
+    pdExecObs: "Спостереження щодо виконання договору",
+    pdContractor: "Підрядник",
+    pdContractNo: "Договір",
+    pdDuration: "Тривалість робіт",
+    pdMonths: "{n} міс.",
+    pdTotal: "Сума договору",
+    pdCo: "Співфінансування",
+    pdCoEib: "ЄІБ {sum}",
+    pdCoLocal: "місцеві {sum}",
+    pdMods: "Зміни договору",
+    pdLink: "Посилання на договір",
+    pdOpen: "відкрити",
+    pdSheetHint: "Нові стовпці (звіт про оцінку, спостереження щодо виконання, посилання на зміни, тривалість, місцеве співфінансування) з’являться після наступного завантаження таблиці.",
+    pdMarks: "Відмітки команди",
+    pdMore: "Ще",
+    pdTerms: "Умови оплати (Prozorro)",
+    pdDaysN: "{n} дн.",
+    pdDocs: "Документи процедури",
+    pdNotFollowed: "Хронологія, переможці, перевірка ціни й документи є для закупівель на контролі. Ця процедура не на контролі — дивіться її повністю на Prozorro.",
     sg_newRisk: "Новий ризик: {what}",
     sg_subvDown: "Субвенцію зменшено: {from} → {to}",
     sg_subvUp: "Субвенцію змінено: {from} → {to}",
@@ -591,6 +648,63 @@ const RG = {
     pfXRating: "Rating",
     pfYes: "yes", pfAnyBatch: "All batches",
     colStage: "Stage", riskShort: "risk {n}",
+    pdOpenBtn: "Details",
+    pdBack: "All procurements of the sub-project",
+    pdNotFound: "No such procurement in this sub-project (it may have been unlinked).",
+    pdYes: "yes",
+    pdNo: "no",
+    pdId: "Identifier",
+    pdCpv: "Subject (CPV)",
+    pdFunders: "Funders",
+    pdIssued: "Announced",
+    pdOpening: "Bid opening",
+    pdAuction: "Auction",
+    pdAward: "Award decision",
+    pdEval: "Evaluation report",
+    pdContracts: "Contracts of the procedure",
+    pdFrom: "from {date}",
+    pdLastChange: "last {date}",
+    pdControl: "Complaints and oversight",
+    pdAmcu: "AMCU complaints (Prozorro)",
+    pdAmcuV: "{n}; under review {open}; upheld {ok}",
+    pdNone: "none",
+    pdAmcuTd: "Complaints on the TD (sheet)",
+    pdAmcuEval: "Complaints on the evaluation (sheet)",
+    pdSasu: "State Audit monitoring",
+    pdSasuV: "monitorings: {n}",
+    pdSasuActive: "ongoing",
+    pdSasuSheet: "SASU (sheet)",
+    pdRuleOk: "complies",
+    pdRuleBad: "broken",
+    pdServer: "By the contracts on control:",
+    pdSheet: "The team's sheet (Tenders)",
+    pdAnalyst: "Analyst",
+    pdKind: "Kind (W/TS/IC)",
+    pdStatus: "Status in the sheet",
+    pdQr: "Questions and answers",
+    pdBidders: "Bidders",
+    pdAc: "AC assessment",
+    pdPrice: "Price verification",
+    pdObs: "Observation on procurement",
+    pdExecObs: "Observation on contract execution",
+    pdContractor: "Contractor",
+    pdContractNo: "Contract",
+    pdDuration: "Works duration",
+    pdMonths: "{n} months",
+    pdTotal: "Contract amount",
+    pdCo: "Co-financing",
+    pdCoEib: "EIB {sum}",
+    pdCoLocal: "local {sum}",
+    pdMods: "Contract modifications",
+    pdLink: "Link to the contract",
+    pdOpen: "open",
+    pdSheetHint: "The new columns (evaluation report, observation on execution, links to modifications, duration, local co-financing) show after the next upload of the table.",
+    pdMarks: "The team's marks",
+    pdMore: "More",
+    pdTerms: "Payment terms (Prozorro)",
+    pdDaysN: "{n} days",
+    pdDocs: "Documents of the procedure",
+    pdNotFollowed: "The timeline, awards, price check and documents are there for procurements on control. This one is not — see it in full on Prozorro.",
     sg_newRisk: "New risk: {what}",
     sg_subvDown: "Subvention cut: {from} → {to}",
     sg_subvUp: "Subvention changed: {from} → {to}",
@@ -994,7 +1108,9 @@ const TN_COLS = [
   ['contractor', /Contractor Name \(ukr\)/], ['contractor_id', /^Contractor ID/], ['contract_no', /^Contract Number/], ['contract_date', /^Date of the Contract\s*$/],
   ['contract_end', /Date of the Contract end/], ['contract_total', /Total .ontract amount/], ['co_eib', /^EIB Co-Financing, UAH/],
   ['mods', /# of Contract Modifications/], ['mk_td', /^TD Checking/], ['mk_assist', /^Tender Assistance/], ['mk_monitor', /^Tender Monitoring/],
-  ['amcu_td_status', /^Complaint Review Status/], ['amcu_eval_status', /^Complaint Review Status/], ['contract_link', /^Link to the Contract/], ['paid', /^Total Amount Paid to Date/], ['paid_eib', /Paid to Date \(EIB/], ['paid_local', /Paid to Date \(Local/],
+  ['amcu_td_status', /^Complaint Review Status/], ['amcu_eval_status', /^Complaint Review Status/], ['contract_link', /^Link to the Contract/], ['eval_date', /evaluation report issuance date/i], ['eval_report', /^Tender evaluation report$/i],
+  ['contractor_en', /Contractor Name \(eng\)/], ['duration', /duration months/i], ['co_local', /^Local and other Co-Financing/], ['mods_link', /^Links to Contract Modifications/],
+  ['exec_obs', /observation on contract execution/i], ['paid', /^Total Amount Paid to Date/], ['paid_eib', /Paid to Date \(EIB/], ['paid_local', /Paid to Date \(Local/],
 ];
 
 function mapHeaders(labels, spec) {
@@ -1883,7 +1999,7 @@ function registryTable(rows) {
 // ---- one sub-project ------------------------------------------------------------------------
 
 const SP_TABS = ['overview', 'procurement', 'contracts', 'finance', 'work'];
-function registryCard(code, tab) {
+function registryCard(code, tab, sub) {
   const r = REG.rows.get(code) || [...REG.rows.values()].find((x) => x.code === code);
   if (!REG.access) return registryPage();
   if (!r) return [h('div', { class: 'card empty section' }, REG.rows.size ? t('pz.notFound') : t('ui.loading'))];
@@ -1909,7 +2025,7 @@ function registryCard(code, tab) {
     rt('tab_' + k), count[k] ? h('em', { class: 'count' }, count[k]) : null, k === 'overview' && news.signals.length ? h('em', { class: 'count red' }, news.signals.length) : null)));
   const body = {
     overview: () => [stageCard(r, st), statusCard(r), newsCard(tracked, news), h('div', { class: 'section' }, risksCard(r))],
-    procurement: () => procurementTab(r),
+    procurement: () => (sub ? procDetail(r, sub) : procurementTab(r)),
     contracts: () => contractsTab(r),
     finance: () => financeTab(r),
     work: () => workTab(r),
@@ -2271,6 +2387,7 @@ function procItem(r, it, save, linkIds, off) {
         t0 ? pzStatus(t0.status) : x && x.status ? h('span', { class: 'pz-st run' }, x.status) : null,
         tid ? h('a', { class: 'num proc-tid', href: pzUrl(tid), target: '_blank', rel: 'noopener noreferrer' }, tid) : h('span', { class: 'faint' }, rt('pSheetOnly'))),
       h('div', { class: 'proc-actions' },
+        h('a', { class: 'btn btn-sm btn-dark', href: '#/registry/' + encodeURIComponent(r.code) + '/procurement/' + encodeURIComponent(procKey(it, r)) }, rt('pdOpenBtn')),
         row ? h('a', { class: 'btn btn-sm', href: '#/tracked/' + row.key }, rt('pDossier'))
           : c && ['active'].includes(c.status) ? h('span', { class: 'faint small' }, isMine(r) ? rt('pAuto') : rt('pNotMine')) : null,
         tid ? actionMenu('', [[rt('unlink'), () => save(linkIds.filter((y) => y !== tid), [...new Set(off.concat(tid))]), 'x', rt('pUnlinkHint')]], 'more') : null)),
@@ -2319,7 +2436,8 @@ function procurementTab(r) {
       h('div', { class: 'proc-sum ' + (bad ? 'bad' : verdicts.length ? 'ok' : 'na') }, h('small', null, rt('sheetRules')),
         h('b', null, !verdicts.length ? rt('pNoChecks') : bad ? rt('pBad', { n: bad, of: verdicts.length }) : rt('pAllOk', { n: verdicts.length })))));
   const groups = PROC_ROLES.map((role) => {
-    const list = items.filter((i) => i.role === role);
+    // The newest procedure on top, the first attempt at the bottom; a sheet row with no date last.
+    const list = items.filter((i) => i.role === role).sort((a, b) => String(b.day || '').localeCompare(String(a.day || '')));
     if (!list.length) return null;
     return h('section', { class: 'card pad section proc-group' },
       h('h2', { class: 'card-title' }, rt('role_' + role), h('span', { class: 'count-inline' }, list.length)),
@@ -2385,6 +2503,132 @@ function procurementTab(r) {
     h('div', { class: 'row add-row' }, idInput, linkBtn, h('button', { class: 'btn', onclick: searchByName }, icon('search'), rt('findByName'))),
     linkMsg, find);
   return [summary, items.length ? null : h('div', { class: 'card empty section' }, rt('notLinked'))].concat(groups, [candBox, addBox]);
+}
+
+// ---- one procedure in full ------------------------------------------------------------------------
+//
+// Behind "Деталі" on a procedure: everything the monitor has about it in one page. Prozorro (buyer,
+// method, CPV, value, dates, bids, complaints, State Audit, every contract with its changes), the
+// team's Tenders sheet field by field, the programme's rules one by one, the team's marks; and for a
+// procedure the monitor follows, its timeline, the awards, the price check, the documents.
+const procKey = (it, r) => it.tid || 's' + (r.tenders || []).indexOf(it.x);
+function procDetail(r, key) {
+  const items = procItems(r);
+  const it = items.find((i) => procKey(i, r) === key);
+  if (!it) return [h('div', { class: 'card empty section' }, rt('pdNotFound'))];
+  const { t0, x, tid } = it;
+  const T = t0 || {}, X = x || {};
+  const linkIds = (r.link && r.link.tids) || [], off = (r.link && r.link.off) || [];
+  const v = tenderVerdict(r, x || { kind: { works: 'W', ts: 'TS', csc: 'IC' }[it.role], pz: tid });
+  const srv = serverRules(tid);
+  const rows = tid ? ((state.trackedIndex || {}).items || []).filter((y) => y.tid === tid) : [];
+  const yes = (b) => (b === true ? rt('pdYes') : b === false ? rt('pdNo') : b);
+  const dd = (d) => (d ? fdate(String(d).slice(0, 10)) : null);
+  const back = '#/registry/' + encodeURIComponent(r.code) + '/procurement';
+  const head = h('div', { class: 'card pad section' },
+    h('div', { class: 'card-head' },
+      h('div', null,
+        h('a', { class: 'small', href: back }, '← ' + rt('pdBack')),
+        h('h2', { class: 'card-title', style: 'margin-top:6px' }, T.title || X.name || '—'),
+        h('div', { class: 'chips' }, h('span', { class: 'tag' }, rt('role_' + it.role)), it.of > 1 ? h('span', { class: 'tag' }, rt('pAttempt', { n: it.attempt, of: it.of })) : null,
+          t0 ? pzStatus(t0.status) : X.status ? h('span', { class: 'pz-st run' }, X.status) : null,
+          ((r.link || {}).auto || []).includes(tid) ? h('span', { class: 'tag' }, rt('autoLinked')) : null)),
+      h('div', { class: 'row' }, tid ? ext(pzUrl(tid), 'Prozorro', 'btn btn-sm') : null, T.dream_id ? ext(dreamUrl(T.dream_id), 'DREAM', 'btn btn-sm') : null,
+        rows.length ? h('a', { class: 'btn btn-sm', href: '#/tracked/' + rows[0].key }, rt('pDossier')) : null)),
+    h('div', { class: 'grid-2' },
+      kv([
+        [rt('pdId'), tid ? h('span', { class: 'num' }, tid) : rt('pSheetOnly')],
+        [t('dos.buyer'), T.buyer_name ? party(T.buyer_name, T.buyer) : null],
+        [rt('pMethod'), (T.method ? label('pzt.', T.method) : X.method) || null],
+        [rt('pdCpv'), T.cpv || null],
+        [rt('pExpected'), T.value ? money(T.value.amount, T.value.currency) : X.est != null ? money(X.est) : null],
+        [rt('pdFunders'), (T.funders || []).length ? T.funders.map((f) => f.name || f.code).join(', ') : null],
+      ]),
+      kv([
+        [rt('pdIssued'), dd(T.date || X.issued)],
+        [rt('pdOpening'), join([dd(T.deadline || X.opening), (T.date || X.issued) && (T.deadline || X.opening) ? rt('pDays', { n: dayDiff(T.date || X.issued, T.deadline || X.opening) }) : null])],
+        [rt('pdAuction'), dd(X.auction)],
+        [rt('pdAward'), dd(X.award)],
+        [rt('pdEval'), join([X.eval_report, dd(X.eval_date)])],
+        [rt('pBids'), T.bids != null || X.bidders_n != null ? join([String(T.bids != null ? T.bids : X.bidders_n), T.disqualified ? rt('pRejected', { n: T.disqualified }) : null]) : null],
+      ])));
+  // What came of it: every contract, not only the latest.
+  const cons = (T.contracts || []);
+  const contracts = h('div', { class: 'card pad section' },
+    h('h2', { class: 'card-title' }, rt('pdContracts'), cons.length ? h('span', { class: 'count-inline' }, cons.length) : null),
+    cons.length ? h('div', { class: 'qs-contracts' }, cons.map((c) => {
+      const row = rows.find((y) => y.key === c.id || y.contract_id === c.id);
+      return h('div', { class: 'qs-contract' },
+        h('div', null, h('b', null, t('dos.heading', { n: c.number || '—', date: fdate(c.signed) })), ' ', pzStatus(c.status),
+          h('div', { class: 'cell-sub' }, join([(c.suppliers || []).map((s) => party(s.name, s.code)).join(', '), c.value ? money(c.value.amount, c.value.currency) : null,
+            c.start ? rt('pdFrom', { date: fdate(c.start) }) : null, c.end ? rt('pTo', { date: fdate(c.end) }) : null])),
+          c.changes ? h('div', { class: 'cell-sub' }, join([rt('pChanges', { n: c.changes }), c.last_change ? rt('pdLastChange', { date: fdate(c.last_change) }) : null,
+            (c.change_types || []).map((k) => label('pzr.', k)).join(', ')])) : null),
+        row ? h('a', { class: 'btn btn-sm', href: '#/tracked/' + row.key }, rt('pDossier')) : null);
+    })) : X.contractor ? kv([[rt('pContract'), join([X.contractor, X.contractor_id, X.contract_no && '№ ' + X.contract_no, dd(X.contract_date), X.contract_total != null ? money(X.contract_total) : null])]])
+      : h('p', { class: 'muted small' }, t0 && ['unsuccessful', 'cancelled'].includes(t0.status) ? rt('pNoContractEnded') : rt('pNoContract')));
+  // Oversight: the Antimonopoly Committee and the State Audit Service, by Prozorro and by the sheet.
+  const cp = T.complaints || {}, sa = T.sasu || {};
+  const control = h('div', { class: 'card pad section' },
+    h('h2', { class: 'card-title' }, rt('pdControl')),
+    kv([
+      [rt('pdAmcu'), cp.n ? rt('pdAmcuV', { n: cp.n, open: cp.open || 0, ok: cp.satisfied || 0 }) : t0 ? rt('pdNone') : null],
+      [rt('pdAmcuTd'), join([X.amcu_td, X.amcu_td_status])],
+      [rt('pdAmcuEval'), join([X.amcu_eval, X.amcu_eval_status])],
+      [rt('pdSasu'), sa.n ? h('span', null, rt('pdSasuV', { n: sa.n }), sa.violation ? h('span', { class: 'sev high', style: 'margin-left:6px' }, rt('pSasuViol')) : null, sa.active ? h('span', { class: 'sev medium', style: 'margin-left:6px' }, rt('pdSasuActive')) : null,
+        (sa.ids || []).length ? h('div', { class: 'cell-sub num' }, sa.ids.join(', ')) : null) : t0 ? rt('pdNone') : null],
+      [rt('pdSasuSheet'), X.sasu || null],
+    ]));
+  // The programme's rules, one line each.
+  const rules = h('div', { class: 'card pad section' },
+    h('h2', { class: 'card-title' }, rt('sheetRules')),
+    v.k ? h('div', { class: 'checklist' }, v.found.map((f) => h('div', { class: 'chk ' + (f.st === 'ok' ? 'ok' : f.st === 'bad' ? 'bad' : 'warn') },
+      h('span', { class: 'chk-ico' }, f.st === 'ok' ? '✓' : '!'), h('div', null, h('b', null, rt('pfR_' + f.key, f)), h('div', { class: 'small muted' }, rt(f.st === 'ok' ? 'pdRuleOk' : f.st === 'bad' ? 'pdRuleBad' : 'pfToCheck'))))))
+      : h('p', { class: 'muted small' }, rt('pNoChecks')),
+    srv && srv.bad.length ? h('p', { class: 'small' }, h('span', { class: 'sev high' }, rt('pdServer')), ' ', srv.bad.map((k) => t('rl.k.' + k)).join(', ')) : null);
+  // The team's Tenders sheet, every field it has.
+  const sheet = x ? h('div', { class: 'card pad section' },
+    h('h2', { class: 'card-title' }, rt('pdSheet')),
+    h('div', { class: 'grid-2' },
+      kv([
+        [rt('pdAnalyst'), X.analyst], [rt('pdKind'), X.kind], [rt('pdStatus'), X.status], [rt('pdQr'), yes(X.qr)],
+        [rt('pdBidders'), X.bidders ? h('div', { class: 'small' }, String(X.bidders).split(/\n|;\s*/).filter(Boolean).map((b) => h('div', null, b))) : null],
+        [rt('pdAc'), join([yes(X.ac), X.ac_flag])], [rt('pdPrice'), join([yes(X.price), X.price_flag])],
+        [rt('pdObs'), X.obs], [rt('pdExecObs'), X.exec_obs],
+      ]),
+      kv([
+        [rt('pdContractor'), join([X.contractor, X.contractor_en, X.contractor_id])],
+        [rt('pdContractNo'), join([X.contract_no && '№ ' + X.contract_no, dd(X.contract_date), X.contract_end ? rt('pTo', { date: dd(X.contract_end) }) : null])],
+        [rt('pdDuration'), X.duration != null ? rt('pdMonths', { n: X.duration }) : null],
+        [rt('pdTotal'), X.contract_total != null ? money(X.contract_total) : null],
+        [rt('pdCo'), join([X.co_eib != null ? rt('pdCoEib', { sum: money(X.co_eib) }) : null, X.co_local != null ? rt('pdCoLocal', { sum: money(X.co_local) }) : null])],
+        [rt('pdMods'), join([X.mods, X.mods_link])],
+        [rt('sheetPaid'), join([X.paid != null ? money(X.paid) : null, X.paid_eib != null ? rt('pdCoEib', { sum: money(X.paid_eib) }) : null, X.paid_local != null ? rt('pdCoLocal', { sum: money(X.paid_local) }) : null])],
+        [rt('pdLink'), X.contract_link ? (/^https?:/.test(X.contract_link) ? ext(X.contract_link, rt('pdOpen')) : X.contract_link) : null],
+      ])),
+    // Until the table is uploaded again, the columns read since 0.55.0 are not in the base.
+    [...REG.rows.values()].some((q) => (q.tenders || []).some((y) => ['eval_report', 'eval_date', 'exec_obs', 'mods_link', 'co_local', 'duration', 'contractor_en'].some((k) => y[k] != null)))
+      ? null : h('p', { class: 'muted small' }, rt('pdSheetHint'))) : null;
+  const marks = tid ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, rt('pdMarks')), marksRow(r, tid),
+    h('div', { class: 'row', style: 'margin-top:12px' }, actionMenu(rt('pdMore'), [[rt('unlink'), async () => {
+      await cloud.updateRegistry(r.code, { link: { tids: linkIds.filter((y) => y !== tid), off: [...new Set(off.concat(tid))] } }); location.hash = back;
+    }, 'x', rt('pUnlinkHint')]]))) : null;
+  // A procedure the monitor follows: its own snapshot has the timeline, awards, price check, documents.
+  const deep = h('div');
+  if (rows.length) {
+    (async () => {
+      let s = null;
+      try { s = await loadTracked(rows[0].key); } catch (e) { s = null; }
+      if (!s) return;
+      const c = s.contract || null;
+      fill(deep, procurementCard(s, c), s.tender && (s.tender.milestones || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, rt('pdTerms')),
+        h('div', { class: 'explain' }, s.tender.milestones.map((m) => h('div', { class: m.type === 'financing' ? 'pay' : '' }, h('b', null, label('pzm.type.', m.type) + '. '), h('span', null, milestoneText(m)))))) : null,
+        s.tender && (s.tender.docs || []).length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, rt('pdDocs'), h('span', { class: 'count-inline' }, s.tender.docs.length)), docList(s.tender.docs)) : null);
+    })();
+  } else if (tid) {
+    fill(deep, h('p', { class: 'muted small section' }, rt('pdNotFollowed')));
+  }
+  return [head, contracts, control, rules, sheet, marks, deep];
 }
 
 // ---- the expert's work: tasks, weekly journal, marks on procurements --------------------------
