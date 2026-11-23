@@ -19,7 +19,8 @@ const RG = {
     fromTable: 'З таблиці', finance: 'Фінансування', progress: 'Прогрес', procurement: 'Закупівлі в таблиці', weekly: 'Останні дії експертів',
     pz: 'Prozorro', pzHint: 'Закупівлі цього субпроєкту в Prozorro. Ідентифікатори з таблиці підтягуються самі; інші можна знайти за назвою й прив’язати.',
     findByName: 'Шукати за назвою', addId: 'Додати UA-…', link: 'Прив’язати', unlink: 'Відв’язати', linked: 'Прив’язано',
-    risks: 'Підказки до матриці ризиків', risksHint: 'Одна матриця субпроєкту: підказки з Prozorro, таблиці й договорів на контролі (ціни, змови, оплати, підрядник, правила програми); оцінку ставить експерт.',
+    risks: 'Підказки до матриці ризиків', risksHint: 'Одна матриця субпроєкту, лише за закупівлею робіт: підказки з Prozorro, таблиці, реєстру Мінрозвитку й договорів робіт на контролі (ціни, змови, оплати, підрядник, правила програми); оцінку ставить експерт. Технагляд, інженер-консультант, проєктування та інше — нижче, для відома.',
+    infoTitle: 'Інші закупівлі — для відома', infoHint: 'На оцінку ризиків не впливають: ризики рахуються лише за закупівлею робіт.', infoNone: 'Нічого вартого уваги.',
     note: 'Нотатка команди', saveNote: 'Зберегти', saved: 'Збережено', payments: 'Платежі в Казначействі', loadPayments: 'Показати платежі замовника підряднику',
     paidSum: 'Сплачено {sum} ({n} платежів) з {from}', noPayments: 'Платежів не знайдено', tablePaid: 'За аркушем Payments: {sum}',
     updated: 'оновлено {at}', never: 'ще не оновлювалось', noAccess: 'Реєстр доступний лише учасникам команди.',
@@ -404,6 +405,8 @@ const RG = {
     pRunning: "триває тендер",
     pNoContractYet: "договору ще немає",
     pProcN: "процедур: {n}",
+    pRated: "За цією закупівлею рахуються ризики субпроєкту.",
+    pInfoOnly: "Для відома: на оцінку ризиків не впливає.",
     pNoChecks: "немає даних для перевірки",
     pBad: "порушення в {n} з {of}",
     pAllOk: "усі {n} відповідають",
@@ -577,7 +580,8 @@ const RG = {
     fromTable: 'From the table', finance: 'Funding', progress: 'Progress', procurement: 'Procurements in the table', weekly: 'Latest expert actions',
     pz: 'Prozorro', pzHint: "This sub-project's procurements in Prozorro. Ids from the table come in by themselves; others can be found by name and linked.",
     findByName: 'Search by name', addId: 'Add UA-…', link: 'Link', unlink: 'Unlink', linked: 'Linked',
-    risks: 'Hints for the risk matrix', risksHint: "One matrix for the sub-project: hints from Prozorro, the table and the contracts on control (prices, collusion, payments, contractor, programme rules); the expert sets the rating.",
+    risks: 'Hints for the risk matrix', risksHint: "One matrix for the sub-project, on the works procurement only: hints from Prozorro, the table, Mindev's register and the works contracts on control (prices, collusion, payments, contractor, programme rules); the expert sets the rating. Supervision, the consulting engineer, design and the rest are below, for information.",
+    infoTitle: "Other procurements — for information", infoHint: "They do not change the risk ratings: risks are rated on the works procurement only.", infoNone: "Nothing worth noting.",
     note: 'Team note', saveNote: 'Save', saved: 'Saved', payments: 'Treasury payments', loadPayments: "Show the beneficiary's payments to the contractor",
     paidSum: '{sum} paid ({n} payments) since {from}', noPayments: 'No payments found', tablePaid: 'Payments sheet: {sum}',
     updated: 'updated {at}', never: 'not refreshed yet', noAccess: 'The registry is open to team members only.',
@@ -962,6 +966,8 @@ const RG = {
     pRunning: "tender under way",
     pNoContractYet: "no contract yet",
     pProcN: "procedures: {n}",
+    pRated: "The sub-project's risks are rated on this procurement.",
+    pInfoOnly: "For information: does not change the risk ratings.",
     pNoChecks: "nothing to check yet",
     pBad: "broken in {n} of {of}",
     pAllOk: "all {n} compliant",
@@ -1593,10 +1599,28 @@ async function refreshMany(rows) {
 
 // The works contract of a sub-project: the latest signed one of its linked procedures.
 // Only a works procurement counts: design, expertise or supervision firms are not the contractor.
+// What a procedure buys: the team's Tenders sheet says it first (W, TS, IC), else Prozorro's code and title.
+function procRole(r, t0, x) {
+  if (x === undefined && t0) x = (r.tenders || []).find((y) => y.pz === t0.tid) || null;
+  return (x && roleOfSheet(x.kind)) || (t0 && (isWorksTender(t0) ? 'works' : prozorro_role(t0.title))) || 'other';
+}
+// Only the works procurement is rated (the team's decision of 23.11.2026): it is what the sub-project
+// is. Supervision, the consulting engineer, design and the rest are shown, for information only.
+function worksTids(r) {
+  if (r._wt && r._wt.pz === r.pz && r._wt.tn === r.tenders) return r._wt.set;
+  const set = new Set(((r.pz || {}).tenders || []).filter((t0) => procRole(r, t0) === 'works').map((t0) => t0.tid));
+  for (const x of r.tenders || []) if (x.pz && roleOfSheet(x.kind) === 'works') set.add(x.pz);
+  Object.defineProperty(r, '_wt', { value: { pz: r.pz, tn: r.tenders, set }, configurable: true, writable: true });
+  return set;
+}
+const isWorksRow = (r, x) => roleOfSheet(x.kind) === 'works' || (!roleOfSheet(x.kind) && !!x.pz && worksTids(r).has(x.pz));
+// Mindev's payments for the works: the works done and the advance; supervision, the engineer and refunds are not.
+const NOT_WORKS_PAY = ['ts', 'csc', 'refund'];
 function mainContract(r) {
   const cs = [];
+  const works = worksTids(r);
   for (const t0 of ((r.pz || {}).tenders || [])) {
-    if (!isWorksTender(t0)) continue;
+    if (!works.has(t0.tid)) continue;
     for (const c of t0.contracts || []) if (c.status === 'active' || c.status === 'terminated') cs.push({ c, t0 });
   }
   cs.sort((a, b) => (b.c.signed || '').localeCompare(a.c.signed || ''));
@@ -1634,8 +1658,10 @@ function riskHints(r) {
     add('r1', main.c.changes >= 5 ? 'medium' : 'low', rt('h_changes', { n: main.c.changes, types }));
   }
   // State Audit and AMCU: a procedure that gave no contract counts 12 months and at most 2.
+  // The works procurement only; the others are in infoHints.
+  const works = worksTids(r);
   let upheld = 0;
-  for (const t0 of pzT) {
+  for (const t0 of pzT.filter((x) => works.has(x.tid))) {
     const noContract = ['unsuccessful', 'cancelled'].includes(t0.status) && !(t0.contracts || []).some((c) => c.status !== 'cancelled');
     if (noContract && t0.date && t0.date < addDays(today(), -365)) continue;
     const tag = noContract ? ' · ' + rt('h_failedProc', { tid: t0.tid }) : '';
@@ -1649,8 +1675,8 @@ function riskHints(r) {
     if (t0.disqualified) add('rx', 'low', t0.tid + ': ' + rt('h_disq', { n: t0.disqualified }));
   }
   if (upheld >= 2) add('r8', 'high', rt('h_amcuMany', { n: upheld }));
-  const failed = (r.tenders || []).filter((x) => /No Bids|All Rejected|Cancel/i.test(x.status || '')).length
-    + pzT.filter((x) => x.status === 'unsuccessful' && !(r.tenders || []).some((y) => y.pz === x.tid)).length;
+  const failed = (r.tenders || []).filter((x) => isWorksRow(r, x) && /No Bids|All Rejected|Cancel/i.test(x.status || '')).length
+    + pzT.filter((x) => works.has(x.tid) && x.status === 'unsuccessful' && !(r.tenders || []).some((y) => y.pz === x.tid)).length;
   if (failed >= 2) add('rx', 'medium', rt('h_failed', { n: failed }));
   if (/Suspended/i.test(tt.funding || '')) add('r3', 'high', rt('h_funding', { s: tt.funding }));
   else if (/Insufficient/i.test(tt.funding || '')) add('r3', 'medium', rt('h_funding', { s: tt.funding }));
@@ -1672,6 +1698,41 @@ function riskHints(r) {
   }
   return out;
 }
+// The other procurements (supervision, the engineer, design, the rest): what would have been a hint,
+// shown for information and not rated. Each line says what was bought.
+function infoHints(r) {
+  const out = [];
+  const works = worksTids(r);
+  const add = (role, level, text) => out.push({ role, level, text });
+  for (const t0 of ((r.pz || {}).tenders || []).filter((x) => !works.has(x.tid))) {
+    const role = procRole(r, t0), who = t0.tid;
+    if (t0.sasu && t0.sasu.violation) add(role, 'medium', who + ': ' + rt('h_sasuViol', { ids: (t0.sasu.ids || []).join(', ') }));
+    else if (t0.sasu && t0.sasu.active) add(role, 'low', who + ': ' + rt('h_sasuActive'));
+    const cp = t0.complaints || {};
+    if (cp.n) add(role, cp.open || cp.satisfied ? 'medium' : 'low', who + ': ' + rt('h_amcu', { n: cp.n, open: cp.open || 0, sat: cp.satisfied || 0 }));
+    if (t0.disqualified) add(role, 'low', who + ': ' + rt('h_disq', { n: t0.disqualified }));
+  }
+  for (const x of spTracked(r).filter((y) => !works.has(y.tid))) {
+    const mx = x.matrix;
+    if (!mx) continue;
+    const role = procRole(r, ((r.pz || {}).tenders || []).find((t0) => t0.tid === x.tid) || { tid: x.tid, title: x.title || '' });
+    const who = x.number ? '№ ' + x.number : x.tid;
+    for (const [k, v] of Object.entries(mx.scores || {})) {
+      if (v < 2) continue;
+      const why = ((mx.why || {})[k] || []).map((w) => (typeof udWhy === 'function' ? udWhy(w) : w)).join(', ') || rt('lvl' + v);
+      add(role, v === 3 ? 'high' : 'medium', rt('fromContract', { who, why }) + ' · ' + rt(k));
+    }
+  }
+  const f = mrdFacts(r);
+  if (f) {
+    const long = f.waiting.filter((x) => NOT_WORKS_PAY.includes(x.kind) && x.kind !== 'refund' && x.days > 15);
+    for (const kind of ['ts', 'csc']) {
+      const l = long.filter((x) => x.kind === kind);
+      if (l.length) add(kind, 'medium', rt('h_mrdWaiting', { n: l.length, days: Math.max(...l.map((x) => x.days)) }));
+    }
+  }
+  return out;
+}
 const RISK_KEYS = ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'rx'];
 const SCORE_KEYS = RISK_KEYS.slice(0, 8);
 // Weights of the risk matrix (row 14 of the SPs sheet).
@@ -1684,7 +1745,8 @@ function suggestedScores(r) {
   const read = !!(r.pz && r.pz.at);
   const known = { r1: !!mainContract(r), r3: !!subvMatch(r) || !!tt.funding, r4: paidShare(r) != null, r5: !!mainContract(r), r7: read, r8: read };
   // A criterion the monitor rated on a contract on control is known even when all is well there.
-  for (const x of spTracked(r)) for (const k of Object.keys((x.matrix || {}).scores || {})) known[k] = true;
+  const works = worksTids(r);
+  for (const x of spTracked(r).filter((y) => works.has(y.tid))) for (const k of Object.keys((x.matrix || {}).scores || {})) known[k] = true;
   const out = {};
   for (const k of SCORE_KEYS) {
     const items = risk[k] || [];
@@ -1852,7 +1914,8 @@ function contractHints(r, spSubvention) {
   // not repeated per contract.
   const SUBV_WHY = /^(subvention_|funding_gap)/;
   const groups = new Map();
-  for (const x of spTracked(r)) {
+  const works = worksTids(r);
+  for (const x of spTracked(r).filter((y) => works.has(y.tid))) {
     const mx = x.matrix;
     if (!mx) continue;
     const who = x.number ? '№ ' + x.number : x.tid;
@@ -2496,7 +2559,24 @@ function risksCard(r) {
             mine ? h('span', { class: 'faint' }, rt('signoffSelf')) : h('button', { class: 'btn btn-sm', type: 'button', onclick: () => confirm(k) }, icon('check'), rt('signoffBtn'))) : null,
           so && so.ok ? h('div', { class: 'faint small' }, rt('signoffOk', { who: so.ok, date: fdate(String(so.okAt || '').slice(0, 10)) })) : null,
           h('details', { class: 'howto small' }, h('summary', null, rt('ruleLabel')), h('p', { class: 'muted' }, rt('rule_' + k)))));
-    })));
+    })),
+    infoBlock(r));
+}
+// The other procurements, grouped by what they buy: seen, not rated.
+function infoBlock(r) {
+  const items = infoHints(r);
+  const others = procItems(r).filter((i) => i.role !== 'works');
+  if (!items.length && !others.length) return null;
+  const roles = PROC_ROLES.filter((role) => role !== 'works' && (items.some((x) => x.role === role) || others.some((i) => i.role === role)));
+  return h('details', { class: 'info-procs', open: items.some((x) => x.level !== 'low') || null },
+    h('summary', null, h('b', null, rt('infoTitle')), items.length ? h('span', { class: 'count-inline' }, items.length) : null),
+    h('p', { class: 'faint small' }, rt('infoHint')),
+    roles.map((role) => {
+      const list = items.filter((x) => x.role === role);
+      return h('div', { class: 'info-role' },
+        h('span', { class: 'tag' }, rt('role_' + role), ' · ', rt('pProcN', { n: others.filter((i) => i.role === role).length })),
+        h('div', { class: 'small muted' }, list.length ? list.map((x) => h('div', { class: x.level === 'low' ? '' : 'warn-text' }, x.text)) : rt('infoNone')));
+    }));
 }
 
 // ---- the Procurement tab -------------------------------------------------------------------------
@@ -2512,7 +2592,7 @@ function procItems(r) {
   const rows = r.tenders || [];
   const items = spTids(r).map((tid) => {
     const t0 = byTid[tid] || null, x = rows.find((y) => y.pz === tid) || null;
-    const role = (x && roleOfSheet(x.kind)) || (t0 && (isWorksTender(t0) ? 'works' : prozorro_role(t0.title))) || 'other';
+    const role = procRole(r, t0, x);
     return { tid, t0, x, role, day: (t0 && t0.date) || (x && x.issued) || '' };
   });
   // Rows of the sheet with no Prozorro id: they are part of the story too.
@@ -2603,6 +2683,7 @@ function procurementTab(r) {
     if (!list.length) return null;
     return h('section', { class: 'card pad section proc-group' },
       h('h2', { class: 'card-title' }, rt('role_' + role), h('span', { class: 'count-inline' }, list.length)),
+      role === 'works' ? h('p', { class: 'faint small' }, rt('pRated')) : h('p', { class: 'faint small' }, rt('pInfoOnly')),
       h('div', { class: 'proc-list' }, list.map((it) => procItem(r, it, save, linkIds, off))));
   });
   // Possible procurements found by the sub-project's name: open when nothing is linked yet.
@@ -3248,11 +3329,13 @@ async function fillWorkbook(buf, mode, onStep) {
     const dream = spDream(r);
     if (dream) setK('dream', { f: `HYPERLINK("${dreamUrl(dream)}","${dream}")`, v: dream }, 'blank');
     const pzT = ((r.pz || {}).tenders || []).filter((x) => !x.error);
+    // AMCU and State Audit columns feed risks 7 and 8: the works procurement only, as the rating.
+    const pzW = pzT.filter((x) => worksTids(r).has(x.tid));
     const m = mainContract(r);
-    const main = m ? m.t0 : pzT[0];
+    const main = m ? m.t0 : pzW[0] || pzT[0];
     if (main) setK('proc_status', tableStatus(main, m && m.c));
-    setK('amcu', tableAmcu(pzT.reduce((acc, x) => { const c = x.complaints || {}; return { n: acc.n + (c.n || 0), open: acc.open + (c.open || 0), satisfied: acc.satisfied + (c.satisfied || 0) }; }, { n: 0, open: 0, satisfied: 0 })));
-    setK('sasu', tableSasu(pzT.map((x) => x.sasu)));
+    setK('amcu', tableAmcu(pzW.reduce((acc, x) => { const c = x.complaints || {}; return { n: acc.n + (c.n || 0), open: acc.open + (c.open || 0), satisfied: acc.satisfied + (c.satisfied || 0) }; }, { n: 0, open: 0, satisfied: 0 })));
+    setK('sasu', tableSasu(pzW.map((x) => x.sasu)));
     if (m) {
       const sup = (m.c.suppliers || [])[0] || {};
       setK('contractor', sup.name);
@@ -3808,9 +3891,12 @@ function mrdHints(r) {
   const f = mrdFacts(r), out = {};
   if (!f) return out;
   const add = (k, level, text) => (out[k] = out[k] || []).push({ level, text });
-  const long = f.waiting.filter((x) => x.days > 15);
+  // The works' payments only: supervision and the engineer are in infoHints.
+  const forWorks = (x) => !NOT_WORKS_PAY.includes(x.kind);
+  const long = f.waiting.filter((x) => forWorks(x) && x.days > 15);
   if (long.length) add('r4', long.some((x) => x.days > 30) ? 'high' : 'medium', rt('h_mrdWaiting', { n: long.length, days: Math.max(...long.map((x) => x.days)) }));
-  if (f.slow.length) add('r4', 'medium', rt('h_mrdSlow', { n: f.slow.length, of: f.year.length }));
+  const slow = f.slow.filter(forWorks);
+  if (slow.length) add('r4', 'medium', rt('h_mrdSlow', { n: slow.length, of: f.year.filter(forWorks).length }));
   if (f.afterTerm.length) add('rx', 'medium', rt('h_mrdAfterTerm', { n: f.afterTerm.length, date: fdate(f.term) }));
   if (f.noPcr) add('rx', 'medium', rt('h_mrdNoPcr'));
   return out;

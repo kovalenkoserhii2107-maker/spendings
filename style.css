@@ -1099,3 +1099,9 @@ details.w-done { margin-top: 12px; } details.w-done > summary { cursor: pointer;
 .doc-part .card-sub { margin: 0 0 8px; }
 .doc-part .doc-list { grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); }
 .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+
+/* Other procurements under the risk matrix: for information, not rated. */
+.info-procs { margin-top: 14px; padding: 12px 14px; border-radius: 14px; border: 1px dashed var(--line); }
+.info-procs > summary { cursor: pointer; display: flex; gap: 8px; align-items: center; }
+.info-procs .info-role { display: grid; gap: 4px; margin-top: 10px; }
+.info-procs .info-role .tag { justify-self: start; }
