@@ -1149,3 +1149,16 @@ tr.row-main td { background: var(--violet-bg); }
   .kpi-tiles { grid-template-columns: 1fr; }
   .addp-row { grid-template-columns: 1fr; } .addp-act { grid-column: 1; grid-row: auto; }
 }
+
+/* ---------- drawers (v0.62) ---------- */
+.drawer-head { padding-right: 44px; margin-bottom: 12px; }
+.drawer-body { display: grid; gap: 0; }
+.drawer-body > .card { box-shadow: none; border: 1px solid var(--line); }
+.drawer-src { margin-top: 14px; gap: 8px; flex-wrap: wrap; align-items: center; }
+.as-btn { border: 0; cursor: pointer; font: inherit; }
+.sev.as-btn:hover, .tag.as-btn:hover { filter: brightness(.96); text-decoration: underline; }
+.c-progress.click { cursor: pointer; border-radius: 10px; }
+.c-progress.click:hover { background: var(--soft); }
+.checklist.one { grid-template-columns: 1fr; }
+tr.faint-row td { color: var(--muted); }
+.ok-text { color: var(--green); }

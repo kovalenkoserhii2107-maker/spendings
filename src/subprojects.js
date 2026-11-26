@@ -398,7 +398,7 @@ function contractCard(r, it, primary) {
         c.changes ? h('div', null, typeof openAmendmentsDrawer === 'function' ? h('button', { class: 'linklike small', type: 'button', onclick: () => openAmendmentsDrawer(r, c.id) }, rt('cChangesN', { n: c.changes })) : h('small', null, rt('cChanges', { n: c.changes, date: c.last_change ? fdate(c.last_change) : '' }))) : null)),
       h('div', null, h('dt', null, rt('cTerm')), h('dd', { class: 'num' }, join([c.start && fdate(c.start), f.end && '→ ' + fdate(f.end)]) || '—', term ? h('div', null, term) : null)),
       h('div', { class: 'wide' }, h('dt', null, rt('cProgress')), h('dd', null,
-        f.row ? h('div', { class: 'c-progress' },
+        f.row ? h('div', { class: 'c-progress click', role: 'button', tabindex: 0, title: rt('drMoney'), onclick: () => openMoneyDrawer(r, c.id), onkeydown: (e) => { if (e.key === 'Enter') openMoneyDrawer(r, c.id); } },
           h('div', null, h('small', null, rt('cActs')), bar(f.actsPct, 'acts'), h('b', { class: 'num' }, f.actsPct != null ? f.actsPct + '%' : '—')),
           h('div', null, h('small', null, rt('cPaid')), bar(f.paidPct, 'paid'), h('b', { class: 'num' }, f.paidPct != null ? f.paidPct + '%' : '—'), f.paid ? h('span', { class: 'faint small' }, money(f.paid)) : null))
           : h('span', { class: 'faint' }, c.status === 'active' ? rt('cNotFollowed') : '—'))),
@@ -779,9 +779,9 @@ function additionalBlock(r) {
     const row = c ? ((state.trackedIndex || {}).items || []).find((y) => y.key === c.id || y.contract_id === c.id) : null;
     const prevNote = it.previous ? (c && c.status === 'terminated' ? rt('prevEnded') : t0 && ['unsuccessful', 'cancelled'].includes(t0.status) ? rt('prevFailed') : rt('prevOther')) : null;
     const chips = [
-      t0 && t0.sasu && t0.sasu.n ? h('span', { class: 'sev ' + (t0.sasu.violation ? 'high' : 'medium') }, rt('pSasu')) : null,
-      t0 && t0.complaints && t0.complaints.n ? h('span', { class: 'sev medium' }, rt('pAmcu', { n: t0.complaints.n, open: t0.complaints.open || 0 })) : null,
-      c && c.changes ? h('span', { class: 'tag' }, rt('changesN', { n: c.changes })) : null,
+      t0 && t0.sasu && t0.sasu.n ? h('button', { type: 'button', class: 'sev as-btn ' + (t0.sasu.violation ? 'high' : 'medium'), onclick: () => openSasuDrawer(r, t0.tid) }, rt('pSasu')) : null,
+      t0 && t0.complaints && t0.complaints.n ? h('button', { type: 'button', class: 'sev as-btn medium', onclick: () => openAmcuAndBidsDrawer(r, t0.tid) }, rt('pAmcu', { n: t0.complaints.n, open: t0.complaints.open || 0 })) : null,
+      c && c.changes ? h('button', { type: 'button', class: 'tag as-btn', onclick: () => openAmendmentsDrawer(r, c.id) }, rt('changesN', { n: c.changes })) : null,
     ].filter(Boolean);
     return h('div', { class: 'addp-row' },
       h('div', { class: 'addp-main' },
@@ -832,14 +832,16 @@ function procItem(r, it, save, linkIds, off) {
   const srv = serverRules(tid);
   const row = tid ? ((state.trackedIndex || {}).items || []).find((y) => y.tid === tid && (!c || y.key === c.id || y.contract_id === c.id)) : null;
   const org = t0 ? { edrpou: t0.buyer, name: t0.buyer_name, role: 'buyer' } : null;
+  // Each badge opens what it says: the State Audit's monitorings, the complaints and the bids.
+  const chip = (cls, text, open) => h('button', { type: 'button', class: 'sev ' + cls + ' as-btn', onclick: open }, text);
   const flags = [
-    t0 && t0.sasu && t0.sasu.n ? h('span', { class: 'sev ' + (t0.sasu.violation ? 'high' : 'medium') }, t0.sasu.violation ? rt('pSasuViol') : rt('pSasu')) : null,
-    t0 && t0.complaints && t0.complaints.n ? h('span', { class: 'sev ' + (t0.complaints.open ? 'medium' : '') }, rt('pAmcu', { n: t0.complaints.n, open: t0.complaints.open || 0 })) : null,
+    t0 && t0.sasu && t0.sasu.n ? chip(t0.sasu.violation ? 'high' : 'medium', t0.sasu.violation ? rt('pSasuViol') : rt('pSasu'), () => openSasuDrawer(r, tid)) : null,
+    t0 && t0.complaints && t0.complaints.n ? chip(t0.complaints.open ? 'medium' : '', rt('pAmcu', { n: t0.complaints.n, open: t0.complaints.open || 0 }), () => openAmcuAndBidsDrawer(r, tid)) : null,
     x && x.ac === true ? h('span', { class: 'tag ok' }, rt('pAc')) : null,
     x && x.price === true ? h('span', { class: 'tag ok' }, rt('pPrice')) : null,
     ((r.link || {}).auto || []).includes(tid) ? h('span', { class: 'tag' }, rt('autoLinked')) : null,
   ].filter(Boolean);
-  const verdict = v.k ? h('div', { class: 'proc-verdict' }, h('span', { class: 'faint small' }, rt('sheetRules') + ':'), verdictCell(v)) : null;
+  const verdict = v.k || tid ? h('div', { class: 'proc-verdict' }, tid ? h('button', { class: 'linklike faint small', type: 'button', onclick: () => openRulesDrawer(r, tid) }, rt('sheetRules') + ':') : h('span', { class: 'faint small' }, rt('sheetRules') + ':'), v.k ? verdictCell(v) : h('span', { class: 'faint small' }, rt('drOpen'))) : null;
   return h('article', { class: 'proc' + (it.primary ? ' primary' : '') + (c ? ' has-contract' : t0 && ['unsuccessful', 'cancelled'].includes(t0.status) ? ' off' : '') },
     it.primary ? h('div', { class: 'primary-badge' }, '★ ', rt('pPrimary')) : null,
     h('header', { class: 'proc-head' },
@@ -858,7 +860,7 @@ function procItem(r, it, save, linkIds, off) {
       h('div', null, h('dt', null, rt('pExpected')), h('dd', { class: 'num' }, t0 && t0.value ? money(t0.value.amount, t0.value.currency) : x && x.est != null ? money(x.est) : '—')),
       h('div', null, h('dt', null, rt('pDates')), h('dd', { class: 'num' }, issued || opening ? join([issued && fdate(issued), opening && '→ ' + fdate(opening)]) : '—',
         dayDiff(issued, opening) != null ? h('small', null, ' · ' + rt('pDays', { n: dayDiff(issued, opening) })) : null)),
-      h('div', null, h('dt', null, rt('pBids')), h('dd', null, bids != null ? join([String(bids), t0 && t0.disqualified ? rt('pRejected', { n: t0.disqualified }) : null]) : '—')),
+      h('div', null, h('dt', null, rt('pBids')), h('dd', null, bids != null ? (tid ? h('button', { class: 'linklike', type: 'button', onclick: () => openAmcuAndBidsDrawer(r, tid) }, join([String(bids), t0 && t0.disqualified ? rt('pRejected', { n: t0.disqualified }) : null])) : join([String(bids), t0 && t0.disqualified ? rt('pRejected', { n: t0.disqualified }) : null])) : '—')),
       h('div', { class: 'wide' }, h('dt', null, rt('pContract')), h('dd', null, c ? h('span', null, h('b', null, party(sup.name, sup.code)), ' · ', join([c.number ? '№ ' + c.number : null, c.signed ? fdate(c.signed) : null,
         c.value ? money(c.value.amount, c.value.currency) : null, c.end ? rt('pTo', { date: fdate(c.end) }) : null, c.changes ? rt('pChanges', { n: c.changes }) : null, label('pzc.', c.status)]))
         : x && x.contractor ? join([x.contractor, x.contract_no && '№ ' + x.contract_no, x.contract_total != null ? money(x.contract_total) : null])

@@ -347,8 +347,6 @@ function trackedDossier(id) {
           h('p', { class: 'muted' }, c.title || t0.title),
           funders.length ? h('p', { class: 'small' }, t('eib.funders') + ': ' + funders.join(', ')) : null),
         h('div', { class: 'org-actions' }, h('div', { class: 'row' },
-          org && (org.files || {}).prozorro ? h('button', { class: 'btn', onclick: () => openTender(org, s.tid) }, t('pz.openProcedure')) : null,
-          org && s.sp ? h('button', { class: 'btn', onclick: () => openContract(org, s.sp) }, t('pz.openDossier')) : null,
           s.tid ? ext(pzUrl(s.tid), 'Prozorro', 'btn') : null,
           t0.dream_id ? ext(dreamUrl(t0.dream_id), 'DREAM', 'btn') : null),
           isTracked(id) && !isTeam() ? off : null)),
@@ -742,7 +740,14 @@ function monitoringBlock(m) {
       [t('sasu.violations'), m.violation === true ? types.join('; ') || t('sasu.found') : m.violation === false ? t('sasu.none') : null],
       [t('sasu.eliminationDue'), m.elimination_due ? fdate(m.elimination_due) : null],
       [t('sasu.eliminated'), m.elimination_date ? fdate(m.elimination_date) : null],
+      // The service's verdict on the buyer's report, and an appeal of the conclusion in court.
+      [t('sasu.resolution'), m.resolution && m.resolution.result ? h('span', { class: ['none', 'partly', 'not_eliminated'].includes(m.resolution.result) ? 'bad' : '' },
+        join([label('sasu.res.', m.resolution.result) || m.resolution.result, m.resolution.date && fdate(m.resolution.date)])) : null],
+      [t('sasu.appeal'), m.appeal ? join([m.appeal.date && fdate(m.appeal.date), m.appeal.case && t('sasu.case', { n: m.appeal.case }), m.appeal.case_date && fdate(m.appeal.case_date)]) || t('sasu.appealed') : null],
+      [t('sasu.cancelled'), m.cancellation || null],
     ]),
+    text(t('sasu.resolutionText'), m.resolution && m.resolution.text),
+    text(t('sasu.appealText'), m.appeal && m.appeal.text),
     h('div', { class: 'row', style: 'margin:8px 0' },
       m.conclusion_pdf ? ext(m.conclusion_pdf, t('sasu.conclusionPdf'), 'btn btn-sm btn-dark') : null,
       m.url ? ext(m.url, t('sasu.onProzorro'), 'btn btn-sm') : null),
@@ -805,22 +810,12 @@ function tenderDossier(id, s, pick) {
 // contracts, payments and procurement in the app), apart from this one contract on control.
 function partiesCard(t0, c) {
   const sup = (c.suppliers || [])[0] || {};
-  const side = (key, name, code, role) => {
-    const on = !!code && state.mine.orgs.has(code);
-    const add = h('button', { class: 'btn btn-sm', onclick: async () => {
-      add.disabled = true;
-      try { await cloud.addOrg(code, name, role); nudgeSync(); toast(t('addorg.addedNow', { name: name || code })); } catch (e) { add.disabled = false; toast(e.message, { bad: true }); }
-    } }, icon('building'), t('org.addMonitor'));
-    return h('div', { class: 'party' },
-      h('small', null, t(key)),
-      h('b', null, name || '—'),
-      code ? h('div', { class: 'cell-sub num' }, t('f.edrpou') + ' ' + code) : null,
-      partyLinks(code, role),
-      h('div', { class: 'row' },
-        on ? h('span', { class: 'tag ok' }, t('org.monitoring')) : null,
-        null,
-        !on && realCode(code) ? add : null));
-  };
+  // The buyer and the contractor; the contractor's name opens its inspector (ЄДР, owners, sanctions, its contracts).
+  const side = (key, name, code, role) => h('div', { class: 'party' },
+    h('small', null, t(key)),
+    h('b', null, role === 'supplier' && code && typeof contractorLink === 'function' ? contractorLink(name, code, typeof spOfTid === 'function' ? spOfTid(t0.tid) : null) : name || '—'),
+    code ? h('div', { class: 'cell-sub num' }, t('f.edrpou') + ' ' + code) : null,
+    partyLinks(code, role));
   return h('div', { class: 'card pad section parties' },
     side('dos.buyer', t0.buyer_name, t0.buyer, 'buyer'),
     side('dos.supplier', sup.name, sup.code, 'supplier'));
