@@ -31,6 +31,7 @@ def _docs(items, of, author=None):
 def _compact(m, tid):
     decision, concl = m.get("decision") or {}, m.get("conclusion") or {}
     report, period = m.get("eliminationReport") or {}, m.get("eliminationPeriod") or {}
+    res, appeal, cancel = m.get("eliminationResolution") or {}, m.get("appeal") or {}, m.get("cancellation") or {}
     api = "%s/monitorings/%s" % (AUDIT, m.get("id"))
     posts = []
     for p in m.get("posts") or []:
@@ -64,6 +65,18 @@ def _compact(m, tid):
         "elimination_due": prozorro._day(period.get("endDate")),
         "elimination": (report.get("description") or "")[:TEXT],
         "elimination_date": prozorro._day(report.get("datePublished")),
+        # The service's verdict on the buyer's report: removed completely, partly or not at all.
+        "resolution": {k: v for k, v in {
+            "result": res.get("result"), "date": prozorro._day(res.get("dateCreated") or res.get("datePublished")),
+            "text": (res.get("description") or "")[:TEXT],
+        }.items() if v not in (None, "")} or None,
+        # The buyer appealed the conclusion in court.
+        "appeal": {k: v for k, v in {
+            "date": prozorro._day(appeal.get("datePublished")), "text": (appeal.get("description") or "")[:TEXT],
+            "case": (appeal.get("proceeding") or {}).get("proceedingNumber"),
+            "case_date": prozorro._day((appeal.get("proceeding") or {}).get("dateProceedings")),
+        }.items() if v not in (None, "")} or None,
+        "cancellation": (cancel.get("description") or cancel.get("reason") or "")[:TEXT] or None,
         "posts": posts,
         "docs": docs,
         # Prozorro renders the conclusion as a PDF from the API record.

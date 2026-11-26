@@ -22,17 +22,18 @@ git fetch --depth 30 origin main && git reset --hard origin/main || exit 1
 
 /usr/bin/python3 -I sync/mac_daily.py
 
-for f in data/subvention.json data/edr.json; do [ -f "$f" ] && git add "$f"; done
+for f in data/subvention.json data/edr.json data/amcu.json; do [ -f "$f" ] && git add "$f"; done
 if git diff --cached --quiet; then
   echo "Змін немає"
   exit 0
 fi
 git -c user.name="Spending monitor (Mac)" -c user.email="kovalenkoserhii2107-maker@users.noreply.github.com" \
-  commit -q -m "Оновлення з Mac: ЄДР і субвенції"
+  commit -q -m "Оновлення з Mac: ЄДР, АМКУ і субвенції"
 for i in 1 2 3; do
   if git push -q origin HEAD:main; then echo "Надіслано"; exit 0; fi
-  # GitHub's own run pushed meanwhile: it never touches these two files, so a rebase is clean.
-  git pull -q --rebase origin main || { git rebase --abort; echo "! не вдалося злити"; exit 1; }
+  # GitHub's own run pushed meanwhile. It never writes these files while the Mac keeps them fresh;
+  # should it ever, the Mac's copy wins (in a rebase "theirs" is the commit being replayed: ours here).
+  git pull -q --rebase -X theirs origin main || { git rebase --abort; echo "! не вдалося злити"; exit 1; }
 done
 echo "! не вдалося надіслати"
 exit 1

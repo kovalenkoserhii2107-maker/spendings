@@ -5,6 +5,7 @@ data.gov.ua (the state register). From a Mac in Ukraine both answer, so once a d
   - reads the subvention orders            → data/subvention.json
   - reads the state register for the companies of the contracts on control (contractors,
     other bidders, buyers)                   → data/edr.json
+  - checks them, sole traders too, against the AMCU decisions on bid rigging → data/amcu.json
 The site's own sync folds data/edr.json into data/legal.json and the contract cards.
 Neither file is written by the GitHub run, so the two never overwrite each other.
 
@@ -13,6 +14,7 @@ Run by tools/mac-daily.sh (launchd, every morning).
 import glob
 import json
 import os
+import re
 import sys
 import time
 
@@ -25,8 +27,9 @@ import subvention  # noqa: E402
 DATA = os.path.join(HERE, "..", "data")
 
 
-def codes_on_control():
-    """Contractors, buyers and the other bidders of the contracts and procurements on control."""
+def codes_on_control(sole_traders=False):
+    """Contractors, buyers and the other bidders of the contracts and procurements on control
+    (with sole traders' 10-digit codes when asked)."""
     out = set()
     try:
         with open(os.path.join(DATA, "tracked", "index.json"), encoding="utf-8") as f:
@@ -43,7 +46,7 @@ def codes_on_control():
             out |= {(x.get("supplier") or {}).get("code") for x in snap.get("related") or [] if x.get("supplier")}
         except (OSError, ValueError, KeyError):
             pass
-    return {c for c in out if c and len(c) == 8 and c.isdigit()}
+    return {c for c in out if c and c.isdigit() and (len(c) == 8 or sole_traders and len(c) == 10)}
 
 
 def main():
@@ -94,6 +97,28 @@ def main():
         except Exception as e:  # noqa: BLE001
             ok = False
             log("! ЄДР: %s" % e)
+    # AMCU decisions on bid rigging: from data.gov.ua, or from the register's XLSX downloaded in the
+    # browser into Downloads (the site turns automated requests away at times; never worked round).
+    every = codes_on_control(sole_traders=True)
+    if every:
+        try:
+            try:
+                hits, src = legal.scan_amcu(every, log), "site"
+            except Exception as e:  # noqa: BLE001
+                copies = sorted((p for p in glob.glob(os.path.expanduser("~/Downloads/*.xlsx"))
+                                 if re.search(r"амку|amcu|змов|антимонопол|rigging", os.path.basename(p), re.I)), key=os.path.getmtime)
+                if not copies:
+                    raise
+                log("  АМКУ з сайту: %s — читаю завантажену копію %s" % (e, os.path.basename(copies[-1])))
+                hits = legal.scan_amcu(every, log, path=copies[-1])
+                src = "copy " + time.strftime("%Y-%m-%d", time.gmtime(os.path.getmtime(copies[-1])))
+            with open(os.path.join(DATA, "amcu.json"), "w", encoding="utf-8") as f:
+                json.dump({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "codes": sorted(every), "items": hits, "source": src},
+                          f, ensure_ascii=False, indent=1, sort_keys=True)
+            log("  АМКУ: рішень щодо %d з %d компаній" % (len(hits), len(every)))
+        except Exception as e:  # noqa: BLE001
+            ok = False
+            log("! АМКУ: %s" % e)
     return 0 if ok else 1
 
 

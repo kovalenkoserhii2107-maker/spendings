@@ -89,18 +89,21 @@ def evaluate(t, pc, eib=False, paid=None, acts_sum=None, treasury=None, overdue=
         signals.append(_sig("missing_kb2v", "high", {"paid": paid or 0, "acts": acts_sum or 0}, pc))
         notes["documents"].append(["missing_kb2v", {}])
 
-    # 3. Guarantees and beneficial owners; the EIB covenant of integrity.
+    # 3. Guarantees and beneficial owners; the EIB covenant of integrity. The advance and performance
+    # guarantees belong to the signed contract: the bid security among the tender documents (0.5%)
+    # is not the 30% advance repayment guarantee, so only the contract's own documents count.
     missing = []
+    need_guarantee = _prepayment(t) and signed and not _has(pdocs, GUARANTEE, ("contractGuarantees",))
     if eib:
         if not _has(docs, INTEGRITY):
             missing.append("integrity")
-        if _prepayment(t) and not _has(docs, GUARANTEE, ("contractGuarantees",)):
+        if need_guarantee:
             missing.append("guarantee")
         if not _has(docs, UBO):
             missing.append("ubo")
         if missing:
             signals.append(_sig("missing_eib_covenants", "medium", {"missing": missing}, pc))
-    elif _prepayment(t) and not _has(docs, GUARANTEE, ("contractGuarantees",)):
+    elif need_guarantee:
         missing.append("guarantee")
     for m in missing:
         notes["guarantees"].append(["missing_" + m, {}])
@@ -166,6 +169,34 @@ def evaluate(t, pc, eib=False, paid=None, acts_sum=None, treasury=None, overdue=
 _NUM = r"(?:№|N)\s*([0-9A-Za-zА-Яа-яІіЇїЄє/\-_.]+?)\s*(?:від|вiд|от)\s*(\d{1,2})\.(\d{1,2})\.(\d{2,4})"
 ADDENDUM_REF = re.compile(r"(?<![а-яіїєґa-z])(?:д\s*/\s*у|д\.\s*у\.?|ду|дод(?:атков\w*|\.)?\s*угод\w*)\s*" + _NUM, re.I)
 ACT_REF = re.compile(r"(?<![а-яіїєґa-z])акт\w*[^№;,]{0,40}?" + _NUM, re.I)
+# Acts as the buyers name them, one or several in a payment: "акт прийм.викон.буд.робіт№1від14.07.2026р.",
+# "Акт №7, №8 вiд 10.11.25", "акт пвбр 1/25 за 04.2025 вiд 19.05.2025р.", "актпвбр 1/25 ...",
+# "Акт№1вiд 230425", "акт.№2 ф.КБ-2в вiд ...", "акт пвбр 8/25,акт варт.устатк.8/25-1 за 10.2026 вiд ...".
+ACT_SEG = re.compile(
+    r"(?<![а-яіїєґa-z])акт(?:и|а|у|ів)?(?=[\s.№,:]|пвбр)(.{0,90}?)(?:в[іi]д)\s*"
+    r"(?:(\d{1,2})[./](\d{1,2})[./](\d{2,4})|(\d{2})(\d{2})(\d{2})(?!\d))", re.I)
+_ACT_NO = re.compile(r"№\s*([0-9][0-9A-Za-zА-Яа-яІіЇїЄє/\-_]*)")
+_ACT_BARE = re.compile(r"(?:пвбр|кб\s*-?\s*2в|устатк\.?)\s*([0-9][0-9/\-_]*)", re.I)
+
+
+def act_refs(text):
+    """The acts a payment names: [(number as typed, ISO date)]."""
+    out = []
+    for m in ACT_SEG.finditer(text or ""):
+        g = m.groups()
+        d, mth, y = (g[1], g[2], g[3]) if g[1] else (g[4], g[5], g[6])
+        y = int(y) + (2000 if int(y) < 100 else 0)
+        try:
+            day = date(y, int(mth), int(d)).isoformat()
+        except ValueError:
+            continue
+        seg = re.sub(r"за\s*\d{1,2}[./]\d{2,4}\s*р?\.?", " ", g[0], flags=re.I)
+        nums = _ACT_NO.findall(seg) or _ACT_BARE.findall(seg)
+        if not nums:
+            bare = re.match(r"\s*([0-9][0-9/\-]*)", seg)
+            nums = [bare.group(1)] if bare else []
+        out += [(n.rstrip("-/_"), day) for n in nums if n]
+    return out
 DATE_GAP_DAYS = 5
 PUBLISH_WORKDAYS = 5
 
@@ -180,8 +211,12 @@ def _ref_date(m):
         return None
 
 
+# Latin letters that look Cyrillic, and "З" for "3", as in analysis._norm_number.
+_LOOKALIKE = str.maketrans("aceiopxykmhtbз", "асеіорхукмнтв3")
+
+
 def _num(x):
-    return re.sub(r"[\s.№#]+", "", str(x or "")).lower().rstrip("-/")
+    return re.sub(r"[\s.№#]+", "", str(x or "")).lower().translate(_LOOKALIKE).rstrip("-/")
 
 
 def _workdays(start, end):
@@ -202,14 +237,14 @@ def doc_audit(pays, acts, addendums, changes):
     for p in pays:
         if not p.get("sure"):
             continue
-        for kind, rx in (("addendum", ADDENDUM_REF), ("act", ACT_REF)):
-            for m in rx.finditer(p.get("purpose") or ""):
-                d = _ref_date(m)
-                if not d or not _num(m.group(1)):
-                    continue
-                r = refs.setdefault((kind, _num(m.group(1))), {"kind": kind, "number": m.group(1), "date": d, "pays": []})
-                if p["id"] not in [x["id"] for x in r["pays"]]:
-                    r["pays"].append({"id": p["id"], "date": p["date"], "amount": p["amount"]})
+        found = [("addendum", m.group(1), _ref_date(m)) for m in ADDENDUM_REF.finditer(p.get("purpose") or "")]
+        found += [("act", n, d) for n, d in act_refs(p.get("purpose"))]
+        for kind, number, d in found:
+            if not d or not _num(number):
+                continue
+            r = refs.setdefault((kind, _num(number)), {"kind": kind, "number": number, "date": d, "pays": []})
+            if p["id"] not in [x["id"] for x in r["pays"]]:
+                r["pays"].append({"id": p["id"], "date": p["date"], "amount": p["amount"]})
     registered = {"act": {_num(a.get("number")): a for a in acts}, "addendum": {_num(a.get("number")): a for a in addendums}}
     for (kind, num), r in sorted(refs.items(), key=lambda kv: (kv[1]["date"], kv[0])):
         first_pay = min(x["date"] for x in r["pays"])
@@ -346,17 +381,35 @@ def _vat(text):
         return None
 
 
+# A payment of the VAT alone, named so: "Співфін. (ПДВ)", "ПДВ за актом", "Спiв.СДБМБ (ПДВ)".
+VAT_MARK = re.compile(r"\(\s*пдв\s*\)|пдв\s+за(?![а-яіїєґ])|сп[іi]в\.?\s*сдбмб", re.I)
+
+
+def _vat_only(p, by_num):
+    """The buyer paid only the VAT: the purpose says so, gives the VAT as the whole sum, or the
+    payment is 1/6 of the acts it names (20% VAT inside a price that includes it)."""
+    text = p.get("purpose") or ""
+    v = _vat(text)
+    if v is not None and abs(p["amount"] - v) <= 1.0:
+        return True
+    if VAT_MARK.search(text):
+        return True
+    named = [by_num[n] for n in {_num(n) for n, _ in act_refs(text)} if n in by_num]
+    total = sum(a.get("amount") or 0 for a in named)
+    return bool(total) and abs(p["amount"] * 6 - total) <= max(6.0, total * 0.002)
+
+
 def eib_from_vat(pays, acts):
     """{"local", "eib", "total", "acts": [{number, date, amount, local, eib}]} or None when no
     payment of the buyer is a VAT-only one (then nothing says the loan paid)."""
     sure = [p for p in pays if p.get("sure")]
-    vat_only = [p for p in sure if (lambda v: v is not None and abs(p["amount"] - v) <= 1.0)(_vat(p.get("purpose")))]
+    by_num = {_num(a.get("number")): a for a in acts}
+    vat_only = [p for p in sure if _vat_only(p, by_num)]
     if not vat_only:
         return None
-    by_num = {_num(a.get("number")): a for a in acts}
     local_by_act, vat_acts, loose = {}, set(), 0.0
     for p in sure:
-        nums = [_num(m.group(1)) for m in ACT_REF.finditer(p.get("purpose") or "")]
+        nums = [_num(n) for n, _ in act_refs(p.get("purpose"))]
         known = [n for n in nums if n in by_num]
         if known:
             local_by_act[known[0]] = local_by_act.get(known[0], 0.0) + p["amount"]

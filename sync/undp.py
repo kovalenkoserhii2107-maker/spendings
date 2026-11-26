@@ -97,7 +97,10 @@ def price(t, c, tc):
     now = ((c or {}).get("value") or {}).get("amount")
     # A bid without VAT and a contract with it are not a price rise: compare like with like.
     won_cmp = round(won * 1.2, 2) if won and award.get("vat") is False and ((c or {}).get("value") or {}).get("vat") else won
-    first = (tc or {}).get("value0") or won_cmp
+    # The Treasury record of an EIB-financed contract may hold only the local co-financing for the
+    # year (564 480 of a 110 million contract): then it is no starting price.
+    tv0 = (tc or {}).get("value0")
+    first = won_cmp if tv0 and won_cmp and tv0 < won_cmp * 0.5 else (tv0 or won_cmp)
     change = round(now - first, 2) if now is not None and first else None
     return {k: v for k, v in {
         "expected": expected, "won": won, "first": first, "now": now, "change": change,
@@ -241,17 +244,22 @@ def subvention(t):
             sc = _match(t.get("title"), p["name"])
             if sc > score:
                 best, score = p, sc
-    hit = best if score >= 0.8 else None
+    # The region's stem: "Одеська область" → "Одеськ", which "Одеської" and "Одеська" both hold.
+    region = re.sub(r"\s*область$", "", (t.get("region") or "").strip())
+    region = region[:-1] if len(region) > 4 and region[-1] in "аяі" else region
+    hit = best if score >= 0.8 and (not region or not best.get("region") or region in best["region"]) else None
     if not hit:
-        buyer = [w for w in _words(t.get("buyer_name")) if len(w) >= 5 and not w.startswith(_SKIP)]
-        region = (t.get("region") or "")[:-2]
+        # The community's own name: "Одеського району Одеської області" only says where it is.
+        own = re.sub(r"\S+\s+(?:район\w*|област\w*)", " ", t.get("buyer_name") or "", flags=re.I)
+        buyer = [w for w in _words(own) if len(w) >= 5 and not w.startswith(_SKIP)]
         oblast = re.search(r"обласн\w* (?:державн|військов)|ОДА|облдержадмін", t.get("buyer_name") or "", re.I)
-        for p in projects:
-            if p.get("name"):
+        lines = [p for p in projects if not p.get("name")]
+        # A regional administration (or its department) is the oblast budget; nobody else is.
+        if oblast and region:
+            hit = next((p for p in lines if p["budget"].startswith("Обласний бюджет") and region in p["budget"]), None)
+        for p in ([] if hit or oblast else lines):
+            if p["budget"].startswith("Обласний бюджет"):
                 continue
-            if oblast and p["budget"].startswith("Обласний бюджет") and region and region in p["budget"]:
-                hit = p
-                break
             if region and region not in (p.get("region") or "") and region not in p["budget"]:
                 continue
             bw = [w for w in _words(p["budget"]) if len(w) >= 5 and not w.startswith(_SKIP)]
@@ -441,16 +449,25 @@ TERMINATE = re.compile(r"розірв|припин\w* (дію |дії )?дого
 OVERPAID = re.compile(r"зайв\w* (сплач|оплач|перерах)|переплат|завищен\w* (варт|обсяг)|надмірн\w* сплач", re.I)
 
 
-def sasu_severe(m, today):
-    """Why a State Audit violation rates 3, or None: not removed by its deadline, the contract to be
-    ended, money overpaid."""
+NOT_REMOVED = ("none", "partly", "not_eliminated")
+
+
+def sasu_severe(m, today, contract_status=None):
+    """Why a State Audit violation rates 3, or None (then 2): the service found it not removed (or
+    the deadline passed with no report), the contract to be ended while it is not, money overpaid.
+    A conclusion appealed in court, or a contract already ended as it demanded, rates 2."""
+    res = (m.get("resolution") or {}).get("result")
+    if res in NOT_REMOVED:
+        return "sasu_not_removed"
+    if m.get("appeal"):
+        return None
     text = " ".join([m.get("obligations") or "", m.get("conclusion") or "", m.get("findings") or ""])
-    if TERMINATE.search(m.get("obligations") or ""):
+    if TERMINATE.search(m.get("obligations") or "") and contract_status != "terminated":
         return "sasu_terminate"
-    if OVERPAID.search(text):
+    if OVERPAID.search(text) and res != "completely":
         return "sasu_overpaid"
     due = m.get("elimination_due")
-    if due and due < (today or "") and not m.get("elimination_date"):
+    if due and due < (today or "") and not m.get("elimination_date") and not res:
         return "sasu_not_removed"
     return None
 
@@ -545,11 +562,14 @@ def matrix(c, signals, totals, price_, subv, record, audit, comp, advance, contr
     # or the audit found money overpaid.
     if audit is not None:
         bad = [m for m in audit if m.get("violation")]
-        severe = [m for m in bad if sasu_severe(m, today)]
+        cst = (c or {}).get("status")
+        severe = [m for m in bad if sasu_severe(m, today, cst)]
         if severe:
-            put("r7", 3, *sorted({sasu_severe(m, today) for m in severe}))
+            put("r7", 3, *sorted({sasu_severe(m, today, cst) for m in severe}))
         elif bad:
-            put("r7", 2, "sasu_violation_fixed" if all(m.get("elimination_date") for m in bad) else "sasu_violation")
+            put("r7", 2, "sasu_appealed" if any(m.get("appeal") for m in bad)
+                else "sasu_violation_fixed" if all(m.get("elimination_date") or (m.get("resolution") or {}).get("result") == "completely" for m in bad)
+                else "sasu_violation")
         elif any(m.get("status") in ("draft", "active") for m in audit):
             put("r7", 2, "sasu_active")
         else:

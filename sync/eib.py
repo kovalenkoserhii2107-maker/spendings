@@ -21,9 +21,14 @@ TEXT_QUERIES = ("Європейський інвестиційний банк", 
                 "Надзвичайна кредитна програма для відновлення України", "НКПВУ", "ПВУ", "UPBEE",
                 "Енергоефективність громадських будівель в Україні")
 MENTION = re.compile(r"(ЄІБ|ЕІБ|\bEIB\b|європейськ\w*\s+інвестиційн\w*\s+банк|european\s+investment\s+bank)", re.I)
-PROGRAM = re.compile(r"(програм\w*\s+з\s+відновлення\s+україни|надзвичайн\w*\s+кредитн\w*\s+програм\w*\s+для\s+відновлення"
+# The programmes, their EIB finance contracts (FI No. 83.839, 84.165, 91.504, 97.043) and the laws that
+# ratify them (No. 1645-IX, 3905-IX, 4611-IX, typed with a Latin or a Cyrillic "IX").
+PROGRAM = re.compile(r"(програм\w*\s+(?:з\s+)?відновлення\s+україни|надзвичайн\w*\s+кредитн\w*\s+програм\w*\s+для\s+відновлення"
                      r"|НКПВУ|UPBEE|енергоефективн\w*\s+громадськ\w*\s+будів\w*\s+в\s+україні"
-                     r"|\bFI\s*№?\s*(83[.,]839|84[.,]165|91[.,]504)|\b(83\.839|84\.165|91\.504)\b)", re.I)
+                     r"|\bFI\s*№?\s*(83[.,]839|84[.,]165|91[.,]504|97[.,]043)|\b(83\.839|84\.165|91\.504|97\.043)\b"
+                     r"|(?<!\d)(1645|3905|4611)\s*-\s*[IІ][XХ](?![A-Za-zА-Яа-я]))", re.I)
+# The budget programme of the EIB recovery projects in a procurement plan (КПКВК ...7367, 3121690).
+PLAN_PROGRAM = re.compile(r"(?<!\d)(?:\d{3})?7367(?!\d)|(?<!\d)3121690(?!\d)")
 # "ПВУ" is also a ventilation unit: it counts only next to the programme's words.
 PVU = re.compile(r"\bПВУ\b")
 PVU_CONTEXT = re.compile(r"(відновлен|ЄІБ|ЕІБ|\bEIB\b)", re.I)
@@ -34,9 +39,15 @@ def classify(t, funded=False):
     "text" (the bank named in the text) or "" for a compacted procedure."""
     if funded or any(f.get("code") == EIB for f in t.get("funders") or []):
         return "funder"
-    text = " ".join([t.get("title") or "", t.get("rationale") or ""] + [c.get("title") or "" for c in t.get("contracts") or []]
+    plans = t.get("plan_info") or []
+    plan_text = " ".join([p.get("text") or "" for p in plans] + [x.get("text") or "" for p in plans for x in p.get("sources") or []])
+    text = " ".join([t.get("title") or "", t.get("rationale") or "", plan_text] + [c.get("title") or "" for c in t.get("contracts") or []]
                     + [d.get("title") or "" for d in t.get("docs") or []])
     if PROGRAM.search(text) or (PVU.search(text) and PVU_CONTEXT.search(text)):
+        return "program"
+    # A UNDP sub-project code in the contract number or the documents ("OD05A_09"), or the plan's
+    # budget programme of the EIB recovery projects.
+    if prozorro.subproject(t) or any(PLAN_PROGRAM.search(x.get("program") or "") for p in plans for x in p.get("sources") or []):
         return "program"
     if MENTION.search(text):
         return "text"

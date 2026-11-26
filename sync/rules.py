@@ -36,7 +36,8 @@ MIN_DAYS = {"works": 20, "ts": 15, "csc": 15}                    # Manual 8: ten
 SHARE_MAX = {"ts": 1.5, "csc": 2.0}                              # PIG 4.3: % of chapters 1–9 of the estimate
 CSC_FROM_EUR = 3_000_000                                         # PIG 4.3: consulting engineer from €3M
 BID_SECURITY_MAX = 0.5                                           # Manual 5.2: % of the expected value
-STANDSTILL = (5, 15)                                             # Особливості: days after the intent notice
+STANDSTILL = (5, 15)
+STANDSTILL_EU = 10                                             # Особливості: days after the intent notice
 SIMILAR_SHARE = 0.30                                             # model TD: a similar contract ≥30%
 LOAD_SHARE = 0.50                                                # model TD 6.2.4: turnover ≥50% of open contracts
 FINAL_PCT = 95                                                   # PIG 5.8.4: interim payments up to 95%
@@ -57,9 +58,13 @@ EDITIONS = {
                  "load": {"years": 2, "urp3": False}, "bid_security": False, "csc_max": 3.0,
                  "min_days": {"works": 20, "ts": 20, "csc": 20}},
 }
-URP3_TEXT = re.compile(r"(відновлення\s+україни\s*(ІІІ|III|3)(?![\wІ])|\bПВУ\s*(ІІІ|III)(?![\wІ])|3121690|\b7367\b|97\s?043|3905-IX|4611-IX|URP\s*III)", re.I)
+URP3_TEXT = re.compile(r"(відновлення\s+україни\s*(ІІІ|III|3)(?![\wІ])|\bПВУ\s*(ІІІ|III)(?![\wІ])|3121690|\b7367\b|97\s?043"
+                       r"|(?<!\d)(?:3905|4611)\s*-\s*[IІ][XХ](?![A-Za-zА-Яа-я])|URP\s*III)", re.I)
+# The laws that ratify the two tranches of ПВУ ІІІ: No. 3905-IX (A) and No. 4611-IX (B), not any "4611".
+TRANCHE_A = re.compile(r"(?<!\d)3905\s*-\s*[IІ][XХ](?![A-Za-zА-Яа-я])")
+TRANCHE_B = re.compile(r"(?<!\d)4611\s*-\s*[IІ][XХ](?![A-Za-zА-Яа-я])")
 UERP_TEXT = re.compile(r"(надзвичайн\w*\s+кредитн\w*\s+програм|НКПВУ|\bUERP\b|\bERP\b)", re.I)
-URP_TEXT = re.compile(r"(програм\w*\s+з\s+відновлення\s+україни|\bПВУ\b|\bURP\b)", re.I)
+URP_TEXT = re.compile(r"(програм\w*\s+(?:з\s+)?відновлення\s+україни|\bПВУ\b|\bURP\b)", re.I)
 
 ES_PACT = re.compile(r"(екологічн\w*\s+(і|та)\s+соціальн|соціальн\w*\s+(і|та)\s+екологічн|\bE\s*&\s*S\b|environmental\s+and\s+social)", re.I)
 INTEGRITY = re.compile(r"(професійн\w*\s+чесн|доброчесн|integrity|covenant)", re.I)
@@ -90,14 +95,15 @@ def _texts(t):
 def programme(t, subv=None):
     """(programme, tranche): "urp3" | "urp" | "uerp" | None, and "A" | "B" | None for ПВУ ІІІ."""
     text = _texts(t)
-    tranche = "B" if "4611" in text else "A" if "3905" in text else None
+    tranche = "B" if TRANCHE_B.search(text) else "A" if TRANCHE_A.search(text) else None
     if URP3_TEXT.search(text):
         return "urp3", tranche
     if UERP_TEXT.search(text):
         return "uerp", None
     if URP_TEXT.search(text):
         return "urp", None
-    if subv and subv.get("level") == "project":
+    # The CMU distribution names the programme: the project's own line, or its community's budget line.
+    if subv and subv.get("level") in ("project", "budget"):
         return {"URP III": "urp3", "URP": "urp", "UERP": "uerp"}.get(subv.get("programme")), None
     return None, None
 
@@ -295,7 +301,9 @@ def check(t, c=None, related=None, advance=None, acts=None, paid_total=None, leg
         n = _days(a["date"], c["signed"])
         single = (t.get("bids") or 0) <= 1
         complained = any(x.get("of") == "award" for x in t.get("complaints") or [])
-        if n is not None and n < STANDSTILL[0]:
+        # Above the EU thresholds the law asks for 10 days (Art. 33), otherwise 5 (the Особливості).
+        least = STANDSTILL_EU if method == "aboveThresholdEU" else STANDSTILL[0]
+        if n is not None and n < least:
             put("standstill", "check" if single else "bad", "low" if single else "medium", law=True, days=n, award=a["date"], signed=c["signed"], single=single or None)
         elif n is not None and n > STANDSTILL[1] and not complained:
             put("standstill", "check", "low", days=n, award=a["date"], signed=c["signed"], late=True)
@@ -355,7 +363,9 @@ def check(t, c=None, related=None, advance=None, acts=None, paid_total=None, leg
             yrs = round(_days(reg, on_day) / 365.25, 1) if _days(reg, on_day) is not None else None
             if yrs is not None:
                 put("age", "check" if yrs < ed["years"] else "ok", "medium", years=yrs, registered=reg, min=ed["years"])
-        base = expected.get("amount")
+        # In a procedure of several lots the share is of the contract's own lot.
+        base = (t.get("lot_value") or {}).get(lot) if lot else None
+        base = base or expected.get("amount")
         sim = ed["similar"]
         if not sim.get("share"):
             # The earlier editions ask for N similar contracts in so many years, at any price.

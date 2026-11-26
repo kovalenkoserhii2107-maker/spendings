@@ -1436,11 +1436,14 @@ async function refreshSp(r) {
 
 // What of a sub-project goes on control: its signed contracts in force, and procurements
 // still under way that have none yet (they turn into their contract when it is signed).
-function trackPicks(pz) {
+// The works contracts stay on control once finished too: risk 4 (the EIB's payments) is rated for
+// finished sub-projects as well.
+function trackPicks(pz, r) {
   const picks = [];
   for (const t0 of (pz && pz.tenders) || []) {
     if (t0.error || !/^\d{8,10}$/.test(t0.buyer || '')) continue;
-    const active = (t0.contracts || []).filter((c) => c.status === 'active');
+    const works = r ? procRole(r, t0) === 'works' : isWorksTender(t0);
+    const active = (t0.contracts || []).filter((c) => c.status === 'active' || (works && ['terminated', 'complete'].includes(c.status)));
     const signed = (t0.contracts || []).some((c) => c.status === 'active' || c.status === 'terminated');
     for (const c of active) {
       const sup = (c.suppliers || [])[0] || {};
@@ -1469,7 +1472,7 @@ async function trackAll(rows) {
       if (!fresh) {
         try { pz = await refreshSp(r); } catch (e) { failed++; continue; }
       }
-      for (const p of trackPicks(pz)) {
+      for (const p of trackPicks(pz, r)) {
         if (isTracked(p.cid)) { already++; continue; }
         try { await cloud.track(p.cid, p.info); added++; } catch (e) { failed++; console.error('registry track', r.code, p.cid, e); }
       }
@@ -1518,6 +1521,9 @@ function endedPicks() {
     if (!r) continue;  // one's own pick outside the registry stays as it is
     if (!isMine(r)) { out.push(id); continue; }
     if (row.kind === 'tender' && ['unsuccessful', 'cancelled'].includes(row.tender_status)) { out.push(id); continue; }
+    // The works contracts of one's own sub-projects stay, finished or not (risk 4 is rated on them).
+    const t0 = ((r.pz || {}).tenders || []).find((x) => x.tid === row.tid);
+    if (t0 ? procRole(r, t0) === 'works' : worksTids(r).has(row.tid)) continue;
     const end = row.end || row.signed;
     if (['terminated', 'complete'].includes(row.status) && end && addDays(end, KEEP_AFTER_END_D) < today()) out.push(id);
   }
@@ -1542,11 +1548,15 @@ async function autoTrack(force, only) {
         try { pz = await refreshSp(r); } catch (e) { failed++; continue; }
       }
       const off = new Set(((r.work || {}).noTrack) || []);
-      for (const p of trackPicks(pz)) {
+      for (const p of trackPicks(pz, r)) {
         if (isTracked(p.cid) || off.has(p.cid)) continue;
-        // A procurement already followed turns into its contract by itself.
+        // A procurement already followed turns into its first contract by itself; the contracts of
+        // its other lots are taken on control each by itself.
         const t0 = (pz.tenders || []).find((x) => x.tid === p.info.tid);
-        if (!p.cid.startsWith('tn') && t0 && isTracked('tn' + t0.id)) continue;
+        if (!p.cid.startsWith('tn') && t0 && isTracked('tn' + t0.id)) {
+          const follows = (trackedRow('tn' + t0.id) || {}).contract_id;
+          if (!follows || follows === p.cid) continue;
+        }
         try { await cloud.track(p.cid, p.info); added++; } catch (e) { failed++; console.error('auto track', r.code, p.cid, e); }
       }
     }

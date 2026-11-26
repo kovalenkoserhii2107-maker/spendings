@@ -243,5 +243,5 @@ def sync(path, log=print):
         return
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "year": year, "decrees": decrees,
-                   "found": [d for d in found if d.get("auto")], "projects": projects}, f, ensure_ascii=False, separators=(",", ":"))
+                   "found": [d for d in found if d.get("auto")], "projects": projects}, f, ensure_ascii=False, indent=2, sort_keys=True)
     log("Субвенція: джерел %d, проєктів %d" % (len(decrees), len(projects)))

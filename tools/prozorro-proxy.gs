@@ -202,8 +202,12 @@ function tender_(tid) {
   return {
     tender: {
       id: t.id, tid: t.tenderID, title: t.title || '', status: t.status, method: t.procurementMethodType || '',
-      date: day_(t.dateCreated), value: t.value ? { amount: t.value.amount, currency: t.value.currency } : null,
+      // The day from the procedure id (UA-2026-05-06-...) when the record has no dateCreated.
+      date: day_(t.dateCreated) || (/^UA-\d{4}-\d{2}-\d{2}/.test(t.tenderID || '') ? t.tenderID.slice(3, 13) : ''),
+      value: t.value ? { amount: t.value.amount, currency: t.value.currency } : null,
       deadline: day_((t.tenderPeriod || {}).endDate), cpv: cls.id ? cls.id + ' ' + (cls.description || '') : '',
+      // works / services / goods: the procurement's own word on what it buys.
+      category: t.mainProcurementCategory || '',
       buyer: buyer.code, buyer_name: buyer.name,
       funders: (t.funders || []).map(function (f) { return { code: (f.identifier || {}).id || '', name: f.name || '' }; }),
       bids: t.numberOfBids != null ? t.numberOfBids : (t.bids || []).length || null,

@@ -165,6 +165,11 @@ def scan_edr(codes, log=print, path=None):
                     continue
                 a = block.rfind(b"<SUBJECT>", 0, m.start())
                 b = block.find(b"</SUBJECT>", m.end())
+                # The subject's own code comes first; a later one is a founder's or a predecessor's,
+                # and that company is not the one asked for.
+                own = re.search(rb"<EDRPOU>(\d{8})</EDRPOU>", block[a:b])
+                if not own or own.group(1) != m.group(1):
+                    continue
                 rec = parse_subject(block[a:b].decode("cp1251", "ignore"))
                 code = m.group(1).decode()
                 old = found.get(code)
@@ -193,12 +198,21 @@ def scan_sanctions(codes, log=print):
     return hits
 
 
-def scan_amcu(codes, log=print):
+def scan_amcu(codes, log=print, path=None):
+    """AMCU decisions on bid rigging (Art. 50(4) of the competition law) against the codes: from
+    data.gov.ua, or from a copy of the register's XLSX downloaded by hand (`path`)."""
+    if path:
+        with open(path, "rb") as f:
+            return parse_amcu(f.read(), codes)
     with _open(AMCU_PACKAGE, timeout=60) as res:
         pkg = json.load(res)["result"]
     xlsx = sorted((r for r in pkg["resources"] if (r.get("format") or "").upper() == "XLSX"), key=lambda r: r.get("created") or "")[-1]["url"]
     with _open(xlsx) as res:
-        z = zipfile.ZipFile(io.BytesIO(res.read()))
+        return parse_amcu(res.read(), codes)
+
+
+def parse_amcu(data, codes):
+    z = zipfile.ZipFile(io.BytesIO(data))
     ss = [html.unescape(re.sub(r"<[^>]+>", "", x)) for x in re.findall(r"<si>(.*?)</si>", z.read("xl/sharedStrings.xml").decode("utf-8"), re.S)]
     hits = {}
     for row in re.findall(r"<row[^>]*>(.*?)</row>", z.read("xl/worksheets/sheet1.xml").decode("utf-8"), re.S):
@@ -227,7 +241,10 @@ def flags(rec, today, signed=None):
             out.append(("bankruptcy", "high"))
         elif "припинення" in st or e.get("terminating"):
             out.append(("terminating", "high"))
-        if e.get("ubo_absent"):
+        # Bodies of state power and local self-government have no beneficial owner by law.
+        public = re.search(r"орган\w*\s+(?:державн|місцев)|самоврядуван|відповідно\s+до\s+закону|державн\w+\s+(?:установ|організац)",
+                           " ".join([e.get("ubo_absent") or "", e.get("opf") or ""]), re.I)
+        if e.get("ubo_absent") and not public:
             out.append(("no_ubo", "medium"))
         if set(e.get("citizenship") or []) & {"Російська Федерація", "Республіка Білорусь", "Білорусь"}:
             out.append(("ru_owner", "high"))
@@ -253,10 +270,12 @@ def load(data_dir):
 
 def sync(codes, data_dir, log=print):
     """Refresh what is due: the ЄДР weekly (or the next day for new codes), sanctions daily, AMCU weekly."""
-    codes = {c for c in codes if c and re.fullmatch(r"\d{8}", c)}
+    # Legal entities (8 digits) are in the ЄДР dump; sole traders (10) only in sanctions and AMCU.
+    every = {c for c in codes if c and re.fullmatch(r"\d{8}|\d{10}", c)}
+    codes = {c for c in every if len(c) == 8}
     path = os.path.join(data_dir, "legal.json")
     old = load(data_dir)
-    items = {c: dict(v) for c, v in (old.get("items") or {}).items() if c in codes}
+    items = {c: dict(v) for c, v in (old.get("items") or {}).items() if c in every}
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     ago = lambda key, delta: (old.get(key) or "") < time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - delta.total_seconds()))
     new = {c for c in codes if "edr" not in items.get(c, {}) and "edr_missing" not in items.get(c, {})}
@@ -296,24 +315,36 @@ def sync(codes, data_dir, log=print):
         if mac["at"] > (out.get("edr_at") or ""):
             out["edr_at"] = mac["at"]
         log("  ЄДР з Mac (%s): узято %d" % (mac["at"], took))
-    if codes and (ago("sanctions_at", DAY) or new):
+    if every and (ago("sanctions_at", DAY) or new):
         try:
-            hits = scan_sanctions(codes, log)
-            for c in codes:
+            hits = scan_sanctions(every, log)
+            for c in every:
                 items.setdefault(c, {})["sanctions"] = hits.get(c) or []
             out["sanctions_at"] = now
         except Exception as e:  # noqa: BLE001
             log("  ! санкції: %s" % e)
-    if codes and (ago("amcu_at", EDR_EVERY) or new) and ago("amcu_tried", DAY):
+    if every and (ago("amcu_at", EDR_EVERY) or new) and ago("amcu_tried", DAY):
         out["amcu_tried"] = now
         try:
-            hits = scan_amcu(codes, log)
-            for c in codes:
+            hits = scan_amcu(every, log)
+            for c in every:
                 items.setdefault(c, {})["amcu"] = hits.get(c) or []
             out["amcu_at"] = now
         except Exception as e:  # noqa: BLE001
             log("  ! АМКУ: %s" % e)
-    for c in codes:
+    # The AMCU list as the Mac's daily run read it (data/amcu.json), where it is newer than ours.
+    try:
+        with open(os.path.join(data_dir, "amcu.json"), encoding="utf-8") as f:
+            mac_amcu = json.load(f)
+    except (OSError, ValueError):
+        mac_amcu = None
+    if mac_amcu and mac_amcu.get("at") and mac_amcu["at"] > (out.get("amcu_at") or ""):
+        covered = set(mac_amcu.get("codes") or [])
+        for c in every & covered:
+            items.setdefault(c, {})["amcu"] = (mac_amcu.get("items") or {}).get(c) or []
+        out["amcu_at"] = mac_amcu["at"]
+        log("  АМКУ з Mac (%s): перевірено %d" % (mac_amcu["at"], len(every & covered)))
+    for c in every:
         rec = items.get(c)
         if rec:
             rec["flags"] = [{"kind": k, "level": lv} for k, lv in flags(rec, time.strftime("%Y-%m-%d"))]

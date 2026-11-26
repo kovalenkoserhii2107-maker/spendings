@@ -283,7 +283,8 @@ def _dream(t):
 
 # EIB sub-project code: region letters, object number (+ letter), contract number, as in
 # "OD08_03", "ZK04A_01"; found in contract numbers, titles and file names.
-SUBPROJECT = re.compile(r"(?<![A-Z0-9])([A-Z]{2}\d{2}[A-Z]?)_(\d{2})(?![0-9])")
+# "OD08_03", "ZP2A_10", "OD06A-01" (a hyphen for the underscore), "OD04_01-A" (a part of the sub-project).
+SUBPROJECT = re.compile(r"(?<![A-Z0-9])([A-Z]{2}\d{1,2}[A-Z]?)[_-](\d{2})(?:-[A-Z](?![A-Z]))?(?![0-9])")
 _TO_LATIN = str.maketrans("АВСЕНІКМОРТХ", "ABCEHIKMOPTX")
 
 
@@ -405,6 +406,9 @@ def _subcontracts(c, t):
 def compact_contract(c, lot, t=None):
     changes = []
     for ch in c.get("changes") or []:
+        # A change still pending or cancelled never took effect: only the signed ones count.
+        if ch.get("status") and ch.get("status") != "active":
+            continue
         changes.append({k: v for k, v in {
             "date": _day(ch.get("dateSigned") or ch.get("date")),
             "status": ch.get("status"),

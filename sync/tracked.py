@@ -87,6 +87,19 @@ def read_pub():
                                                    "date": str(t.get("date") or "")[:10], "owners": set(), "viewers": set()})
                     e["owners"].add(h)
                     e["viewers"].add(h)
+                    # What the analyst's portfolio knows of it: the UNDP sub-project, its EIB programme,
+                    # what the procurement buys, and the loan's part paid by Mindev's register.
+                    if re.match(r"^[A-Z]{2}\d{1,2}[A-Z]?_\d{2}$", str(t.get("subp") or "")):
+                        e["subp"] = t["subp"]
+                    if str(t.get("prog") or "") in ("urp", "urp3", "uerp"):
+                        e["prog"] = t["prog"]
+                    if str(t.get("role") or "") in ("works", "ts", "csc", "author", "design", "other"):
+                        e["role"] = t["role"]
+                    try:
+                        if t.get("eib_paid") is not None and 0 <= float(t["eib_paid"]) < 1e11:
+                            e["eib_paid"] = round(float(t["eib_paid"]), 2)
+                    except (TypeError, ValueError):
+                        pass
             for sh in f.get("shares") or []:
                 if KEY_RE.match(str((sh or {}).get("cid") or "")) and HASH_RE.match(str(sh.get("to") or "")):
                     shares.append((h, sh["cid"], sh["to"]))
@@ -127,6 +140,29 @@ def _names_contract(tx, number, signed):
     return False
 
 
+def _classify(details, contract_number, day, tid, number, signed, late_limit, single):
+    """Whose payment this is: "sure" (ours), "maybe" (between the same parties during the
+    contract, naming no other one) or None (not ours).
+
+    The Treasury's contractNumber is often the Prozorro procedure id: another procedure's id
+    rules the payment out, ours makes it ours when the procedure has one contract with this
+    supplier (or the purpose names this contract's number)."""
+    cn = analysis.norm_tid(contract_number)
+    named = _names_contract({"payment_details": details}, number, signed)
+    if cn and tid:
+        if cn != analysis.norm_tid(tid):
+            return None
+        if single or named:
+            return "sure"
+    if named:
+        return "sure"
+    if analysis.parse_contract_refs(details):
+        return None  # names some other contract
+    if (signed and day < signed) or (late_limit and day > late_limit):
+        return None  # outside the contract's time: not ours
+    return "maybe"
+
+
 def fetch_payments(buyer, supplier_codes, start, end):
     """Treasury payments from the buyer in [start, end], narrowed to one supplier
     when its code is public (a legal entity)."""
@@ -153,13 +189,17 @@ def _add_days(day, n, kind):
     return day + timedelta(days=n)
 
 
-def schedule(value, signed, milestones, acts, today):
+def schedule(value, signed, milestones, acts, today, lot=None):
     """Payment stages with the amount each one makes due and, where the event date
-    is known, the due date. Post-payment after delivery is due per Treasury act."""
+    is known, the due date. Post-payment after delivery is due per Treasury act.
+
+    Only the contract's own lot counts in a procedure of several. An advance is the buyer's
+    option (it is paid against an invoice and a guarantee), so where the rest is paid by acts it
+    is shown with its term but never counted as a debt."""
     stages, due_now = [], 0.0
-    for m in milestones:
-        if m.get("type") != "financing":
-            continue
+    fin = [m for m in milestones if m.get("type") == "financing" and (not lot or not m.get("lot") or m.get("lot") == lot)]
+    by_acts = any(m.get("code") == "postpayment" for m in fin)
+    for m in fin:
         share = (m.get("pct") or 0) / 100.0
         amount = round(value * share, 2)
         stage = {"code": m.get("code"), "event": m.get("event"), "pct": m.get("pct"), "days": m.get("days"),
@@ -177,6 +217,9 @@ def schedule(value, signed, milestones, acts, today):
                 if due <= today:
                     stage["due_now"] += round((a.get("amount") or 0) * share, 2)
             stage["due_now"] = round(min(stage["due_now"], amount), 2)
+        if m.get("code") == "prepayment" and by_acts:
+            stage["optional"] = True
+            stage["due_now"] = 0.0
         due_now += stage["due_now"]
         stages.append(stage)
     return stages, round(due_now, 2)
@@ -329,11 +372,13 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
         if not signed:
             return sync_tender(req, old, log, tender)
         contract = signed[0]
+        pz_contracts = tender.get("contracts") or []
         tender["other_contracts"] = [{k: c.get(k) for k in ("id", "number", "status", "signed", "value", "suppliers")}
                                      for c in tender.get("contracts") or [] if c.get("id") != contract.get("id")]
         tender.pop("contracts", None)
     elif treasury_only:
         tender_id, (tender, contract, tc_known) = None, _treasury_only(req, old, treasury_by_org, log)
+        pz_contracts = []
     else:
         tender_id = (old or {}).get("tender_id") or (tenders_by_org.get(req["org"], {}).get(req["tid"]) or {}).get("id")
         if not tender_id:
@@ -342,6 +387,7 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
         contract = next((c for c in tender.get("contracts") or [] if c.get("id") == key), None)
         if not contract:
             raise prozorro.ProzorroError("договору %s немає в закупівлі %s" % (key, req["tid"]))
+        pz_contracts = tender.get("contracts") or []
         tender.pop("contracts", None)
 
     buyer = tender.get("buyer") or ""
@@ -360,19 +406,28 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
         last = None  # earlier snapshots kept no full payment record: read the whole term once
     start = (date.fromisoformat(last) - timedelta(days=OVERLAP_DAYS)) if last else (
         date.fromisoformat(signed) - timedelta(days=30) if signed else today - timedelta(days=365))
+    # One contract of this supplier in the procedure: the procedure id in a payment is enough.
+    single = sum(1 for c in pz_contracts if c.get("status") != "cancelled"
+                 and ({x.get("code") for x in c.get("suppliers") or []} & codes or not codes)) <= 1
+    whose = lambda details, cn, day: _classify(details, cn, day, req.get("tid") or "", contract.get("number"), signed, late_limit, single)
+    # The payments kept from earlier runs are judged again by today's rules.
+    for pid, p in list(payments.items()):
+        verdict = whose(p.get("purpose") or "", (p.get("tx") or {}).get("contractNumber"), p.get("date") or "")
+        if verdict is None:
+            del payments[pid]
+        else:
+            p["sure"] = verdict == "sure"
     for tx in fetch_payments(buyer, codes, start, today + timedelta(days=1)):
         if not _is_supplier(tx, codes, surnames):
             continue
         tid = str(tx.get("id") or tx.get("doc_vob") or "")
         if not tid:
             continue
-        sure = _names_contract(tx, contract.get("number"), signed)
-        if not sure:
-            day = (tx.get("trans_date") or "")[:10]
-            if analysis.parse_contract_refs(tx.get("payment_details")):
-                continue  # names some other contract
-            if (signed and day < signed) or (late_limit and day > late_limit):
-                continue  # outside the contract's time: not ours
+        verdict = whose(tx.get("payment_details") or "", tx.get("contractNumber"), (tx.get("trans_date") or "")[:10])
+        if verdict is None:
+            payments.pop(tid, None)
+            continue
+        sure = verdict == "sure"
         payments[tid] = {"id": tid, "date": (tx.get("trans_date") or "")[:10], "amount": float(tx.get("amount") or 0),
                          "purpose": tx.get("payment_details") or "", "kekv": tx.get("kekv") or "", "sure": sure,
                          "tx": {k: tx.get(k) for k in TX_FIELDS if tx.get(k) not in (None, "")}}
@@ -398,7 +453,7 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     paid = round(sum(p["amount"] for p in pays if p["sure"]), 2)
     maybe = round(sum(p["amount"] for p in pays if not p["sure"]), 2)
     acts_sum = round(sum(a.get("amount") or 0 for a in acts), 2)
-    stages, due_now = schedule(value, signed, tender.get("milestones") or [], acts, today.isoformat())
+    stages, due_now = schedule(value, signed, tender.get("milestones") or [], acts, today.isoformat(), contract.get("lot"))
     overdue = round(max(0.0, due_now - paid), 2)
 
     # Flags and signals: the Treasury checks with this contract's own payments, then the
@@ -421,17 +476,25 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
         log("  ! Держаудитслужба: %s" % e)
         audit = (old or {}).get("sasu") or []
     eib_kind = eib.classify(dict(tender, contracts=[contract]))
+    # A contract of a UNDP sub-project of an EIB programme is EIB-financed, whatever its texts say.
+    if not eib_kind and (req.get("prog") or req.get("subp") or req.get("eib_paid") is not None):
+        eib_kind = "program"
     # EIB-financed: payments may also go by other routes than the buyer's Treasury account, so
     # what looks overdue is shown as "not seen" rather than as a debt.
     partial = bool(eib_kind)
     # The loan's part, read back from the VAT the buyer paid on it (acts less the buyer's payments).
-    eib_paid = compliance.eib_from_vat(pays, acts) if tc is not None else None
+    eib_paid = compliance.eib_from_vat(pays, acts)
+    # Mindev's register says what the loan paid: it wins over the estimate from the VAT.
+    if req.get("eib_paid") is not None:
+        local = round(sum(p["amount"] for p in pays if p.get("sure")), 2)
+        eib_paid = {"local": local, "eib": req["eib_paid"], "total": round(local + req["eib_paid"], 2), "acts": [],
+                    "estimated": 0.0, "source": "mindev"}
     if eib_paid:
         overdue = round(max(0.0, due_now - eib_paid["total"]), 2)
     # Payments against the portal's acts and addendums; the advance and its closing by acts.
     pay_sig, pay_notes, doc_audit, advance = compliance.payment_checks(
         pays, acts, addendums, contract.get("changes"), value, today.isoformat(), contract, acts_known=tc is not None,
-        docs=compliance._docs(tender, contract))
+        docs=list(contract.get("docs") or []))
     # Works: the sub-project code and the buyer's other procurements for the same object
     # (design, technical and author's supervision, expert review).
     works = (tender.get("cpv") or "").startswith("45") or tender.get("category") == "works"
@@ -519,6 +582,26 @@ def sync_tender(req, old, log=print, tender=None):
     except prozorro.ProzorroError as e:
         log("  ! Держаудитслужба: %s" % e)
         audit = (old or {}).get("sasu") or []
+    # As for a contract: the sub-project code, the procurement plan, the buyer's other procurements
+    # for the same object (supervision, design) — known before any contract is signed.
+    tender["subproject"] = prozorro.subproject(tender)
+    plans = []
+    for pid in (tender.get("plans") or [])[:3]:
+        try:
+            plans.append(prozorro.load_plan(pid))
+        except prozorro.ProzorroError as e:
+            log("  ! план %s: %s" % (pid, e))
+            plans = ((old or {}).get("tender") or {}).get("plan_info") or []
+            break
+    if plans:
+        tender["plan_info"] = plans
+    related = (old or {}).get("related")
+    if (tender.get("cpv") or "").startswith("45") or tender.get("category") == "works":
+        try:
+            related = prozorro.related(tender.get("buyer") or req["org"], tender.get("title"), tender.get("tid") or req["tid"])
+            related = prozorro.related_suppliers(related, (old or {}).get("related"), log)
+        except prozorro.ProzorroError as e:
+            log("  ! пов'язані закупівлі: %s" % e)
     eib_kind = eib.classify(tender)
     signals, checklist = [], []
     for c in tender.get("contracts") or [{}]:
@@ -537,10 +620,11 @@ def sync_tender(req, old, log=print, tender=None):
         "treasury": None,
         "totals": {"value": value, "paid": 0, "maybe": 0, "left": value, "due_now": 0, "overdue": 0},
         "stages": [], "flags": [x["type"] for x in signals], "signals": signals, "checklist": checklist,
-        "eib": eib_kind, "eib_tx": False, "sasu": audit,
+        "eib": eib_kind, "eib_tx": False, "sasu": audit, "related": related,
         "payments_checked": spending.today().isoformat(),
     }
-    snap["undp"] = undp.card(tender, None, None, signals, snap["totals"], 0, 0, audit, None, key, spending.today().isoformat(), contract_stage=False)
+    snap["undp"] = undp.card(tender, None, None, signals, snap["totals"], 0, 0, audit, None, key, spending.today().isoformat(),
+                             contract_stage=False, related=related)
     events = _diff(old, snap)
     if old:
         events += undp.events(old.get("undp"), snap["undp"], _event) + undp.sasu_events(old.get("sasu"), audit, _event)

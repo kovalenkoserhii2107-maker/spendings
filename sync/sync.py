@@ -38,6 +38,8 @@ import prozorro  # noqa: E402
 import tracked  # noqa: E402
 import spending  # noqa: E402
 import subvention  # noqa: E402
+import rules  # noqa: E402
+import undp  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.environ.get("DATA_DIR") or os.path.join(ROOT, "data")
@@ -322,6 +324,47 @@ def sync_prozorro(edrpou, org_dir, org_state, report, role="buyer"):
 TRACKED_BUDGET_S = {"full": 20 * 60, "tracked": 30 * 60}  # the full run has the organisations too (120 min in all)
 
 
+SUBV_MAC_DAYS = 3  # the Mac's daily copy of the subvention orders counts as fresh this long
+
+
+def sync_subvention():
+    """The CMU orders spreading the EIB programmes' subvention. The Mac's daily run keeps
+    data/subvention.json (GitHub is turned away by data.rada.gov.ua): while its copy is fresh this
+    run leaves the file alone, so the two never write it at once."""
+    path = os.path.join(DATA, "subvention.json")
+    at = (read_json(path, {}) or {}).get("generated_at") or ""
+    fresh = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - SUBV_MAC_DAYS * 86400))
+    if at > fresh:
+        print("Субвенція: копія з Mac від %s свіжа — не чіпаю" % at, flush=True)
+        return
+    try:
+        subvention.sync(path, log=lambda m: print(m, flush=True))
+    except Exception:
+        traceback.print_exc()
+
+
+def _reference_codes(olds):
+    """Contractors, buyers, the other bidders and the supervisors of the snapshots at hand."""
+    codes = set()
+    for snap in olds.values():
+        if not snap:
+            continue
+        codes |= {((snap.get("contract") or {}).get("suppliers") or [{}])[0].get("code"), snap.get("org")}
+        codes |= set((snap.get("tender") or {}).get("bidder_codes") or [])
+        codes |= {(x.get("supplier") or {}).get("code") for x in snap.get("related") or [] if x.get("supplier")}
+    return {c for c in codes if c}
+
+
+def _reset_caches():
+    """The modules keep what they read from data/ for the run: read it again after a refresh."""
+    undp._PEERS[0] = undp._SUBV[0] = undp._OTHERS[0] = undp._LEGAL[0] = None
+    rules._EIB[0] = None
+
+
+FAILED_FILE = os.path.join(TRACKED_DIR, "failed.json")
+FAILED_RETRY_S = 6 * 3600  # a new pick that failed is tried again after 6 hours, not every 10 minutes
+
+
 def sync_tracked(mode="full"):
     """Re-read the contracts on control; returns the summary rows (or None when the list in
     Firestore could not be read, so the old files stay).
@@ -336,6 +379,20 @@ def sync_tracked(mode="full"):
         return None
     started, budget = time.time(), TRACKED_BUDGET_S.get(mode, TRACKED_BUDGET_S["full"])
     olds = {req["key"]: read_json(os.path.join(TRACKED_DIR, req["key"] + ".json"), None) for req in wanted}
+    if mode == "full":
+        # Profiles and legal status of the companies already known, before the snapshots use them.
+        known = _reference_codes(olds)
+        try:
+            contractor.sync([c for c in known if len(c) in (8, 10)], DATA, spending.today().isoformat(),
+                            budget_s=180, log=lambda m: print(m, flush=True))
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+        try:
+            legal.sync(known, DATA, log=lambda m: print(m, flush=True))
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+    _reset_caches()
+    failed = read_json(FAILED_FILE, {})
     wanted.sort(key=lambda r: (olds[r["key"]] is not None, (olds[r["key"]] or {}).get("synced_at") or ""))
     rows, keep, skipped = [], set(), 0
     print("Договори на контролі: %d" % len(wanted), flush=True)
@@ -355,12 +412,14 @@ def sync_tracked(mode="full"):
         except Exception as e:  # keep the last good snapshot and say what failed
             traceback.print_exc()
             if not old:
+                failed[req["key"]] = {"at": now_iso(), "error": str(e)[:300]}
                 continue
             snap = dict(old, error=str(e)[:500], viewers=req.get("viewers") or [], owners=req.get("owners") or [])
             snap.pop("followers", None)
             snap.pop("note", None)
         else:
             snap.pop("error", None)
+            failed.pop(req["key"], None)
             tracked.stamp_signals(snap, old, now_iso())
         snap["synced_at"] = now_iso()
         write_json(path, snap)
@@ -390,6 +449,8 @@ def sync_tracked(mode="full"):
             traceback.print_exc()
     rows.sort(key=lambda r: (r.get("changed_at") or "", r["key"]), reverse=True)
     write_json(os.path.join(TRACKED_DIR, "index.json"), {"generated_at": now_iso(), "items": rows})
+    wanted_keys = {r["key"] for r in wanted}
+    write_json(FAILED_FILE, {k: v for k, v in failed.items() if k in wanted_keys}, pretty=True)
     return rows
 
 
@@ -543,7 +604,10 @@ def main():
         # Contracts put on control that the site has not got yet.
         try:
             done = {r["key"] for r in read_json(os.path.join(TRACKED_DIR, "index.json"), {}).get("items") or []}
-            new_tracked = [r["key"] for r in tracked.requests_from_app() if r["key"] not in done]
+            # A new pick whose first reading failed waits 6 hours, or every check would start a run.
+            wait = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - FAILED_RETRY_S))
+            failed = {k for k, v in read_json(FAILED_FILE, {}).items() if (v.get("at") or "") > wait}
+            new_tracked = [r["key"] for r in tracked.requests_from_app() if r["key"] not in done and r["key"] not in failed]
         except Exception as e:
             print("! договори на контролі недоступні: %s" % e)
             new_tracked = []
@@ -611,7 +675,8 @@ def main():
         new_total += new
         failed += 1 if error else 0
 
-    tracked_rows = sync_tracked("full")
+    # The reference data first, so that the contracts' snapshots are built on today's: the EIB
+    # procedures (prices of similar ones), the CMU subvention, the contractors' profiles, legal status.
     if not SKIP_PROZORRO:
         try:
             found = eib.sync(read_json(EIB_FILE, None), log=lambda m: print(m, flush=True))
@@ -619,11 +684,9 @@ def main():
                 write_json(EIB_FILE, found)
         except Exception:
             traceback.print_exc()
-    # The CMU orders spreading the EIB programmes' subvention, with all their editions.
-    try:
-        subvention.sync(os.path.join(DATA, "subvention.json"), log=lambda m: print(m, flush=True))
-    except Exception:
-        traceback.print_exc()
+    sync_subvention()
+    tracked_rows = sync_tracked("full")
+
     feed.sort(key=lambda i: (i["first_seen_at"], i.get("date") or "", i["ext_id"]), reverse=True)
     runs = state.setdefault("runs", [])
     runs.insert(0, {

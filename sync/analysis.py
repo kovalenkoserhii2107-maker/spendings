@@ -28,13 +28,25 @@ PURCHASE_KEKV = re.compile(r"^(22[1-8]\d|2240|2250|2272|2273|2274|2275|2276|2282
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 PZ_MISMATCH = 0.01  # Prozorro and Treasury prices of one contract may differ by 1%
 # A payment funded through the EIB (its sub-loans and the recovery programmes it finances).
-EIB_TX = re.compile(r"(ЄІБ|ЕІБ|\bEIB\b|НКПВУ|\bПВУ\b|європейськ\w*\s+інвестиційн\w*\s+банк)", re.IGNORECASE)
+# The bank's name is typed with a Latin "I" as often as with a Cyrillic one ("ЄIБ"), and shortened
+# ("Євр.Інвест.Банк").
+EIB_TX = re.compile(r"(Є[ІI]Б|Е[ІI]Б|\bEIB\b|НКПВУ|\bПВУ\b|європейськ\w*\s+інвестиційн\w*\s+банк|євр\.?\s*[іi]нвест\.?\s*банк)", re.IGNORECASE)
 
-# "дог.№127 від 16.06.2026", "договір №23/12-5 від 26.01.26", "дог №51/18 вiд 01.01.2026"
+# How a payment purpose names its contract, as the buyers type it:
+#   "дог.№127 від 16.06.2026", "договір №23/12-5 від 26.01.26", "Договiр№18-19/ЗВвiд19.04.19" (Latin i),
+#   "Д.9-25/П в09.05.25", "Д.45-23/Пв.10.11.23", "Дог188 вiд180924" (DDMMYY run together),
+#   "Дог.№14(02.03.26)", "дог№4/30.05.25", "д4/26.01.26", "дог.№18/OD04A_01_ W вiд14.02.24",
+#   "дог. №112 від 29 травня 2026 року".
+_MONTHS = {"січ": 1, "лют": 2, "берез": 3, "квіт": 4, "трав": 5, "черв": 6, "лип": 7, "серп": 8, "верес": 9, "жовт": 10, "листоп": 11, "груд": 12}
+_CREF_HEAD = r"(?:(?<![а-яіїєґa-z])(?:дог(?:ов[іiо]р[ау]?)?|договор[ау]?)\s*\.?|(?<![а-яіїєґa-z])д\.(?=\s*(?:№|\d))|(?<![а-яіїєґa-z])д(?=\d|№))"
+_CREF_NUM = r"\s*(?:№|N|#)?\s*([0-9A-Za-zА-Яа-яІіЇїЄєҐґ](?:[0-9A-Za-zА-Яа-яІіЇїЄєҐґ/\-_.]|[_/\-]\s(?=[A-Za-zА-Яа-я])){0,40}?)"
 CONTRACT_REF = re.compile(
-    r"(?:дог(?:ов[іо]р[ау]?|\.)?|договор[ау]?)\s*\.?\s*(?:№|N|#)?\s*"
-    r"([0-9A-Za-zА-Яа-яІіЇїЄєҐґ][0-9A-Za-zА-Яа-яІіЇїЄєҐґ/\-_.]*?)\s*\.?\s*"
-    r"(?:від|вiд|вид|от|в[іi]д\.)\s*(\d{1,2})[./](\d{1,2})[./](\d{2,4})",
+    _CREF_HEAD + _CREF_NUM + r"\s*\.?\s*"
+    r"(?:(?:від|вiд|вид|от|в[іi]д\.|в\.?)\s*(\d{1,2})[./](\d{1,2})[./](\d{2,4})"   # від 16.06.2026, в09.05.25
+    r"|(?:від|вiд)\s*(\d{2})(\d{2})(\d{2})(?!\d)"                                     # вiд180924
+    r"|\(\s*(\d{1,2})\.(\d{1,2})\.(\d{2,4})\s*\)"                                     # (02.03.26)
+    r"|/(\d{1,2})\.(\d{1,2})\.(\d{2,4})"                                                 # /30.05.25
+    r"|(?:від|вiд)\s*(\d{1,2})\s+([а-яіїє]+)\s+(\d{4}))",                               # від 29 травня 2026
     re.IGNORECASE,
 )
 
@@ -46,8 +58,20 @@ def _day(value):
         return None
 
 
+# Contract and act numbers are typed by hand: Latin letters that look Cyrillic, and "З" for "3".
+LOOKALIKE = str.maketrans("aceiopxykmhtbз", "асеіорхукмнтв3")
+
+
 def _norm_number(value):
-    return re.sub(r"[\s.№#]+", "", str(value or "")).lower().rstrip("-/")
+    return re.sub(r"[\s.№#]+", "", str(value or "")).lower().translate(LOOKALIKE).rstrip("-/")
+
+
+def norm_tid(value):
+    """A Prozorro id as the Treasury keeps it ("UA-2023-10-18-007682-а" with a Cyrillic "а"),
+    or "" when the value is not one."""
+    v = re.sub(r"\s+", "", str(value or "")).upper().translate(str.maketrans("АСЕІОРХ", "ACEIOPX"))
+    m = re.match(r"^UA-\d{4}-\d{2}-\d{2}-\d{6}-[A-Z]$", v)
+    return v if m else ""
 
 
 def _norm_name(value):
@@ -81,12 +105,19 @@ def parse_contract_refs(details):
     """Contract (number, date) pairs named in a payment purpose."""
     refs = []
     for m in CONTRACT_REF.finditer(details or ""):
-        day, month, year = int(m.group(2)), int(m.group(3)), int(m.group(4))
-        if year < 100:
-            year += 2000
+        g = m.groups()
         try:
-            refs.append((_norm_number(m.group(1)), date(year, month, day)))
-        except ValueError:
+            if g[13]:  # a month by name
+                month = next((n for k, n in _MONTHS.items() if g[14].lower().startswith(k)), None)
+                if not month:
+                    continue
+                day, year = int(g[13]), int(g[15])
+            else:
+                day, month, year = next((int(g[i]), int(g[i + 1]), int(g[i + 2])) for i in (1, 4, 7, 10) if g[i])
+            if year < 100:
+                year += 2000
+            refs.append((_norm_number(g[0]), date(year, month, day)))
+        except (ValueError, StopIteration):
             continue
     return refs
 
