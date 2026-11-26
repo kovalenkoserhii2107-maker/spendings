@@ -5,6 +5,9 @@
 // for the works over the contract price (Prozorro, or the table's).
 function paidShare(r) {
   const tt = r.t || {};
+  // The current works contract's own payments (EIB and local) where the monitor follows it.
+  const pw = primaryWorks(r), row = pw && pw.trackedRow;
+  if (row && row.paid_pct != null) return Math.round(row.paid_pct);
   if (pctOf(tt.paid_pct) != null) return pctOf(tt.paid_pct);
   const m = mainContract(r);
   const value = toNum((m && m.c.value && m.c.value.amount) || tt.contract_value || tt.contract_sum);
@@ -30,8 +33,8 @@ function riskHints(r) {
     add('r1', main.c.changes >= 5 ? 'medium' : 'low', rt('h_changes', { n: main.c.changes, types }));
   }
   // State Audit and AMCU: a procedure that gave no contract counts 12 months and at most 2.
-  // The works procurement only; the others are in infoHints.
-  const works = worksTids(r);
+  // The current works procurement only (primaryWorks); the others, earlier works ones too, are in infoHints.
+  const works = primaryTids(r);
   let upheld = 0;
   for (const t0 of pzT.filter((x) => works.has(x.tid))) {
     const noContract = ['unsuccessful', 'cancelled'].includes(t0.status) && !(t0.contracts || []).some((c) => c.status !== 'cancelled');
@@ -47,7 +50,7 @@ function riskHints(r) {
     if (t0.disqualified) add('rx', 'low', t0.tid + ': ' + rt('h_disq', { n: t0.disqualified }));
   }
   if (upheld >= 2) add('r8', 'high', rt('h_amcuMany', { n: upheld }));
-  const failed = (r.tenders || []).filter((x) => isWorksRow(r, x) && /No Bids|All Rejected|Cancel/i.test(x.status || '')).length
+  const failed = (r.tenders || []).filter((x) => x.pz && works.has(x.pz) && /No Bids|All Rejected|Cancel/i.test(x.status || '')).length
     + pzT.filter((x) => works.has(x.tid) && x.status === 'unsuccessful' && !(r.tenders || []).some((y) => y.pz === x.tid)).length;
   if (failed >= 2) add('rx', 'medium', rt('h_failed', { n: failed }));
   if (/Suspended/i.test(tt.funding || '')) add('r3', 'high', rt('h_funding', { s: tt.funding }));
@@ -74,10 +77,12 @@ function riskHints(r) {
 // shown for information and not rated. Each line says what was bought.
 function infoHints(r) {
   const out = [];
-  const works = worksTids(r);
+  const works = primaryTids(r);
   const add = (role, level, text) => out.push({ role, level, text });
+  // An earlier works procedure is shown apart ("prev"): its findings stayed with its contract.
+  const roleOf = (t0) => { const ro = procRole(r, t0); return ro === 'works' ? 'prev' : ro; };
   for (const t0 of ((r.pz || {}).tenders || []).filter((x) => !works.has(x.tid))) {
-    const role = procRole(r, t0), who = t0.tid;
+    const role = roleOf(t0), who = t0.tid;
     if (t0.sasu && t0.sasu.violation) add(role, 'medium', who + ': ' + rt('h_sasuViol', { ids: (t0.sasu.ids || []).join(', ') }));
     else if (t0.sasu && t0.sasu.active) add(role, 'low', who + ': ' + rt('h_sasuActive'));
     const cp = t0.complaints || {};
@@ -87,7 +92,7 @@ function infoHints(r) {
   for (const x of spTracked(r).filter((y) => !works.has(y.tid))) {
     const mx = x.matrix;
     if (!mx) continue;
-    const role = procRole(r, ((r.pz || {}).tenders || []).find((t0) => t0.tid === x.tid) || { tid: x.tid, title: x.title || '' });
+    const role = roleOf(((r.pz || {}).tenders || []).find((t0) => t0.tid === x.tid) || { tid: x.tid, title: x.title || '' });
     const who = x.number ? '№ ' + x.number : x.tid;
     for (const [k, v] of Object.entries(mx.scores || {})) {
       if (v < 2) continue;
@@ -117,7 +122,7 @@ function suggestedScores(r) {
   const read = !!(r.pz && r.pz.at);
   const known = { r1: !!mainContract(r), r3: !!subvMatch(r) || !!tt.funding, r4: paidShare(r) != null, r5: !!mainContract(r), r7: read, r8: read };
   // A criterion the monitor rated on a contract on control is known even when all is well there.
-  const works = worksTids(r);
+  const works = primaryTids(r);
   for (const x of spTracked(r).filter((y) => works.has(y.tid))) for (const k of Object.keys((x.matrix || {}).scores || {})) known[k] = true;
   const out = {};
   for (const k of SCORE_KEYS) {
@@ -127,13 +132,17 @@ function suggestedScores(r) {
   return out;
 }
 // The rating in use for each criterion: set in the app, else the table's, else the suggestion.
+// A rating the system sees higher than the one in use is a conflict: a 1 from the table must not
+// hide a new 3 (it is marked in the matrix, the list and the header, and "Accept hints" takes it).
 function scoresOf(r) {
-  const tt = r.t || {}, own = r.scores || {}, sug = suggestedScores(r), out = {}, from = {};
+  const tt = r.t || {}, own = r.scores || {}, sug = suggestedScores(r), out = {}, from = {}, conflict = {};
   for (const k of SCORE_KEYS) {
     if (own[k] != null) { out[k] = own[k]; from[k] = 'own'; } else if (tt[k] != null) { out[k] = Number(tt[k]); from[k] = 'table'; } else if (sug[k] != null) { out[k] = sug[k]; from[k] = 'hint'; } else out[k] = null;
+    if (sug[k] != null && out[k] != null && sug[k] > out[k]) conflict[k] = sug[k];
   }
-  return { scores: out, from };
+  return { scores: out, from, suggested: sug, conflict };
 }
+const ratedCount = (sc) => SCORE_KEYS.filter((k) => sc[k] != null).length;
 // Overall Rating exactly as the workbook's column M computes it (blank ratings count as 0).
 function overallRating(sc) {
   if (SCORE_KEYS.every((k) => sc[k] == null)) return null;
@@ -186,10 +195,17 @@ function sameStem(w, x) {
 }
 // The sub-project's line in the CMU order: by its Ukrainian name, or by the proper names and
 // numbers of its English one. The region (from the code) breaks ties.
+// The line of the CMU distribution chosen by hand (the passport's subvKey) wins over the search.
+const subvKeyOf = (p) => [p.nreg, p.name || p.budget].join('|');
 function subvMatch(r) {
   if (!SUBV || !SUBV.projects.length) return null;
-  if (r._subv !== undefined) return r._subv;
+  if (r._subv !== undefined && r._subvFor === (r.t || {}).subvKey) return r._subv;
   const tt = r.t || {};
+  r._subvFor = tt.subvKey;
+  if (tt.subvKey) {
+    const p = SUBV.projects.find((x) => subvKeyOf(x) === tt.subvKey);
+    if (p) { r._subv = p.name ? p : Object.assign({ level: 'budget' }, p); return r._subv; }
+  }
   const region = REGION_OF[(r.code || '').slice(0, 2)];
   // Only the sub-project's own programme, where the file has it.
   const progs = new Set(SUBV.projects.map((p) => p.programme));
@@ -285,7 +301,7 @@ function contractHints(r, spSubvention) {
   // not repeated per contract.
   const SUBV_WHY = /^(subvention_|funding_gap)/;
   const groups = new Map();
-  const works = worksTids(r);
+  const works = primaryTids(r);
   for (const x of spTracked(r).filter((y) => works.has(y.tid))) {
     const mx = x.matrix;
     if (!mx) continue;
@@ -309,9 +325,22 @@ function contractHints(r, spSubvention) {
   return out;
 }
 
+// The analyst's own choice of the subvention line, when the search by name took the wrong one.
+function subvPicker(r) {
+  const region = REGION_OF[(r.code || '').slice(0, 2)];
+  const pool = ((SUBV && SUBV.projects) || []).filter((p) => !region || (p.region || '').startsWith(region) || String(p.budget || '').includes(region.slice(0, -2)));
+  const cur = (r.t || {}).subvKey || '';
+  const opts = [['', rt('subvAuto')]].concat(pool.map((p) => [subvKeyOf(p), (p.name ? p.name.slice(0, 110) : rt('subvBudgetLine', { b: p.budget })) + ' — ' + (p.programme || '')]));
+  const msg = h('span', { class: 'small' });
+  const sel = select(opts, cur, async (e) => {
+    try { await cloud.updateRegistry(r.code, { overrides: { subvKey: e.target.value || cloud.DEL() } }); r._subv = undefined; fill(msg, rt('saved')); }
+    catch (err) { fill(msg, h('span', { class: 'bad' }, err.message)); }
+  }, rt('subvPick'));
+  return h('details', { class: 'howto small', style: 'margin-top:10px' }, h('summary', null, rt(cur ? 'subvPickedHand' : 'subvPick')), sel, msg);
+}
 function subventionCard(r) {
   const p = subvMatch(r);
-  if (!p) return null;
+  if (!p) return SUBV && SUBV.projects.length ? h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, rt('subvTitle')), h('p', { class: 'muted small' }, rt('subvNotFound')), subvPicker(r)) : null;
   const dec = (SUBV.decrees || []).find((d) => d.nreg === p.nreg) || {};
   const eds = dec.editions || Object.keys(p.amounts).sort();
   const tt = r.t || {};
@@ -331,7 +360,8 @@ function subventionCard(r) {
       ? h('p', { class: 'muted small', style: 'margin-top:10px' }, rt('subvTableEmpty', { order: money(last * 1000) }))
       : p.name && last != null && Math.abs(+tt.subv_year - last * 1000) > 1000
         ? h('p', { class: 'notice small', style: 'margin-top:10px' }, rt('subvTableDiff', { table: money(+tt.subv_year), order: money(last * 1000) })) : null,
-    p.name ? adequacyOfSp(r, last) : null);
+    p.name ? adequacyOfSp(r, last) : null,
+    subvPicker(r));
 }
 // The sub-project's funding for the year: the subvention in force against what its tracked contracts
 // will still need from the loan by 31 December, beside what the table says.

@@ -57,8 +57,13 @@ function parseMrd(XLSX, wb) {
           // null: the sheet has no such column (older pools); "": the column is there and empty.
           pcr: col.pcr == null ? null : pcr instanceof Date ? cellValue(pcr) : String(pcr || '').replace(/\s+/g, ' ').slice(0, 60), eib: eib || 0, local: local || 0 });
       } else if (eib || local) {
-        sp.payments.push({ kind: mrdKind(p), eib: eib || 0, local: local || 0, received: mrdDate(at('received')), sent: mrdDate(at('sent')), approved: mrdDate(at('approved')), paid: mrdDate(at('paid')),
-          comment: String(at('comment') || '').replace(/\s+/g, ' ').slice(0, 300), note: String(at('note') || '').replace(/\s+/g, ' ').slice(0, 200) });
+        // The register lists a contract's payments under its row: each payment keeps the number of the
+        // contract of its kind above it (a sub-project may have had a works contract ended and a new one).
+        const kind = mrdKind(p), role = { ts: 'ts', csc: 'csc' }[kind] || 'works';
+        const own = [...sp.contracts].reverse().find((c) => c.role === role);
+        sp.payments.push({ kind, eib: eib || 0, local: local || 0, received: mrdDate(at('received')), sent: mrdDate(at('sent')), approved: mrdDate(at('approved')), paid: mrdDate(at('paid')),
+          comment: String(at('comment') || '').replace(/\s+/g, ' ').slice(0, 300), note: String(at('note') || '').replace(/\s+/g, ' ').slice(0, 200),
+          contract: own && own.number ? own.number : undefined });
       }
     }
   }
@@ -154,10 +159,21 @@ function mergeMrd(old, fresh, upload) {
 
 // What the register says is worth a look: payments waiting, slow ones, works paid after the
 // contract's term, works contracts whose tender results the EIB never got.
+// The register repeats a request when it is corrected (sent back and sent again): the same kind and
+// sums received the same day count once, the row that was paid (or the latest) standing for it.
+function mrdPayments(m) {
+  const by = new Map();
+  for (const x of (m && m.payments) || []) {
+    const k = [x.kind, x.eib, x.local, x.received || x.paid || ''].join('|');
+    const was = by.get(k);
+    if (!was || (!was.paid && x.paid) || (!!was.paid === !!x.paid && String(x.approved || x.sent || '') > String(was.approved || was.sent || ''))) by.set(k, x);
+  }
+  return [...by.values()];
+}
 function mrdFacts(r) {
   const m = r.mrd;
   if (!m) return null;
-  const pays = m.payments || [], works = (m.contracts || []).filter((c) => c.role === 'works');
+  const pays = mrdPayments(m), works = (m.contracts || []).filter((c) => c.role === 'works');
   const asOf = String(m.at || today()).slice(0, 10);
   const lag = (x) => (x.received && x.paid ? dayDiff(x.received, x.paid) : null);
   const waiting = pays.filter((x) => x.received && !x.paid && dayDiff(x.received, asOf) <= 180).map((x) => Object.assign({ days: dayDiff(x.received, asOf) }, x));
@@ -176,8 +192,12 @@ function mrdHints(r) {
   const f = mrdFacts(r), out = {};
   if (!f) return out;
   const add = (k, level, text) => (out[k] = out[k] || []).push({ level, text });
-  // The works' payments only: supervision and the engineer are in infoHints.
-  const forWorks = (x) => !NOT_WORKS_PAY.includes(x.kind);
+  // The current works contract's payments only: supervision, the engineer and an ended works
+  // contract are in infoHints.
+  const key = (x) => [x.kind, x.received, x.paid, x.eib, x.local].join('|');
+  const pw = primaryWorks(r);
+  const own = new Set(mrdPaysOf(r, 'works', pw && pw.contract).map(key));
+  const forWorks = (x) => own.has(key(x));
   const long = f.waiting.filter((x) => forWorks(x) && x.days > 15);
   if (long.length) add('r4', long.some((x) => x.days > 30) ? 'high' : 'medium', rt('h_mrdWaiting', { n: long.length, days: Math.max(...long.map((x) => x.days)) }));
   const slow = f.slow.filter(forWorks);
@@ -196,7 +216,7 @@ function mrdCard(r) {
     return last ? rt('mrdNoRows', { code: r.code, date: fdate(String(last.at).slice(0, 10)), file: last.file || '' }) : rt('mrdNone');
   })()));
   const kindL = (k) => rt('mrdK_' + k);
-  const pays = (m.payments || []).slice().reverse();
+  const pays = mrdPayments(m).slice().sort((a, b) => String(b.received || b.paid || '').localeCompare(String(a.received || a.paid || '')));
   return h('div', { class: 'card pad section' },
     // Loading a new register is in the list's "Data" menu; here only when there is none yet.
     h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('mrdTitle')), h('span', { class: 'muted small' }, join([rt('mrdAsOf', { date: fdate(f.asOf), file: f.file || '' }), m.by ? rt('mrdBy', { who: m.by }) : null]))),
@@ -210,7 +230,7 @@ function mrdCard(r) {
     h('h3', { class: 'card-sub', style: 'margin-top:14px' }, rt('mrdPayments', { n: pays.length })),
     h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
       h('thead', null, h('tr', null, [rt('mrdReceived'), rt('mrdPaidOn'), rt('mrdDays'), rt('mrdWhat'), rt('mrdEibCol'), rt('mrdLocalCol'), rt('mrdNote')].map((x) => h('th', null, x)))),
-      h('tbody', null, pays.slice(0, 60).map((x) => {
+      h('tbody', null, pays.slice(0, MRDF.all === r.code ? pays.length : 60).map((x) => {
         const d = f.lag(x), wait = !x.paid && x.received ? dayDiff(x.received, f.asOf) : null;
         return h('tr', { class: !x.paid ? 'row-warn' : '' },
           td(rt('mrdReceived'), { class: 'num' }, fdate(x.received)), td(rt('mrdPaidOn'), { class: 'num' }, x.paid ? fdate(x.paid) : h('span', { class: 'warn-text' }, rt('mrdWait', { n: wait != null ? wait : '?' }))),
@@ -218,6 +238,8 @@ function mrdCard(r) {
           td(rt('mrdEibCol'), { class: 'num' }, money(x.eib)), td(rt('mrdLocalCol'), { class: 'num' }, x.local ? money(x.local) : '—'),
           td(rt('mrdNote'), { class: 'w-text small' }, join([x.note, x.comment && x.comment !== 'опрацьовано' ? x.comment : null])));
       })))),
+    pays.length > 60 && MRDF.all !== r.code ? h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn btn-sm', onclick: () => { MRDF.all = r.code; softRender(); } }, rt('showAll', { n: pays.length }))) : null,
     h('p', { class: 'muted small' }, rt('mrdHint')));
 }
+const MRDF = { all: '' };
 const median = (a) => { const s = a.filter((x) => x != null).sort((x, y) => x - y); return s.length ? s[Math.floor((s.length - 1) / 2)] : null; };

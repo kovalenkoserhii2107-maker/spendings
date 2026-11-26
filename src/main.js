@@ -20,7 +20,7 @@ function legacyRoute(route, parts) {
 function noAccessPage() {
   return [pageHead(t('app.name'), titleGrad(t('na.title1'), t('na.title2'))),
     h('div', { class: 'card pad section' }, h('p', null, t('na.text', { email: (state.user && state.user.email) || '' })),
-      h('div', { class: 'row' }, h('a', { class: 'btn', href: '#/settings' }, icon('settings'), t('nav.settings'))))];
+      h('div', { class: 'row' }, h('a', { class: 'btn', href: '#/settings' }, icon('gear'), t('nav.settings'))))];
 }
 
 function render() {
@@ -48,7 +48,11 @@ function render() {
   else if (route === 'reminders') page = remindersPage(parts[1]);
   else { page = registryPage(); key = 'home'; }
   fill(app, shell(key, page));
-  window.scrollTo(0, 0);
+  // An address may name a place on the page (#/sp/CODE/overview#risks): it opens there.
+  const anchor = location.hash.split('#')[2];
+  const el = anchor && document.getElementById(anchor);
+  if (el) requestAnimationFrame(() => el.scrollIntoView({ block: 'start' }));
+  else window.scrollTo(0, 0);
 }
 
 window.addEventListener('hashchange', render);

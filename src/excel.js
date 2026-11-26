@@ -224,7 +224,7 @@ async function fillWorkbook(buf, mode, onStep) {
     if (dream) setK('dream', { f: `HYPERLINK("${dreamUrl(dream)}","${dream}")`, v: dream }, 'blank');
     const pzT = ((r.pz || {}).tenders || []).filter((x) => !x.error);
     // AMCU and State Audit columns feed risks 7 and 8: the works procurement only, as the rating.
-    const pzW = pzT.filter((x) => worksTids(r).has(x.tid));
+    const pzW = pzT.filter((x) => primaryTids(r).has(x.tid));
     const m = mainContract(r);
     const main = m ? m.t0 : pzW[0] || pzT[0];
     if (main) setK('proc_status', tableStatus(main, m && m.c));

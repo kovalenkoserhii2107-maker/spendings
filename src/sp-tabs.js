@@ -8,7 +8,15 @@
 const numOf = (x) => toNum(x);
 function financeTab(r) {
   const tt = r.t || {}, sv = subvMatch(r), f = mrdFacts(r), m = mainContract(r);
-  const live = m && m.c.status === 'active' ? m : null;
+  const live = m;
+  // The current works contract's own payments (Mindev's tranches of it); an ended contract's and
+  // the services' payments are shown apart and never count in its share paid.
+  const sum = (list, k) => list.filter((x) => x.paid).reduce((a, x) => a + (x[k] || 0), 0);
+  const own = f ? mrdPaysOf(r, 'works', m && m.c) : [];
+  const ownKey = new Set(own.map((x) => [x.kind, x.received, x.paid, x.eib, x.local].join('|')));
+  const allWorks = f ? mrdPaysOf(r, 'works', null) : [];
+  const prevWorks = allWorks.filter((x) => !ownKey.has([x.kind, x.received, x.paid, x.eib, x.local].join('|')));
+  const services = f ? mrdPaysOf(r, 'ts', null).concat(mrdPaysOf(r, 'csc', null)) : [];
   const eds = sv ? ((SUBV.decrees || []).find((d) => d.nreg === sv.nreg) || {}).editions || Object.keys(sv.amounts || {}).sort() : [];
   const nowK = sv ? (sv.amounts || {})[eds[eds.length - 1]] : null;
   const firstK = sv ? (sv.amounts || {})[eds[0]] : null;
@@ -19,7 +27,7 @@ function financeTab(r) {
   const invest = numOf(tt.invest_eur), eibEur = numOf(tt.eib_eur);
   // The works price: the contract in force, else Mindev's register (loan + local), else the table.
   const price = (live ? (live.c.value || {}).amount : null) || (f && f.value) || numOf(tt.contract_value) || numOf(tt.contract_sum);
-  const paidEib = f ? f.paidEib : null, paidLocal = f ? f.paidLocal : null;
+  const paidEib = f ? sum(own, 'eib') : null, paidLocal = f ? sum(own, 'local') : null;
   const paidAll = f ? paidEib + paidLocal : numOf(r.paid);
   const tile = (cls, label, value, sub) => h('div', { class: 'proc-sum ' + cls }, h('small', null, label), h('b', null, value), sub ? h('span', { class: 'faint small' }, sub) : null);
   const tiles = h('div', { class: 'card pad section' },
@@ -52,8 +60,37 @@ function financeTab(r) {
       [rt('fUtil'), numOf(tt.subv_util) != null ? pctOf(numOf(tt.subv_util)) + '%' : null],
       [rt('paidSheet'), r.paid != null ? money(r.paid) : null],
     ]),
+    // For reference: what went to an earlier works contract and to the services, apart from the share above.
+    prevWorks.some((x) => x.paid) || services.some((x) => x.paid) ? h('div', { class: 'f-aside' }, h('h3', { class: 'card-sub' }, rt('fAsideTitle')),
+      kv([[rt('fPrevWorks'), prevWorks.some((x) => x.paid) ? money(sum(prevWorks, 'eib') + sum(prevWorks, 'local')) : null],
+        [rt('fServices'), services.some((x) => x.paid) ? money(sum(services, 'eib') + sum(services, 'local')) : null]])) : null,
     h('p', { class: 'muted small' }, rt('fStructureHint')));
-  return [tiles, structure, subventionCard(r), mrdCard(r)];
+  return [tiles, structure, treasuryByContract(r), subventionCard(r), mrdCard(r)];
+}
+// The Treasury's payments by contract: each contract of the sub-project apart (paid for sure, maybe
+// ours, its share), the current works one first; a contract the monitor does not follow says so.
+function treasuryByContract(r) {
+  const pw = primaryWorks(r), list = spContracts(r);
+  if (!list.length) return null;
+  const curId = pw && pw.contract && pw.contract.id;
+  list.sort((a, b) => (b.c.id === curId) - (a.c.id === curId));
+  return h('div', { class: 'card pad section' }, h('h2', { class: 'card-title' }, rt('fTreasuryTitle')),
+    h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' },
+      h('thead', null, h('tr', null, [rt('cNumber'), rt('fRole'), rt('cPrice'), rt('fTrPaid'), rt('fTrMaybe'), rt('fTrShare'), ''].map((x) => h('th', null, x)))),
+      h('tbody', null, list.map((it) => {
+        const row = ((state.trackedIndex || {}).items || []).find((y) => y.key === it.c.id || y.contract_id === it.c.id);
+        const tt = (row && row.totals) || {}, value = (it.c.value || {}).amount;
+        const paid = tt.paid_total || tt.paid;
+        return h('tr', { class: it.c.id === curId ? 'row-main' : '' },
+          td(rt('cNumber'), null, h('b', null, it.c.number ? '№ ' + it.c.number : '—'), it.c.id === curId ? h('span', { class: 'tag ok', style: 'margin-left:6px' }, '★') : null),
+          td(rt('fRole'), null, rt(it.c.id === curId ? 'role_works' : it.role === 'works' ? 'role_prev' : 'role_' + it.role)),
+          td(rt('cPrice'), { class: 'num' }, value ? money(value) : '—'),
+          td(rt('fTrPaid'), { class: row ? 'num' : 'small' }, row ? money(paid || 0) : h('span', { class: 'faint' }, rt('cNotFollowed'))),
+          td(rt('fTrMaybe'), { class: 'num' }, row && tt.maybe ? money(tt.maybe) : '—'),
+          td(rt('fTrShare'), { class: 'num' }, row && value && paid ? Math.round((paid / value) * 100) + '%' : '—'),
+          td('', { class: 'r' }, row ? h('a', { class: 'btn btn-sm', href: '#/tracked/' + row.key }, rt('pDossier')) : null));
+      })))),
+    h('p', { class: 'muted small' }, rt('fTreasuryHint')));
 }
 
 // ---- the Work tab ---------------------------------------------------------------------------------

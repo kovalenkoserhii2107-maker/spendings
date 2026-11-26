@@ -187,6 +187,8 @@ function tender_(tid) {
       id: x.id, cid: x.contractID, number: x.contractNumber || '', title: x.title || '', status: x.status,
       signed: day_(x.dateSigned), start: day_((x.period || {}).startDate), end: day_((x.period || {}).endDate),
       value: x.value ? { amount: x.value.amount, currency: x.value.currency } : null,
+      // How a finished contract ended: what was paid, and why it was ended early (if it was).
+      paid: x.amountPaid ? x.amountPaid.amount : null, termination: String(x.terminationDetails || '').slice(0, 500),
       suppliers: (x.suppliers || []).map(org_),
       changes: changes.length, last_change: changes.length ? day_(changes[changes.length - 1].dateSigned || changes[changes.length - 1].date) : null,
       change_types: changes.reduce(function (acc, ch) { (ch.rationaleTypes || []).forEach(function (r) { if (acc.indexOf(r) < 0) acc.push(r); }); return acc; }, []),

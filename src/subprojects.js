@@ -50,8 +50,9 @@ function registryPage() {
     const st = spStage(r), news = spNews(spTracked(r)), wk = spWork(r), f = mrdFacts(r);
     const overdueTask = wk.next && wk.next.due && wk.next.due < today();
     const waiting = f ? f.waiting.filter((x) => x.days > 15).length : 0;
-    return [r.code, { st, news, wk, rating: overallRating(scoresOf(r).scores), overdueTask, waiting,
-      attention: !!(st.late || news.signals.length || overdueTask || waiting) }];
+    const sc = scoresOf(r), conflicts = Object.keys(sc.conflict).length;
+    return [r.code, { st, news, wk, rating: overallRating(sc.scores), overdueTask, waiting, conflicts,
+      attention: !!(st.late || news.signals.length || overdueTask || waiting || conflicts) }];
   }));
   const F = (r) => facts.get(r.code);
   const tests = {
@@ -124,13 +125,14 @@ const RUN = ['active.enquiries', 'active.tendering', 'active.pre-qualification',
 function spStage(r) {
   const tt = r.t || {}, works = (r.tenders || []).filter((x) => tKind(x.kind) === 'works');
   const pzWorks = ((r.pz || {}).tenders || []).filter((t0) => isWorksTender(t0));
-  const m = mainContract(r);
+  const m = mainContract(r), pw = primaryWorks(r);
   // A contract counts while it is in force: one terminated (ended early, or finished) no longer
-  // holds the sub-project at "contract" or makes it late.
+  // holds the sub-project at "contract" or makes it late. A re-tender after the last contract ended
+  // is a re-tender, whatever the table still says of the old contract.
   const live = m && m.c.status === 'active' ? m : null;
-  const ended = m && m.c.status !== 'active' ? m : null;
+  const ended = m && m.c.status !== 'active' ? m : pw && pw.prev ? { c: pw.prev.c, t0: pw.prev.t0 } : null;
   const running = pzWorks.some((t0) => RUN.includes(t0.status)) || works.some((x) => ['Ongoing', 'Evaluation', 'Awarded'].includes(x.status));
-  const tableSigned = !m && (works.some((x) => x.status === 'Contract Signed') || !!(tt.contract_date || tt.contractor || tt.contract_sum));
+  const tableSigned = (!pw || pw.mode === 'sheet') && (works.some((x) => x.status === 'Contract Signed') || !!(tt.contract_date || tt.contractor || toNum(tt.contract_sum) > 0));
   const pct = pctOf(spStatus(r).pct);
   let data = null;
   if (pct != null && pct >= 100) data = 'done';
@@ -198,6 +200,7 @@ function registryTable(rows) {
           : [h('b', null, st.pct != null ? st.pct + '%' : '—'), paidShare(r) != null ? h('div', { class: 'cell-sub' }, rt('paidShort', { pct: paidShare(r) })) : null]),
         td(L.r, null, h('div', { class: 'row', style: 'gap:6px;flex-wrap:wrap' },
           rating ? h('span', { class: 'sev ' + ['', 'low', 'medium', 'high'][rating], title: rt('overall', { n: rating }) }, rt('riskShort', { n: rating })) : null,
+          (() => { const n = Object.keys(scoresOf(r).conflict).length; return n ? h('span', { class: 'sev high', title: rt('kpiConflict', { n }) }, '⚡ ' + n) : null; })(),
           news.signals.length ? h('span', { class: 'sev high' }, rt('newSignals', { n: news.signals.length })) : null,
           news.alerts.length ? h('div', { class: 'alert-lines' }, news.alerts.slice(0, 3).map((a) => h('span', null, t('tra.' + a)))) : null)),
         td(L.w, { class: 'small' }, wk.next ? h('div', { class: wk.next.due && wk.next.due < today() ? 'bad' : '' }, h('b', null, wk.next.due ? fdate(wk.next.due) : '—'), ' ', h('span', { class: 'clamp1' }, wk.next.text)) : null,
@@ -213,27 +216,17 @@ function registryCard(code, tab, sub) {
   if (!REG.access) return registryPage();
   if (!r) return [h('div', { class: 'card empty section' }, REG.rows.size ? t('pz.notFound') : t('ui.loading'))];
   const tt = r.t || {};
+  tab = String(tab || '').split('#')[0];
   tab = SP_TABS.includes(tab) ? tab : 'overview';
   const st = spStage(r), tracked = spTracked(r), news = spNews(tracked);
-  const head = h('div', { class: 'org-head section' },
-    h('div', null,
-      // Where one is: the list, then this sub-project (a breadcrumb, not a back button far away).
-      h('nav', { class: 'crumbs', 'aria-label': rt('nav') }, h('a', { href: '#/' }, rt('nav')), h('span', { 'aria-hidden': 'true' }, '/'), h('span', null, join([r.code, tt.programme, tt.batch && 'Batch ' + tt.batch, tt.office]))),
-      h('h1', { class: 'org-title' + (String(tt.name_uk || tt.name_en || '').length > 90 ? ' long' : '') }, tt.name_uk || tt.name_en || r.code),
-      tt.name_uk && tt.name_en ? h('p', { class: 'muted' }, tt.name_en) : null,
-      h('div', { class: 'chips' }, stageChip(st),
-        h('span', { class: 'tag' + (isMine(r) ? ' ok' : '') }, rt('managerTag', { who: spManager(r) || '—' })),
-        !isMine(r) ? h('button', { class: 'btn btn-sm', onclick: () => takeOver(r), title: rt('takeOverHint') }, rt('takeOver')) : null, tt.funding ? h('span', { class: 'tag' }, tt.funding) : null,
-        overallRating(scoresOf(r).scores) ? h('span', { class: 'sev ' + ['', 'low', 'medium', 'high'][overallRating(scoresOf(r).scores)] }, rt('overall', { n: overallRating(scoresOf(r).scores) })) : null,
-        tt.manual ? h('span', { class: 'tag warn' }, rt('manualTag')) : null)),
-    h('div', { class: 'org-actions' }, h('div', { class: 'row' }, spDream(r) ? ext(dreamUrl(spDream(r)), 'DREAM', 'btn') : null, tt.manual ? h('button', { class: 'btn', onclick: () => addSpDialog(r) }, rt('editSp')) : null)));
+  const head = spHeader(r, st);
   // One sub-project, its parts as tabs: where it stands, its procurements, its contracts, its money,
   // the expert's work. The address keeps the tab (#/sp/CODE/contracts).
-  const count = { procurement: spTids(r).length || (r.tenders || []).length, contracts: spContracts(r).length, work: ((r.work || {}).tasks || []).filter((x) => !x.done).length , docs: ((state.trackedIndex || {}).items || []).filter((y) => spTids(r).includes(y.tid) && onTeamList(y.key)).reduce((n, y) => n + (y.docs || 0), 0)};
+  const count = { procurement: spTids(r).length || (r.tenders || []).length, contracts: spContracts(r).length, work: ((r.work || {}).tasks || []).filter((x) => !x.done).length , docs: (REG.docN || {})[r.code] != null ? REG.docN[r.code] : ((state.trackedIndex || {}).items || []).filter((y) => spTids(r).includes(y.tid) && onTeamList(y.key)).reduce((n, y) => n + (y.docs || 0), 0)};
   const tabs = h('nav', { class: 'section-tabs pills sp-tabs', 'aria-label': rt('nav') }, SP_TABS.map((k) => h('a', { href: '#/sp/' + encodeURIComponent(r.code) + '/' + k, class: k === tab ? 'on' : '' },
     rt('tab_' + k), count[k] ? h('em', { class: 'count' }, count[k]) : null, k === 'overview' && news.signals.length ? h('em', { class: 'count red' }, news.signals.length) : null)));
   const body = {
-    overview: () => [stageCard(r, st), statusCard(r), newsCard(tracked, news), h('div', { class: 'section' }, risksCard(r))],
+    overview: () => [h('div', { class: 'section' }, risksCard(r)), additionalBlock(r), reconcileCard(r), recentCard(r), stageCard(r, st), statusCard(r)],
     procurement: () => (sub ? procDetail(r, sub) : procurementTab(r)),
     contracts: () => contractsTab(r),
     finance: () => financeTab(r),
@@ -241,6 +234,83 @@ function registryCard(code, tab, sub) {
     docs: () => docsTab(r),
   }[tab]();
   return [head, tabs].concat(body);
+}
+
+// The sub-project's header, the same on every tab: where one is, what it is, who keeps it, its
+// actions, its registers, and four tiles of its state — all on the current works contract.
+function spHeader(r, st) {
+  const tt = r.t || {}, pw = primaryWorks(r), sv = subvMatch(r);
+  const sc = scoresOf(r), overall = overallRating(sc.scores), conflicts = Object.keys(sc.conflict);
+  const base = '#/sp/' + encodeURIComponent(r.code);
+  const t0 = (pw && pw.tender) || ((r.pz || {}).tenders || [])[0] || null;
+  const buyerCode = (t0 && t0.buyer) || tt.beneficiary_id || '';
+  const busy = h('span', { class: 'muted small' });
+  const refresh = h('button', { class: 'btn', onclick: async () => {
+    refresh.disabled = true; fill(busy, t('ui.loading'));
+    try { await refreshSp(r); if (isMine(r)) autoTrack(true, r).catch(() => {}); fill(busy, ''); toast(rt('spRefreshed', { code: r.code })); }
+    catch (e) { fill(busy, h('span', { class: 'bad' }, e.message)); } finally { refresh.disabled = false; }
+  } }, icon('refresh'), rt('spRefresh'));
+  const copyMenu = typeof copyMenuFor === 'function' ? copyMenuFor(r) : null;
+  const regs = [
+    spTids(r).length ? h('a', { class: 'tag link', href: base + '/procurement' }, 'Prozorro (' + spTids(r).length + ')') : null,
+    spDream(r) ? ext(dreamUrl(spDream(r)), 'DREAM', 'tag link') : null,
+    sv && sv.url ? ext(sv.url, rt('cmuOrder', { n: String(sv.nreg || '').replace(/-(\d{4})-[рп]$/, ' ($1)') }), 'tag link') : null,
+  ].filter(Boolean);
+  return h('div', { class: 'sp-head section' },
+    h('div', { class: 'org-head' },
+      h('div', null,
+        h('nav', { class: 'crumbs', 'aria-label': rt('nav') }, h('a', { href: '#/' }, rt('nav')), h('span', { 'aria-hidden': 'true' }, '/'), h('span', null, r.code)),
+        h('h1', { class: 'org-title' + (String(tt.name_uk || tt.name_en || '').length > 90 ? ' long' : '') }, tt.name_uk || tt.name_en || r.code),
+        tt.name_uk && tt.name_en ? h('p', { class: 'muted' }, tt.name_en) : null,
+        h('div', { class: 'chips' }, stageChip(st),
+          tt.programme || tt.batch ? h('span', { class: 'tag' }, join([tt.programme, tt.batch && 'Batch ' + tt.batch, tt.office])) : null,
+          h('span', { class: 'tag' + (isMine(r) ? ' ok' : '') }, rt('managerTag', { who: spManager(r) || '—' })),
+          !isMine(r) ? h('button', { class: 'btn btn-sm', onclick: () => takeOver(r), title: rt('takeOverHint') }, rt('takeOver')) : null,
+          tt.manual ? h('span', { class: 'tag warn' }, rt('manualTag')) : null,
+          r.overrides && Object.keys(r.overrides).length ? h('span', { class: 'tag', title: rt('overriddenHint') }, rt('overridden')) : null),
+        h('p', { class: 'small sp-buyer' }, join([tt.beneficiary || (t0 && t0.buyer_name), buyerCode ? 'ЄДРПОУ ' + buyerCode : null]), ' ', regs)),
+      h('div', { class: 'org-actions' }, h('div', { class: 'row' }, refresh, copyMenu,
+        h('button', { class: 'btn', onclick: () => addSpDialog(r) }, icon('edit'), rt('editPassport'))), busy)),
+    kpiTiles(r, pw, sc, overall, conflicts, base));
+}
+// Four tiles, each on the current works contract (or the tender running for it), each a way in.
+function kpiTiles(r, pw, sc, overall, conflicts, base) {
+  const c = pw && pw.contract, row = pw && pw.trackedRow, tt = r.t || {};
+  const sup = c ? (c.suppliers || [])[0] || {} : {};
+  const left = c && c.end && c.status === 'active' ? dayDiff(today(), c.end) : null;
+  const prevEnded = pw && (pw.prev || (pw.mode === 'contract' && ((r.pz || {}).tenders || []).some((t0) => procRole(r, t0) === 'works'
+    && (t0.contracts || []).some((x) => x.id !== c.id && x.status === 'terminated' && String(x.signed || '') < String(c.signed || '')))));
+  const tile = (href, cls, label, main, sub, extra) => h('a', { class: 'stat kpi ' + (cls || ''), href }, h('small', null, label), h('b', null, main), sub ? h('span', { class: 'sub' }, sub) : null, extra || null);
+  // 1. The contract and its term.
+  const t1 = !pw ? tile(base + '/procurement', 'na', rt('kpiContract'), rt('pNoContractYet'), rt('kpiNoWorks'))
+    : c ? tile(base + '/contracts', left != null && left < 0 ? 'bad' : left != null && left <= 30 ? 'warn' : '', rt('kpiContract'), sup.name ? orgShort(sup.name) : (c.number ? '№ ' + c.number : '—'),
+      join([c.number && '№ ' + c.number, c.signed && fdate(c.signed), c.value && money(c.value.amount), c.end && '→ ' + fdate(c.end),
+        left != null ? (left >= 0 ? rt('cLeft', { n: left }) : rt('lateBy', { n: -left })) : c.status !== 'active' ? label('pzc.', c.status) : null]),
+      prevEnded ? h('span', { class: 'sub warn-text' }, rt('kpiAfterEnded')) : null)
+      : tile(base + '/procurement', 'run', rt(pw.mode === 'retender' ? 'kpiRetender' : 'kpiTender'), pw.tender ? label('pzs.', pw.tender.status) || pw.tender.status : '—',
+        join([pw.tender && pw.tender.tid, pw.tender && pw.tender.value && money(pw.tender.value.amount)]), pw.prev ? h('span', { class: 'sub warn-text' }, rt('kpiAfterEnded')) : null);
+  // 2. Done and paid: the table's physical progress, the Treasury's acts, what this contract was paid.
+  const phys = pctOf(spStatus(r).pct), acts = row && row.acts_pct != null ? Math.round(row.acts_pct) : null, paid = c ? paidShare(r) : null;
+  const bar = (pct, cls) => h('span', { class: 'c-bar ' + cls }, h('i', { style: `width:${Math.max(0, Math.min(100, pct || 0))}%` }));
+  const t2 = h('a', { class: 'stat kpi', href: base + '/finance' }, h('small', null, rt('kpiProgress')),
+    h('div', { class: 'kpi-bars' },
+      h('div', null, h('span', null, rt('kpiPhys')), bar(phys, 'phys'), h('b', { class: 'num' }, phys != null ? phys + '%' : '—')),
+      h('div', null, h('span', null, rt('kpiActs')), bar(acts, 'acts'), h('b', { class: 'num' }, acts != null ? acts + '%' : '—')),
+      h('div', null, h('span', null, rt('kpiPaid')), bar(paid, 'paid'), h('b', { class: 'num' }, paid != null ? paid + '%' : '—'))));
+  // 3. The year's money: the subvention in force, enough for what the contract still needs, Mindev's queue.
+  const sv = subvMatch(r), am = sv ? sv.amounts || {} : {}, eds = sv ? sv.editions || Object.keys(am).sort() : [];
+  const now = eds.length ? am[eds[eds.length - 1]] : null;
+  const ad = sv && sv.name && now != null ? adequacyData(r, now) : null;
+  const f = mrdFacts(r), wait = f ? f.waiting.filter((x) => x.days > 15).length : 0;
+  const status = ad ? ad.status : ({ adequate: 'adequate', insufficient: 'insufficient', suspended: 'suspended' })[Object.keys(ADEQ_RX).find((k) => ADEQ_RX[k].test(String(tt.funding || '')))] || null;
+  const t3 = tile(base + '/finance', status === 'suspended' || status === 'insufficient' ? 'bad' : wait ? 'warn' : '', rt('kpiFunding'),
+    now != null ? fmtK(now) : +tt.subv_year > 0 ? money(+tt.subv_year) : '—',
+    join([status ? t('fa.st.' + status) : null, wait ? rt('kpiMrdWait', { n: wait }) : f ? rt('kpiMrdOk') : null]));
+  // 4. The overall rating; a lightning when the system sees more than is rated.
+  const t4 = tile(base + '/overview#risks', overall === 3 ? 'bad' : overall === 2 ? 'warn' : overall === 1 ? 'ok' : 'na', rt('kpiRisk'),
+    overall ? rt('overall', { n: overall }) : '—', rt('ratedOf', { n: ratedCount(sc.scores) }),
+    conflicts.length ? h('span', { class: 'sub bad' }, '⚡ ' + rt('kpiConflict', { n: conflicts.length })) : null);
+  return h('div', { class: 'tiles kpi-tiles' }, t1, t2, t3, t4);
 }
 
 // The road of a sub-project, from the subvention to commissioning, with the dates the data know.
@@ -267,24 +337,7 @@ function stageCard(r, st) {
     h('p', { class: 'muted small' }, rt(st.from === 'table' ? 'stageFromTable' : 'stageFromData')));
 }
 
-// News from the contracts on control under the sub-project: their signals since taken on control.
-function newsCard(tracked, news) {
-  return h('div', { class: 'card pad section' },
-    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('newsTitle')), h('a', { class: 'btn btn-sm', href: '#/signals' }, t('nav.signals'))),
-    !tracked.length ? h('p', { class: 'muted small' }, rt('newsNone2'))
-      : news.signals.length ? h('div', { class: 'ev-feed' }, news.signals.slice(0, 12).map((g) => h('a', { class: 'ev-row', href: '#/tracked/' + g.row.key },
-        h('span', { class: 'num' }, fdate(String(g.since || '').slice(0, 10))), h('span', null, h('b', null, t('sig.' + g.type + '.title')), ' · ', g.row.number ? '№ ' + g.row.number : g.row.tid))))
-        : h('p', { class: 'muted small' }, rt('newsQuiet', { n: tracked.length })));
-}
 
-// Every contract of the sub-project's procurements: on control or not, with what the monitor knows.
-function spContracts(r) {
-  const out = [];
-  for (const t0 of ((r.pz || {}).tenders || [])) {
-    for (const c of t0.contracts || []) if (c.status !== 'cancelled') out.push({ t0, c });
-  }
-  return out.sort((a, b) => String(b.c.signed || '').localeCompare(String(a.c.signed || '')));
-}
 // ---- the Contracts tab ---------------------------------------------------------------------------
 //
 // Every contract of the sub-project's procurements, by role (works, supervision, consulting engineer,
@@ -298,7 +351,7 @@ const normNo = (x) => String(x || '').toUpperCase().replace(/[^0-9A-ZА-ЯІЇЄ
 function spContracts(r) {
   const out = [];
   for (const t0 of ((r.pz || {}).tenders || [])) {
-    for (const c of t0.contracts || []) if (c.status !== 'cancelled') out.push({ t0, c, role: isWorksTender(t0) ? 'works' : prozorro_role(t0.title) });
+    for (const c of t0.contracts || []) if (c.status !== 'cancelled') out.push({ t0, c, role: procRole(r, t0) });
   }
   return out.sort((a, b) => (C_ORDER[a.c.status] ?? 3) - (C_ORDER[b.c.status] ?? 3) || String(b.c.signed || '').localeCompare(String(a.c.signed || '')));
 }
@@ -319,15 +372,17 @@ function contractFacts(r, it) {
     value, paid, paidPct: value && paid ? Math.round((paid / value) * 100) : (row && row.paid_pct != null ? Math.round(row.paid_pct) : null),
     actsPct: row && row.acts_pct != null ? Math.round(row.acts_pct) : null, end, left };
 }
-function contractCard(r, it) {
+function contractCard(r, it, primary) {
   const { t0, c, role } = it, f = contractFacts(r, it);
+  const pr = (f.row && f.row.price) || {};
   const sup = (c.suppliers || [])[0] || {};
   const sig = f.row ? (f.row.signals || []) : [];
   const high = sig.filter((g) => g.severity === 'high');
   const bad = ((f.row && f.row.rules) || {}).bad || [];
   const term = c.status !== 'active' ? null : f.left == null ? null : f.left >= 0 ? h('span', { class: f.left <= 30 ? 'warn-text' : 'faint' }, rt('cLeft', { n: f.left })) : h('span', { class: 'bad' }, rt('lateBy', { n: -f.left }));
   const bar = (pct, cls) => h('span', { class: 'c-bar ' + cls }, h('i', { style: `width:${Math.max(0, Math.min(100, pct || 0))}%` }));
-  return h('article', { class: 'proc contract c-' + c.status },
+  return h('article', { class: 'proc contract c-' + c.status + (primary ? ' primary' : '') },
+    primary ? h('div', { class: 'primary-badge' }, '★ ', rt('cPrimary')) : null,
     h('header', { class: 'proc-head' },
       h('div', { class: 'proc-id' },
         h('span', { class: 'c-st c-st-' + c.status }, label('pzc.', c.status)),
@@ -337,9 +392,10 @@ function contractCard(r, it) {
           : c.status === 'active' ? h('span', { class: 'faint small' }, isMine(r) ? rt('pAuto') : rt('pNotMine')) : null,
         ext(pzUrl(t0.tid), 'Prozorro'))),
     h('dl', { class: 'proc-facts' },
-      h('div', { class: 'wide2' }, h('dt', null, rt('cContractor')), h('dd', null, h('b', null, party(sup.name, sup.code)))),
-      h('div', null, h('dt', null, rt('cPrice')), h('dd', { class: 'num' }, f.value ? money(f.value) : '—',
-        c.changes ? h('small', null, ' · ' + rt('cChanges', { n: c.changes, date: c.last_change ? fdate(c.last_change) : '' })) : null)),
+      h('div', { class: 'wide2' }, h('dt', null, rt('cContractor')), h('dd', null, h('b', null, typeof contractorLink === 'function' ? contractorLink(sup.name, sup.code, r) : party(sup.name, sup.code)))),
+      h('div', null, h('dt', null, rt('cPrice')), h('dd', { class: 'num' },
+        pr.first && pr.now && Math.abs(pr.now - pr.first) > 1 ? [money(pr.first), ' → ', h('b', null, money(pr.now)), h('span', { class: pr.change_pct > 0 ? ' bad' : '' }, ' (' + (pr.change_pct > 0 ? '+' : '') + pr.change_pct + '%)')] : f.value ? money(f.value) : '—',
+        c.changes ? h('div', null, typeof openAmendmentsDrawer === 'function' ? h('button', { class: 'linklike small', type: 'button', onclick: () => openAmendmentsDrawer(r, c.id) }, rt('cChangesN', { n: c.changes })) : h('small', null, rt('cChanges', { n: c.changes, date: c.last_change ? fdate(c.last_change) : '' }))) : null)),
       h('div', null, h('dt', null, rt('cTerm')), h('dd', { class: 'num' }, join([c.start && fdate(c.start), f.end && '→ ' + fdate(f.end)]) || '—', term ? h('div', null, term) : null)),
       h('div', { class: 'wide' }, h('dt', null, rt('cProgress')), h('dd', null,
         f.row ? h('div', { class: 'c-progress' },
@@ -355,10 +411,30 @@ function contractCard(r, it) {
       ((f.row && f.row.alerts) || []).filter((a) => !['risk', 'sasu', 'rules'].includes(a)).slice(0, 3).map((a) => h('span', { class: 'sev medium' }, t('tra.' + a))),
       sig.length > high.length ? h('a', { class: 'faint small', href: '#/tracked/' + f.row.key }, rt('cMoreSignals', { n: sig.length - high.length })) : null) : null);
 }
+// The bank guarantees of one contract (the team's register), and whether its documents in Prozorro
+// hold a guarantee file at all.
+function contractGuarantees(r, c) {
+  const gs = ((r.work || {}).guarantees || []).filter((g) => !g.contract || normNo(g.contract) === normNo(c.number));
+  const row = ((state.trackedIndex || {}).items || []).find((y) => y.key === c.id || y.contract_id === c.id);
+  const noDoc = row && (row.checks || {}).guarantees === 'bad';
+  if (!gs.length && !noDoc) return null;
+  return h('div', { class: 'card pad c-guar' }, h('h3', { class: 'card-sub' }, rt('gTitle')),
+    gs.length ? h('div', { class: 'chips' }, gs.map((g) => h('span', { class: 'tag' + (!g.closed && g.until && g.until < addDays(today(), 30) ? ' warn' : '') },
+      join([rt('g_' + g.kind), g.bank, g.amount ? money(g.amount) : null, g.until ? rt('pTo', { date: fdate(g.until) }) : null])))) : null,
+    noDoc ? h('p', { class: 'small warn-text' }, rt('cGuarNoDoc')) : null);
+}
+// A works contract the table knows and Prozorro is not linked for: the Tenders and SPs sheets' data.
+function sheetContractCard(r) {
+  const tt = r.t || {}, x = (primaryWorks(r) || {}).sheetRow || {};
+  return h('section', { class: 'card pad section' }, h('div', { class: 'primary-badge' }, '★ ', rt('cPrimarySheet')),
+    kv([[rt('cContractor'), x.contractor || tt.contractor], [rt('cNumber'), x.contract_no], [rt('cPrice'), x.contract_total != null ? money(x.contract_total) : toNum(tt.contract_sum) != null ? money(toNum(tt.contract_sum)) : null],
+      [rt('cTerm'), join([tt.start && fdate(tt.start), tt.completion && '→ ' + fdate(tt.completion)])], [rt('sheetPaid'), x.paid != null ? money(x.paid) : null]]),
+    h('p', { class: 'muted small' }, rt('cSheetHint')));
+}
 function contractsTab(r) {
   const list = spContracts(r);
-  const works = list.filter((x) => x.role === 'works');
-  const live = works.find((x) => x.c.status === 'active') || works[0] || null;
+  const pw = primaryWorks(r);
+  const live = pw && pw.contract ? list.find((x) => x.c.id === pw.contract.id) || null : null;
   const lf = live ? contractFacts(r, live) : null;
   const mrdF = mrdFacts(r);
   const summary = h('div', { class: 'card pad section' },
@@ -374,13 +450,22 @@ function contractsTab(r) {
       h('div', { class: 'proc-sum ' + (mrdF ? 'ok' : 'na') }, h('small', null, rt('cEib')),
         h('b', null, mrdF ? money(mrdF.paidEib) : '—'), mrdF ? h('span', { class: 'faint small' }, mrdF.waiting.length ? rt('mrdWaitingV', { n: mrdF.waiting.length, days: Math.max(...mrdF.waiting.map((x) => x.days)) }) : rt('cEibLocal', { sum: money(mrdF.paidLocal) })) : h('span', { class: 'faint small' }, rt('cEibNone'))))
       : h('p', { class: 'muted small' }, rt('noContracts')));
-  const groups = PROC_ROLES.map((role) => {
-    const items = list.filter((x) => x.role === role);
+  // The current works contract in full first; the table's own data when Prozorro has none linked.
+  const mainCard = live ? h('section', { class: 'section' }, contractCard(r, live, true), contractGuarantees(r, live.c))
+    : pw && pw.mode === 'sheet' ? sheetContractCard(r) : null;
+  // Then the others, for information: supervision, the engineer, author's supervision, design, and
+  // the earlier works contracts (what was paid under them before they ended).
+  const rest = list.filter((x) => !live || x.c.id !== live.c.id);
+  const groups = ['ts', 'csc', 'author', 'design', 'other', 'works'].map((role) => {
+    const items = rest.filter((x) => x.role === role);
     if (!items.length) return null;
-    return h('section', { class: 'card pad section proc-group' },
-      h('h2', { class: 'card-title' }, rt('role_' + role), h('span', { class: 'count-inline' }, items.length)),
+    return h('details', { class: 'card pad section proc-group info fold', open: role !== 'works' || null },
+      h('summary', null, h('h2', { class: 'card-title' }, rt(role === 'works' ? 'cPrevWorks' : 'role_' + role), h('span', { class: 'count-inline' }, items.length))),
+      h('p', { class: 'faint small' }, rt('pInfoOnly2')),
       h('div', { class: 'proc-list' }, items.map((it) => contractCard(r, it))));
   });
+  groups.unshift(rest.length ? h('h2', { class: 'section-title section' }, rt('cOthersTitle')) : null);
+  groups.unshift(mainCard);
   // The team's guarantees and the Treasury's payments: kept, but folded below the contracts.
   const g = guaranteesCard(r), pay = paymentsCard(r);
   const fold = (card, title, open) => (card ? h('details', { class: 'card pad section fold', open: open || null }, h('summary', null, h('h2', { class: 'card-title' }, title)), card) : null);
@@ -424,7 +509,7 @@ function statusCard(r) {
     } catch (e) { fill(msg, h('span', { class: 'bad' }, e.message)); } finally { saveBtn.disabled = false; }
   } }, icon('check'), rt('stSave'));
   const paid = paidShare(r);
-  const card = h('div', { class: 'card pad section' },
+  const card = h('div', { class: 'card pad section', id: 'status' },
     h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('stTitle')),
       s.upd ? h('span', { class: 'faint small' }, rt(s.app ? 'stUpdApp' : 'stUpdTable', { date: fdate(s.upd), who: s.by || '' })) : null),
     h('div', { class: 'grid-2 st-grid' },
@@ -486,10 +571,18 @@ function addSpDialog(r0) {
     if (!nameUk.value.trim() && !nameEn.value.trim()) { fill(msg, h('span', { class: 'bad' }, rt('spNameNeeded'))); return; }
     save.disabled = true;
     try {
-      const t = Object.assign({}, tt0, { codes: [c], programme: prog.value, batch: batch.value.trim(), office: office.value.trim(), name_uk: nameUk.value.trim(), name_en: nameEn.value.trim(),
-        expert: expert.value, beneficiary: ben.value.trim(), beneficiary_id: benId.value.trim(), manual: true });
+      const fields = { programme: prog.value, batch: batch.value.trim(), office: office.value.trim(), name_uk: nameUk.value.trim(), name_en: nameEn.value.trim(),
+        expert: expert.value, beneficiary: ben.value.trim(), beneficiary_id: benId.value.trim() };
       const ids = [...new Set(String(pz.value).match(PZ_ID) || [])];
-      const patch = { code: c, t };
+      let patch;
+      if (!r0 || tt0.manual) patch = { code: c, t: Object.assign({}, tt0, fields, { codes: [c], manual: true }) };
+      else {
+        // A sub-project of the table: the edits go apart (overrides) and outlive the next upload; a
+        // field set back to the table's value stops being an edit.
+        const table = r0.tTable || tt0, ov = {};
+        for (const [k, v] of Object.entries(fields)) ov[k] = String(v || '') === String(table[k] || '') ? cloud.DEL() : v;
+        patch = { overrides: ov };
+      }
       if (ids.length) patch.link = { tids: [...new Set(((r0 && r0.link && r0.link.tids) || []).concat(ids))], off: [] };
       await cloud.updateRegistry(c, patch);
       closeSheet();
@@ -524,75 +617,194 @@ function scorePicker(score, onpick, label, title) {
 }
 
 const KEY_RISKS = ['r2', 'r3', 'r4', 'r7'];
+// What the matrix is rated on: the current works contract, or the works tender running for it.
+function basisLine(r) {
+  const pw = primaryWorks(r);
+  if (!pw) return rt('basisNone');
+  const c = pw.contract, t0 = pw.tender;
+  if (c) return rt('basisContract', { no: c.number ? '№ ' + c.number : '', date: c.signed ? fdate(c.signed) : '', tid: t0 ? t0.tid : '' });
+  if (t0) return rt(pw.mode === 'retender' ? 'basisRetender' : 'basisTender', { tid: t0.tid });
+  return rt('basisSheet');
+}
+// Block A of the overview: the eight risks and "Other / Integrity", on the current works contract
+// only. Each criterion: its rating (– 1 2 3), where the rating comes from, a lightning when the
+// system sees more than is rated, the facts (each opens its inspector), the analyst's own fact for a
+// 2 or a 3 (it goes to the Red Flag and the table), and lowering a 3 only with a reason, confirmed
+// by another person.
 function risksCard(r) {
-  const { scores, from } = scoresOf(r);
-  const sug = suggestedScores(r);
+  const sc = scoresOf(r), { scores, from, conflict } = sc;
+  const sug = sc.suggested;
   const overall = overallRating(scores);
   const risk = allRisk(r) || {};
   const signoff = r.signoff || {}, notes = r.scoreNotes || {};
-  // One write: the ratings, a sign-off wanted when a 3 is lowered (four eyes: Risk Mitigation and
-  // Compliance Analyst), and for a 3 on a key risk the fact behind it, where the Red Flag form starts.
-  const save = (patch) => {
-    const so = Object.assign({}, signoff), nt = Object.assign({}, notes), at = new Date().toISOString();
+  const me = { by: myExpert(), uid: (state.user || {}).uid || '' };
+  // One write: the ratings, the sign-off of a lowered 3, the facts; what is no longer so is removed.
+  const save = (patch, why) => {
+    const so = {}, nt = {}, at = new Date().toISOString(), log = [];
     for (const [k, v] of Object.entries(patch)) {
-      if (scores[k] === 3 && (v == null || v < 3)) so[k] = { from: 3, to: v, by: myExpert(), uid: (state.user || {}).uid || '', at };
-      else if (v === 3) delete so[k];
-      if (v === 3 && KEY_RISKS.includes(k)) nt[k] = { text: (risk[k] || []).map((x) => x.text).join(' · ').slice(0, 900) || rt('factManual'), by: myExpert(), at };
-      else if (v !== 3) delete nt[k];
+      if (scores[k] === 3 && (v == null || v < 3)) so[k] = { from: 3, to: v, why: why || '', by: me.by, uid: me.uid, at };
+      else if (v === 3 && signoff[k]) so[k] = cloud.DEL();
+      if ((v === 3 || v === 2) && !(notes[k] && notes[k].text) && (risk[k] || []).length) nt[k] = { text: (risk[k] || []).map((x) => x.text).join(' · ').slice(0, 900), by: me.by, at, auto: true };
+      if (v == null || v < 2) { if (notes[k]) nt[k] = cloud.DEL(); }
+      log.push({ k, from: scores[k] == null ? null : scores[k], to: v == null ? null : v, by: me.by, at, why: why || '' });
     }
-    return cloud.updateRegistry(r.code, { scores: Object.assign({}, r.scores || {}, patch), signoff: so, scoreNotes: nt });
+    const scorePatch = {};
+    for (const [k, v] of Object.entries(patch)) scorePatch[k] = v == null ? cloud.DEL() : v;
+    return cloud.updateRegistry(r.code, { scores: scorePatch, signoff: so, scoreNotes: nt, scoreLog: ((r.scoreLog || []).concat(log)).slice(-200) });
   };
-  const confirm = (k) => cloud.updateRegistry(r.code, { signoff: Object.assign({}, signoff, { [k]: Object.assign({}, signoff[k], { ok: myExpert(), okAt: new Date().toISOString() }) }) });
-  const pending = SCORE_KEYS.filter((k) => sug[k] != null && from[k] === 'hint');
-  return h('div', { class: 'card pad' },
+  const confirm = (k) => cloud.updateRegistry(r.code, { signoff: { [k]: Object.assign({}, signoff[k], { ok: me.by, okUid: me.uid, okAt: new Date().toISOString() }) } });
+  // Lowering a 3 asks why, in a small window; nothing changes without a reason.
+  const lower = (k, v) => {
+    const why = h('textarea', { class: 'input', rows: 4, maxlength: 1000, placeholder: rt('lowerWhyPh'), 'aria-label': rt('lowerWhy') });
+    const msg = h('span', { class: 'small' });
+    const ok = h('button', { class: 'btn btn-dark', onclick: async () => {
+      if (why.value.trim().length < 10) { fill(msg, h('span', { class: 'bad' }, rt('lowerWhyNeed'))); return; }
+      ok.disabled = true;
+      try { await save({ [k]: v }, why.value.trim()); closeSheet(); toast(rt('lowerSent')); } catch (e) { fill(msg, h('span', { class: 'bad' }, e.message)); ok.disabled = false; }
+    } }, rt('lowerOk'));
+    sheet(h('h2', { class: 'card-title' }, rt('lowerTitle', { k: rt(k), v: v == null ? '–' : v })), h('p', { class: 'muted small' }, rt('lowerLead')),
+      h('label', { class: 'field' }, h('span', null, rt('lowerWhy')), why), h('div', { class: 'row', style: 'margin-top:10px' }, ok, msg));
+    requestAnimationFrame(() => why.focus());
+  };
+  const pick = (k) => (v) => (scores[k] === 3 && (v == null || v < 3) ? lower(k, v) : save({ [k]: v }));
+  const factBox = (k) => {
+    const n = notes[k] || {};
+    const ta = h('textarea', { class: 'input fact-in', rows: 3, maxlength: 2000, placeholder: rt('factPh'), 'aria-label': rt('factLabel2') });
+    ta.value = n.text || '';
+    const msg = h('span', { class: 'faint small' }, n.at ? rt('factBy', { who: n.by || '—', date: fdate(String(n.at).slice(0, 10)) }) + (n.auto ? ' · ' + rt('factAuto') : '') : '');
+    const keep = async () => {
+      const v = ta.value.trim();
+      if (v === (n.text || '')) return;
+      try { await cloud.updateRegistry(r.code, { scoreNotes: { [k]: v ? { text: v.slice(0, 2000), by: me.by, at: new Date().toISOString() } : cloud.DEL() } }); fill(msg, rt('saved')); }
+      catch (e) { fill(msg, h('span', { class: 'bad' }, e.message)); }
+    };
+    ta.addEventListener('blur', keep);
+    return h('div', { class: 'fact-box' }, h('span', { class: 'small' }, rt('factLabel2')), ta, msg);
+  };
+  const conflicts = Object.keys(conflict);
+  const pending = SCORE_KEYS.filter((k) => sug[k] != null && (from[k] === 'hint' || conflict[k]));
+  return h('div', { class: 'card pad', id: 'risks' },
     h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('risks')),
-      overall ? h('span', { class: 'sev ' + ['', 'low', 'medium', 'high'][overall], title: rt('overallHint') }, rt('overall', { n: overall })) : null),
+      overall ? h('span', { class: 'sev ' + ['', 'low', 'medium', 'high'][overall], title: rt('overallHint') }, rt('overall', { n: overall }), ' · ', rt('ratedOf', { n: ratedCount(scores) })) : null),
+    h('p', { class: 'small basis' }, h('b', null, basisLine(r))),
     h('p', { class: 'muted small' }, rt('risksHint')),
-    pending.length ? h('div', { class: 'row', style: 'margin-bottom:10px' }, h('button', { class: 'btn btn-sm btn-dark', onclick: () => save(Object.fromEntries(pending.map((k) => [k, sug[k]]))) }, icon('check'), rt('acceptHints', { n: pending.length }))) : null,
+    ratedCount(scores) < 8 && overall ? h('p', { class: 'notice small' }, rt('unratedNote', { n: 8 - ratedCount(scores) })) : null,
+    pending.length ? h('div', { class: 'row', style: 'margin-bottom:10px' }, h('button', { class: 'btn btn-sm btn-dark', onclick: () => {
+      const raise = pending.filter((k) => !(scores[k] === 3 && sug[k] < 3));
+      save(Object.fromEntries(raise.map((k) => [k, sug[k]])));
+    } }, icon('check'), rt('acceptHints', { n: pending.length })), conflicts.length ? h('span', { class: 'bad small' }, '⚡ ' + rt('kpiConflict', { n: conflicts.length })) : null) : null,
     h('div', { class: 'checklist' }, RISK_KEYS.map((k) => {
       const items = risk[k] || [];
       if (k === 'rx' && !items.length) return null;
       const score = scores[k];
       const lv = k === 'rx' ? (items.some((x) => x.level === 'high') ? 'bad' : 'warn') : score === 3 ? 'bad' : score === 2 ? 'warn' : score === 1 ? 'ok' : 'na';
-      const pick = k !== 'rx' ? scorePicker(score, (v) => save({ [k]: v }), rt(k), rt('from_' + (from[k] || 'none'))) : null;
-      const so = signoff[k], mine = so && so.uid && so.uid === ((state.user || {}).uid || '');
-      return h('div', { class: 'chk ' + lv },
-        pick || h('span', { class: 'chk-ico' }, '!'),
-        h('div', null, h('b', null, rt(k)), h('div', { class: 'small muted' }, items.length ? items.map((x) => x.text).join(' · ') : '—'),
+      const picker = k !== 'rx' ? scorePicker(score, pick(k), rt(k), rt('from_' + (from[k] || 'none'))) : null;
+      const so = signoff[k], mine = so && so.uid && so.uid === me.uid;
+      const openRisk = typeof openRiskDrawer === 'function' ? () => openRiskDrawer(r, k) : null;
+      return h('div', { class: 'chk ' + lv + (conflict[k] ? ' conflict' : '') },
+        picker || h('span', { class: 'chk-ico' }, '!'),
+        h('div', null,
+          h('b', null, openRisk ? h('button', { class: 'linklike', type: 'button', onclick: openRisk }, rt(k)) : rt(k)),
+          conflict[k] ? h('div', { class: 'small bad' }, '⚡ ' + rt('conflictLine', { sug: conflict[k], score })) : null,
+          h('div', { class: 'small muted facts' }, items.length ? items.map((x, i) => [i ? ' · ' : '', typeof factLink === 'function' ? factLink(r, k, x) : x.text]) : '—'),
           from[k] && from[k] !== 'own' ? h('div', { class: 'faint small' }, rt('from_' + from[k])) : null,
-          score === 3 && notes[k] ? h('div', { class: 'small' }, rt('factLabel', { text: notes[k].text })) : null,
-          so && !so.ok ? h('div', { class: 'row small warn-text', style: 'gap:8px;flex-wrap:wrap;margin-top:4px' }, rt('signoffWait', { who: so.by || '—', date: fdate(String(so.at || '').slice(0, 10)) }),
+          k !== 'rx' && (score === 2 || score === 3) ? factBox(k) : null,
+          so && !so.ok && (score == null || score < 3) ? h('div', { class: 'row small warn-text', style: 'gap:8px;flex-wrap:wrap;margin-top:4px' }, rt('signoffWait', { who: so.by || '—', date: fdate(String(so.at || '').slice(0, 10)) }),
+            so.why ? h('span', { class: 'faint' }, '«' + so.why + '»') : null,
             mine ? h('span', { class: 'faint' }, rt('signoffSelf')) : h('button', { class: 'btn btn-sm', type: 'button', onclick: () => confirm(k) }, icon('check'), rt('signoffBtn'))) : null,
-          so && so.ok ? h('div', { class: 'faint small' }, rt('signoffOk', { who: so.ok, date: fdate(String(so.okAt || '').slice(0, 10)) })) : null,
+          so && so.ok && (score == null || score < 3) ? h('div', { class: 'faint small' }, rt('signoffOk', { who: so.ok, date: fdate(String(so.okAt || '').slice(0, 10)) })) : null,
           h('details', { class: 'howto small' }, h('summary', null, rt('ruleLabel')), h('p', { class: 'muted' }, rt('rule_' + k)))));
-    })),
-    infoBlock(r));
+    })));
 }
-// The other procurements, grouped by what they buy: seen, not rated.
-function infoBlock(r) {
-  const items = infoHints(r);
-  const others = procItems(r).filter((i) => i.role !== 'works');
-  if (!items.length && !others.length) return null;
-  const roles = PROC_ROLES.filter((role) => role !== 'works' && (items.some((x) => x.role === role) || others.some((i) => i.role === role)));
-  return h('details', { class: 'info-procs', open: items.some((x) => x.level !== 'low') || null },
-    h('summary', null, h('b', null, rt('infoTitle')), items.length ? h('span', { class: 'count-inline' }, items.length) : null),
-    h('p', { class: 'faint small' }, rt('infoHint')),
-    roles.map((role) => {
-      const list = items.filter((x) => x.role === role);
-      return h('div', { class: 'info-role' },
-        h('span', { class: 'tag' }, rt('role_' + role), ' · ', rt('pProcN', { n: others.filter((i) => i.role === role).length })),
-        h('div', { class: 'small muted' }, list.length ? list.map((x) => h('div', { class: x.level === 'low' ? '' : 'warn-text' }, x.text)) : rt('infoNone')));
-    }));
+// Block C: the table against the registers, field by field, on the current works contract: what the
+// team's Compliance Working Table says beside what Prozorro, the Treasury, Mindev and the CMU say now.
+function reconcileCard(r) {
+  const tt = r.t || {}, pw = primaryWorks(r), c = pw && pw.contract, row = pw && pw.trackedRow, st = spStage(r);
+  const sup = c ? (c.suppliers || [])[0] || {} : null;
+  const sv = subvMatch(r), am = sv ? sv.amounts || {} : {}, eds = sv ? sv.editions || Object.keys(am).sort() : [];
+  const now = eds.length ? am[eds[eds.length - 1]] : null;
+  const ad = sv && sv.name && now != null ? adequacyData(r, now) : null;
+  const tableFund = Object.keys(ADEQ_RX).find((k) => ADEQ_RX[k].test(String(tt.funding || '').trim()));
+  const num = (x) => toNum(x);
+  const near = (a, b, tol) => a == null || b == null || Math.abs(a - b) <= Math.max(1, Math.abs(b) * (tol || 0.005));
+  const sameName = (a, b) => !a || !b || orgShort(a).toLowerCase().replace(/[^а-яіїєґa-z0-9]/g, '').slice(0, 12) === orgShort(b).toLowerCase().replace(/[^а-яіїєґa-z0-9]/g, '').slice(0, 12);
+  const tablePrice = num(tt.contract_sum) > 0 ? num(tt.contract_sum) : num(tt.contract_value) > 0 ? num(tt.contract_value) : null;
+  const acts = row && row.acts_pct != null ? Math.round(row.acts_pct) : null;
+  const rows = [
+    [rt('rcStatus'), tt.status || null, rt('stage_' + st.stage), tt.status ? (STAGE_OF_STATUS[tt.status] || tt.status) === st.stage : true, 'Prozorro'],
+    [rt('cContractor'), tt.contractor || null, sup ? orgShort(sup.name) : null, sameName(tt.contractor, sup && sup.name), 'Prozorro'],
+    [rt('cPrice'), tablePrice != null ? money(tablePrice) : null, c && c.value ? money(c.value.amount) : null, near(tablePrice, c && c.value && c.value.amount), 'Prozorro'],
+    [rt('rcEnd'), tt.completion ? fdate(tt.completion) : null, c && c.end ? fdate(c.end) : null, !tt.completion || !c || !c.end || tt.completion === c.end, 'Prozorro'],
+    [rt('rcDone'), pctOf(tt.pct) != null ? pctOf(tt.pct) + '%' : null, acts != null ? rt('rcActs', { pct: acts }) : null, pctOf(tt.pct) == null || acts == null || Math.abs(pctOf(tt.pct) - acts) <= 15, rt('rcTreasury')],
+    [rt('rcPaid'), r.paid != null ? money(r.paid) : null, row && row.totals ? money(row.totals.paid_total || row.totals.paid || 0) : null, true, rt('rcTreasuryMrd')],
+    [rt('subvention'), +tt.subv_year > 0 ? money(+tt.subv_year) : null, now != null ? money(now * 1000) : null, !(+tt.subv_year > 0) || now == null || near(+tt.subv_year, now * 1000, 0.01), rt('rcCmu')],
+    [rt('rcFunding'), tt.funding || null, ad ? t('fa.st.' + ad.status) : null, !tableFund || !ad || tableFund === ad.status, rt('rcCalc')],
+  ];
+  const diff = rows.filter((x) => x[1] != null && x[2] != null && !x[3]).length;
+  return h('div', { class: 'card pad section' },
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('rcTitle')),
+      diff ? h('span', { class: 'sev medium' }, rt('rcDiff', { n: diff })) : h('span', { class: 'sev ok' }, rt('rcSame'))),
+    h('p', { class: 'faint small' }, basisLine(r)),
+    h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile rc' },
+      h('thead', null, h('tr', null, [rt('rcField'), rt('rcTable'), rt('rcLive'), rt('rcSource')].map((x) => h('th', null, x)))),
+      h('tbody', null, rows.map(([f, a, b, same, src]) => h('tr', { class: a != null && b != null && !same ? 'row-warn' : '' },
+        td(rt('rcField'), null, h('b', null, f)), td(rt('rcTable'), null, a == null ? h('span', { class: 'faint' }, '—') : a),
+        td(rt('rcLive'), null, b == null ? h('span', { class: 'faint' }, '—') : b), td(rt('rcSource'), { class: 'faint small' }, src)))))),
+    h('div', { class: 'row', style: 'margin-top:10px' }, h('a', { class: 'btn btn-sm', href: '#/sp/' + encodeURIComponent(r.code) + '/overview#status' }, icon('edit'), rt('rcUpdate'))));
 }
-
-// ---- the Procurement tab -------------------------------------------------------------------------
-//
-// Everything bought for the sub-project, in the order the work goes: works, technical supervision,
-// consulting engineer, then the rest; within each, the procedures one after another (a failed tender,
-// a cancelled one, the one with a contract). One card per procedure joins what Prozorro says and what
-// the team's Tenders sheet keeps. Possible procurements and adding one by hand come last, folded.
-const PROC_ROLES = ['works', 'ts', 'csc', 'design', 'other'];
-const roleOfSheet = (k) => ({ works: 'works', ts: 'ts', csc: 'csc' })[tKind(k)] || null;
+// Block D: what changed in the sub-project in the last 30 days, newest first; the whole story in Signals.
+function recentCard(r) {
+  const since = addDays(today(), -30);
+  const items = typeof spSignalItems === 'function' ? spSignalItems(r, since).sort((a, b) => String(b.at).localeCompare(String(a.at))) : [];
+  return h('div', { class: 'card pad section' },
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('recentTitle')), h('a', { class: 'btn btn-sm', href: '#/signals' }, rt('recentAll'))),
+    items.length ? h('div', { class: 'ev-feed' }, items.slice(0, 15).map((x) => h('a', { class: 'ev-row' + (x.imp ? ' new' : ''), href: x.href || '#/sp/' + encodeURIComponent(r.code) },
+      h('span', { class: 'num' }, fdate(x.at)), h('span', null, h('b', null, x.title), x.who ? ' · ' + x.who : '', x.text ? h('div', { class: 'cell-sub' }, String(x.text).slice(0, 160)) : null))))
+      : h('p', { class: 'muted small' }, rt('recentNone')));
+}
+// Block B: the other procedures of the sub-project — supervision, the consulting engineer, author's
+// supervision, design, the rest, and the earlier works procedures — in short, for information.
+function additionalBlock(r) {
+  const items = additionalProcurements(r);
+  const facts = infoHints(r);
+  if (!items.length && !facts.length) return null;
+  const base = '#/sp/' + encodeURIComponent(r.code);
+  const order = ['prev', 'ts', 'csc', 'author', 'design', 'other'];
+  const roleOf = (it) => (it.previous ? 'prev' : it.role);
+  items.sort((a, b) => order.indexOf(roleOf(a)) - order.indexOf(roleOf(b)) || String(b.day || '').localeCompare(String(a.day || '')));
+  const rowOf = (it) => {
+    const t0 = it.t0, x = it.x || {};
+    const c = t0 ? ((t0.contracts || []).filter((k) => k.status !== 'cancelled').sort((a, b) => String(b.signed || '').localeCompare(String(a.signed || '')))[0] || null) : null;
+    const sup = c ? (c.suppliers || [])[0] || {} : null;
+    const row = c ? ((state.trackedIndex || {}).items || []).find((y) => y.key === c.id || y.contract_id === c.id) : null;
+    const prevNote = it.previous ? (c && c.status === 'terminated' ? rt('prevEnded') : t0 && ['unsuccessful', 'cancelled'].includes(t0.status) ? rt('prevFailed') : rt('prevOther')) : null;
+    const chips = [
+      t0 && t0.sasu && t0.sasu.n ? h('span', { class: 'sev ' + (t0.sasu.violation ? 'high' : 'medium') }, rt('pSasu')) : null,
+      t0 && t0.complaints && t0.complaints.n ? h('span', { class: 'sev medium' }, rt('pAmcu', { n: t0.complaints.n, open: t0.complaints.open || 0 })) : null,
+      c && c.changes ? h('span', { class: 'tag' }, rt('changesN', { n: c.changes })) : null,
+    ].filter(Boolean);
+    return h('div', { class: 'addp-row' },
+      h('div', { class: 'addp-main' },
+        h('span', { class: 'tag' + (it.previous ? ' warn' : '') }, rt('role_' + roleOf(it))),
+        t0 ? pzStatus(t0.status) : x.status ? h('span', { class: 'pz-st run' }, x.status) : null,
+        it.tid ? ext(pzUrl(it.tid), it.tid, 'num') : h('span', { class: 'faint' }, rt('pSheetOnly')),
+        prevNote ? h('span', { class: 'small warn-text' }, prevNote) : null),
+      h('div', { class: 'addp-sub small' },
+        sup ? h('span', null, typeof contractorLink === 'function' ? contractorLink(sup.name, sup.code, r) : party(sup.name, sup.code)) : x.contractor ? h('span', null, x.contractor) : h('span', { class: 'faint' }, (t0 && t0.title || x.name || '').slice(0, 120)),
+        c ? h('span', { class: 'num' }, join([c.number && '№ ' + c.number, c.value && money(c.value.amount), c.end && '→ ' + fdate(c.end)])) : null,
+        row && row.paid_pct != null ? h('span', { class: 'num' }, rt('paidShort', { pct: Math.round(row.paid_pct) })) : null,
+        chips),
+      h('div', { class: 'addp-act' }, h('a', { class: 'btn btn-sm', href: base + '/procurement/' + encodeURIComponent(procKey(it, r)) }, rt('details'), ' ▸')));
+  };
+  return h('div', { class: 'card pad section' },
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('addTitle')), h('span', { class: 'count-inline' }, items.length)),
+    h('p', { class: 'faint small' }, rt('addHint')),
+    h('div', { class: 'addp-list' }, items.map(rowOf)),
+    facts.length ? h('details', { class: 'howto small', style: 'margin-top:10px' }, h('summary', null, rt('addFacts', { n: facts.length })),
+      facts.map((x) => h('div', { class: x.level === 'low' ? 'muted' : 'warn-text' }, h('span', { class: 'tag' }, rt('role_' + x.role)), ' ', x.text))) : null);
+}
+const PROC_ROLES = ['works', 'ts', 'csc', 'author', 'design', 'other'];
+const roleOfSheet = (k) => tKind(k) || null;
 function procItems(r) {
   const byTid = Object.fromEntries((((r.pz || {}).tenders) || []).map((x) => [x.tid, x]));
   const rows = r.tenders || [];
@@ -628,7 +840,8 @@ function procItem(r, it, save, linkIds, off) {
     ((r.link || {}).auto || []).includes(tid) ? h('span', { class: 'tag' }, rt('autoLinked')) : null,
   ].filter(Boolean);
   const verdict = v.k ? h('div', { class: 'proc-verdict' }, h('span', { class: 'faint small' }, rt('sheetRules') + ':'), verdictCell(v)) : null;
-  return h('article', { class: 'proc' + (c ? ' has-contract' : t0 && ['unsuccessful', 'cancelled'].includes(t0.status) ? ' off' : '') },
+  return h('article', { class: 'proc' + (it.primary ? ' primary' : '') + (c ? ' has-contract' : t0 && ['unsuccessful', 'cancelled'].includes(t0.status) ? ' off' : '') },
+    it.primary ? h('div', { class: 'primary-badge' }, '★ ', rt('pPrimary')) : null,
     h('header', { class: 'proc-head' },
       h('div', { class: 'proc-id' },
         it.of > 1 ? h('span', { class: 'proc-n' }, rt('pAttempt', { n: it.attempt, of: it.of })) : null,
@@ -650,7 +863,10 @@ function procItem(r, it, save, linkIds, off) {
         c.value ? money(c.value.amount, c.value.currency) : null, c.end ? rt('pTo', { date: fdate(c.end) }) : null, c.changes ? rt('pChanges', { n: c.changes }) : null, label('pzc.', c.status)]))
         : x && x.contractor ? join([x.contractor, x.contract_no && '№ ' + x.contract_no, x.contract_total != null ? money(x.contract_total) : null])
         : h('span', { class: 'faint' }, t0 && ['unsuccessful', 'cancelled'].includes(t0.status) ? rt('pNoContractEnded') : rt('pNoContract')))),
-      x && x.paid != null ? h('div', null, h('dt', null, rt('sheetPaid')), h('dd', { class: 'num' }, money(x.paid))) : null),
+      x && x.paid != null ? h('div', null, h('dt', null, rt('sheetPaid')), h('dd', { class: 'num' }, money(x.paid))) : null,
+      // The team's own observations on the procurement and on its execution (the Tenders sheet).
+      x && x.obs ? h('div', { class: 'wide' }, h('dt', null, rt('pObs')), h('dd', { class: 'small' }, x.obs)) : null,
+      x && x.exec_obs ? h('div', { class: 'wide' }, h('dt', null, rt('pExecObs')), h('dd', { class: 'small' }, x.exec_obs)) : null),
     flags.length || verdict || (srv && srv.bad.length) ? h('div', { class: 'proc-checks' }, flags, verdict) : null,
     tid ? h('footer', { class: 'proc-foot' }, h('span', { class: 'faint small' }, rt('pMarks')), marksRow(r, tid)) : null);
 }
@@ -667,6 +883,14 @@ function procurementTab(r) {
   const invest = Number((r.t || {}).invest_eur || 0);
   const sumOf = (role) => {
     const list = items.filter((i) => i.role === role);
+    // The works: the current contract (or the tender running for it), not the last one ever signed.
+    const pw = role === 'works' ? primaryWorks(r) : null;
+    if (pw && pw.mode !== 'sheet') {
+      const c = pw.contract, run = !c && pw.tender;
+      return h('div', { class: 'proc-sum ' + (c && c.status === 'active' ? 'ok' : run ? 'run' : c ? 'na' : 'warn') }, h('small', null, rt('role_works')),
+        h('b', null, c ? rt('pSigned', { what: c.number ? '№ ' + c.number : '' }) : run ? rt(pw.mode === 'retender' ? 'kpiRetender' : 'kpiTender') + ': ' + (label('pzs.', run.status) || run.status) : rt('pNoContractYet')),
+        h('span', { class: 'faint small' }, rt('pProcN', { n: list.length })));
+    }
     const signed = list.map((i) => i.t0 && (i.t0.contracts || []).find((k) => ['active', 'terminated', 'complete'].includes(k.status))).find(Boolean)
       || list.map((i) => i.x && i.x.status === 'Contract Signed' && i.x).find(Boolean);
     const running = list.some((i) => i.t0 && RUN.includes(i.t0.status));
@@ -680,16 +904,25 @@ function procurementTab(r) {
   const summary = h('div', { class: 'card pad section' },
     h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('pTitle')),
       h('div', { class: 'row' }, h('span', { class: 'faint small' }, pz.at ? rt('updated', { at: ftime(pz.at) }) : rt('never')), refresh, status)),
-    h('div', { class: 'proc-sums' }, sumOf('works'), sumOf('ts'), sumOf('csc'),
+    h('div', { class: 'proc-sums' }, sumOf('works'), sumOf('ts'), sumOf('csc'), items.some((i) => i.role === 'author') ? sumOf('author') : null,
       h('div', { class: 'proc-sum ' + (bad ? 'bad' : verdicts.length ? 'ok' : 'na') }, h('small', null, rt('sheetRules')),
         h('b', null, !verdicts.length ? rt('pNoChecks') : bad ? rt('pBad', { n: bad, of: verdicts.length }) : rt('pAllOk', { n: verdicts.length })))));
-  const groups = PROC_ROLES.map((role) => {
+  // Section 1: the current works procurement, the basis of the risks and the progress.
+  const main = primaryTids(r);
+  const prim = items.filter((i) => i.tid && main.has(i.tid)).map((i) => Object.assign({}, i, { primary: true }));
+  const primary = h('section', { class: 'card pad section proc-group' },
+    h('h2', { class: 'card-title' }, rt('pMainTitle')),
+    h('p', { class: 'small' }, basisLine(r)),
+    prim.length ? h('div', { class: 'proc-list' }, prim.map((it) => procItem(r, it, save, linkIds, off))) : h('p', { class: 'muted small' }, rt('pNoMain')));
+  // Section 2: the other procedures, each for information: the services by role, then the earlier works ones.
+  const rest = items.filter((i) => !(i.tid && main.has(i.tid)));
+  const groups = ['ts', 'csc', 'author', 'design', 'other', 'works'].map((role) => {
     // The newest procedure on top, the first attempt at the bottom; a sheet row with no date last.
-    const list = items.filter((i) => i.role === role).sort((a, b) => String(b.day || '').localeCompare(String(a.day || '')));
+    const list = rest.filter((i) => i.role === role).sort((a, b) => String(b.day || '').localeCompare(String(a.day || '')));
     if (!list.length) return null;
-    return h('section', { class: 'card pad section proc-group' },
-      h('h2', { class: 'card-title' }, rt('role_' + role), h('span', { class: 'count-inline' }, list.length)),
-      role === 'works' ? h('p', { class: 'faint small' }, rt('pRated')) : h('p', { class: 'faint small' }, rt('pInfoOnly')),
+    return h('section', { class: 'card pad section proc-group info' },
+      h('h2', { class: 'card-title' }, rt(role === 'works' ? 'role_prev' : 'role_' + role), h('span', { class: 'count-inline' }, list.length)),
+      h('p', { class: 'faint small' }, rt('pInfoOnly2')),
       h('div', { class: 'proc-list' }, list.map((it) => procItem(r, it, save, linkIds, off))));
   });
   // Possible procurements found by the sub-project's name: open when nothing is linked yet.
@@ -751,7 +984,7 @@ function procurementTab(r) {
     h('p', { class: 'muted small' }, rt('linkHint')),
     h('div', { class: 'row add-row' }, idInput, linkBtn, h('button', { class: 'btn', onclick: searchByName }, icon('search'), rt('findByName'))),
     linkMsg, find);
-  return [summary, items.length ? null : h('div', { class: 'card empty section' }, rt('notLinked'))].concat(groups, [candBox, addBox]);
+  return [summary, items.length ? primary : h('div', { class: 'card empty section' }, rt('notLinked'))].concat(groups, [candBox, addBox]);
 }
 
 // ---- one procedure in full ------------------------------------------------------------------------
@@ -892,6 +1125,8 @@ const DOCF = { q: '', kind: '' };
 const DOC_KINDS = ['tender', 'contract', 'change', 'sasu', 'link'];
 function docsTab(r) {
   const tt = r.t || {};
+  // The search and the kind belong to one sub-project: another one opens with all its documents.
+  if (DOCF.code !== r.code) Object.assign(DOCF, { code: r.code, q: '', kind: '' });
   const items = procItems(r).slice().sort((a, b) => PROC_ROLES.indexOf(a.role) - PROC_ROLES.indexOf(b.role) || String(b.day || '').localeCompare(String(a.day || '')));
   const rows = ((state.trackedIndex || {}).items || []).filter((y) => spTids(r).includes(y.tid) && onTeamList(y.key));
   const box = h('div', null, h('div', { class: 'card empty section' }, t('ui.loading')));
@@ -963,7 +1198,9 @@ function docsTab(r) {
       const general = links.filter((l) => !l.pz);
       fill(box,
         h('div', { class: 'card pad section' },
-          h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('dTitle')), h('span', { class: 'muted small' }, rt('dTotal', { n: total, links: links.length }))),
+          h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, rt('dTitle')),
+            h('div', { class: 'row' }, h('span', { class: 'muted small' }, rt('dTotal', { n: total, links: links.length })),
+              typeof openDriveFolder === 'function' ? h('button', { class: 'btn btn-sm', onclick: (e) => openDriveFolder(e.currentTarget) }, icon('drive'), rt('dDrive')) : null)),
           h('p', { class: 'muted small' }, rt('dLead')),
           h('div', { class: 'row', style: 'gap:10px;flex-wrap:wrap' },
             pills([['', t('ui.all')]].concat(DOC_KINDS.map((k) => [k, rt('dKind_' + k), counts[k] || null])), DOCF.kind, (v) => { DOCF.kind = v; draw(); }),
@@ -972,6 +1209,12 @@ function docsTab(r) {
               return q; })()),
           general.filter(keep).length ? h('div', { class: 'doc-part', style: 'margin-top:12px' }, h('h3', { class: 'card-sub' }, rt('dGeneral')), list(general)) : null),
         cards.length ? cards : h('div', { class: 'card empty section' }, rt('dNothing')));
+      // One count: the tab's badge says what the tab holds.
+      if (!DOCF.q && !DOCF.kind) {
+        REG.docN = Object.assign(REG.docN || {}, { [r.code]: total + links.length });
+        const badge = document.querySelector('.sp-tabs a[href$="/docs"] em.count');
+        if (badge) badge.textContent = total + links.length;
+      }
     };
     draw();
   })();

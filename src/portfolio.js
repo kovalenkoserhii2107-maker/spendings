@@ -15,7 +15,8 @@ const EDITION_FROM = { urp3_2026: '2026-11-02', urp3_2024: '2024-08-20', urp_202
 const PROC_KEYS = ['period', 'standstill', 'bid_security', 'method', 'eligibility'];  // rules of the procedure itself
 const DONE_ST = ['Contract Signed', 'No Bids', 'All Rejected', 'Cancelled'];
 const progKey = (p) => (/III|\b3\b/.test(p || '') ? 'urp3' : /UERP|\bERP\b|НКПВУ/i.test(p || '') ? 'uerp' : /URP|ПВУ/i.test(p || '') ? 'urp' : null);
-const tKind = (k) => (/^(Ad_)?W$/i.test(k || '') ? 'works' : /^TS$/i.test(k || '') ? 'ts' : /^IC$/i.test(k || '') ? 'csc' : null);
+// The Tenders sheet's kind: W (works), TS (technical supervision), IC (consulting engineer), AN (author's supervision), D (design).
+const tKind = (k) => (/^(Ad_)?W$/i.test(k || '') ? 'works' : /^TS$/i.test(k || '') ? 'ts' : /^IC$/i.test(k || '') ? 'csc' : /^AN$/i.test(k || '') ? 'author' : /^D$/i.test(k || '') ? 'design' : null);
 const dayDiff = (a, b) => { if (!a || !b) return null; const d = Math.round((Date.parse(b) - Date.parse(a)) / 864e5); return Number.isFinite(d) ? d : null; };
 function editionOf(prog, day) {
   if (prog === 'urp3') { const ed = day >= EDITION_FROM.urp3_2026 ? 'urp3_2026' : 'urp3_2024'; return { ed, strict: day >= EDITION_FROM[ed] }; }

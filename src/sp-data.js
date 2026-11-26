@@ -11,10 +11,19 @@ async function registryInit() {
   if (REG.access && typeof applyScope === 'function') applyScope();
   loadSubvention().then(() => { if (/^#\/(sp|portfolio|$)|^$/.test(location.hash)) softRender(); });
   // The registry also names the sub-projects of the tracked list: that page redraws too.
-  if (REG.access) cloud.watchRegistry((r) => { REG.rows = r.rows; REG.meta = r.meta; autoTrackSoon(); if (cloud.republish) cloud.republish(); if (/^#\/(sp|portfolio|signals|reminders|$)|^$/.test(location.hash)) softRender(); });
+  if (REG.access) cloud.watchRegistry((r) => { r.rows.forEach(applyOverrides); REG.rows = r.rows; REG.meta = r.meta; autoTrackSoon(); if (cloud.republish) cloud.republish(); if (/^#\/(sp|portfolio|signals|reminders|$)|^$/.test(location.hash)) softRender(); });
   softRender();
 }
 const hasRegistry = () => !!REG.access;
+// The passport edited in the app (registry/{code}.overrides) stands over the table's values: a new
+// upload of the table changes r.t, never the edits. r.tTable keeps what the table says.
+function applyOverrides(r) {
+  if (!r || r._ovFor === r.t) return;
+  const table = r.t || {};
+  Object.defineProperty(r, 'tTable', { value: table, configurable: true, writable: true });
+  r.t = r.overrides && Object.keys(r.overrides).length ? Object.assign({}, table, r.overrides) : table;
+  Object.defineProperty(r, '_ovFor', { value: r.t, configurable: true, writable: true });
+}
 
 // ---- reading the xlsx ------------------------------------------------------------------------
 
@@ -518,9 +527,21 @@ async function refreshMany(rows) {
 // The works contract of a sub-project: the latest signed one of its linked procedures.
 // Only a works procurement counts: design, expertise or supervision firms are not the contractor.
 // What a procedure buys: the team's Tenders sheet says it first (W, TS, IC), else Prozorro's code and title.
+// One classifier of what a procedure buys: the team's Tenders sheet first (W/TS/IC/AN/D); then a
+// service named in the title — supervision, the consulting engineer, author's supervision — whatever
+// object it names ("Технічний нагляд за капітальним ремонтом …" is supervision); then Prozorro's own
+// category or a construction code; then design and the rest by the title.
 function procRole(r, t0, x) {
   if (x === undefined && t0) x = (r.tenders || []).find((y) => y.pz === t0.tid) || null;
-  return (x && roleOfSheet(x.kind)) || (t0 && (isWorksTender(t0) ? 'works' : prozorro_role(t0.title))) || 'other';
+  const sheet = x && roleOfSheet(x.kind);
+  if (sheet) return sheet;
+  if (!t0) return 'other';
+  const title = t0.title || '';
+  if (/технічн\S*\s+нагляд/i.test(title)) return 'ts';
+  if (/інженер\S*[\s\-‐–]*консультант|консультаційн\S*\s+послуг/i.test(title)) return 'csc';
+  if (/авторськ\S*\s+нагляд/i.test(title)) return 'author';
+  if (t0.category === 'works' || isWorksTender(t0)) return 'works';
+  return prozorro_role(title);
 }
 // Only the works procurement is rated (the team's decision of 23.11.2026): it is what the sub-project
 // is. Supervision, the consulting engineer, design and the rest are shown, for information only.
@@ -531,16 +552,72 @@ function worksTids(r) {
   Object.defineProperty(r, '_wt', { value: { pz: r.pz, tn: r.tenders, set }, configurable: true, writable: true });
   return set;
 }
-const isWorksRow = (r, x) => roleOfSheet(x.kind) === 'works' || (!roleOfSheet(x.kind) && !!x.pz && worksTids(r).has(x.pz));
 // Mindev's payments for the works: the works done and the advance; supervision, the engineer and refunds are not.
 const NOT_WORKS_PAY = ['ts', 'csc', 'refund'];
-function mainContract(r) {
+// The sub-project's current works contract and the procedure it came from: the one basis of its risk
+// matrix, progress, payments and the SPs row of the team's table. A tender #1 → contract #1 ended →
+// tender #2 → contract #2 sub-project is judged on #2 alone; while #2 is still being tendered, on that
+// tender (its procurement checks) — the ended contract no longer brings its State Audit findings,
+// complaints, amendments, contractor or debts in.
+//   mode: contract (in force) | retender (a new works tender after the last contract ended) | tender
+//   (the first one, no contract yet) | complete | terminated (ended early, nothing new yet) | sheet
+//   (the table knows a works contract Prozorro is not linked for)
+const isEarlyEnd = (c) => !!(c && c.status === 'terminated' && (String(c.termination || '').trim()
+  || (c.paid != null && c.value && c.value.amount && c.paid < c.value.amount * 0.9)));
+function primaryWorks(r) {
+  if (r._pw && r._pw.pz === r.pz && r._pw.tn === r.tenders && r._pw.t === r.t) return r._pw.v;
+  const sheetOf = (t0) => (r.tenders || []).find((y) => y.pz === t0.tid) || null;
+  const rowOf = (c) => (c && ((state.trackedIndex || {}).items || []).find((y) => y.key === c.id || y.contract_id === c.id)) || null;
+  const works = ((r.pz || {}).tenders || []).filter((t0) => !t0.error && procRole(r, t0) === 'works');
   const cs = [];
-  const works = worksTids(r);
-  for (const t0 of ((r.pz || {}).tenders || [])) {
-    if (!works.has(t0.tid)) continue;
-    for (const c of t0.contracts || []) if (c.status === 'active' || c.status === 'terminated') cs.push({ c, t0 });
+  for (const t0 of works) for (const c of t0.contracts || []) if (['active', 'complete', 'terminated'].includes(c.status)) cs.push({ c, t0 });
+  cs.sort((a, b) => String(b.c.signed || '').localeCompare(String(a.c.signed || '')));
+  const running = works.filter((t0) => RUN.includes(t0.status) && !(t0.contracts || []).some((c) => c.status === 'active'))
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0] || null;
+  const live = cs.find((x) => x.c.status === 'active') || null;
+  const last = cs[0] || null;
+  let v = null;
+  const of = (mode, c, t0, extra) => Object.assign({ mode, contract: c, tender: t0, trackedRow: rowOf(c), sheetRow: t0 ? sheetOf(t0) : null }, extra || {});
+  if (live) v = of('contract', live.c, live.t0);
+  else if (running && (!last || String(running.date || '') >= String(last.c.signed || ''))) v = of(last ? 'retender' : 'tender', null, running, { prev: last });
+  else if (last) v = of(isEarlyEnd(last.c) ? 'terminated' : 'complete', last.c, last.t0);
+  else {
+    // No contract in Prozorro: the newest works procedure there, else the table's works row.
+    const t0 = works.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
+    const x = (r.tenders || []).filter((y) => tKind(y.kind) === 'works').sort((a, b) => String(b.issued || '').localeCompare(String(a.issued || '')))[0];
+    if (t0) v = of('tender', null, t0);
+    else if (x || (r.t || {}).contractor) v = { mode: 'sheet', contract: null, tender: null, trackedRow: null, sheetRow: x || null };
   }
-  cs.sort((a, b) => (b.c.signed || '').localeCompare(a.c.signed || ''));
-  return cs[0] || null;
+  Object.defineProperty(r, '_pw', { value: { pz: r.pz, tn: r.tenders, t: r.t, v }, configurable: true, writable: true });
+  return v;
+}
+// The procedure the risks are rated on (a set, as the checks ask "is this procedure counted").
+function primaryTids(r) {
+  const pw = primaryWorks(r);
+  return new Set(pw && pw.tender ? [pw.tender.tid] : []);
+}
+// Everything else of the sub-project: supervision, the consulting engineer, author's supervision,
+// design, the rest — and the earlier works procedures (failed, cancelled, their contract ended).
+// Shown, for information; never rated.
+function additionalProcurements(r) {
+  const main = primaryTids(r);
+  return procItems(r).filter((it) => !(it.tid && main.has(it.tid))).map((it) => Object.assign({}, it, { previous: it.role === 'works' }));
+}
+// Mindev's payments of one contract: its own (the register keeps the contract above them), or, for
+// a register read before that was kept, those of its kind made while it was the sub-project's.
+function mrdPaysOf(r, role, c) {
+  const pays = mrdPayments(r.mrd).filter((x) => (MRD_KINDS[role] || []).includes(x.kind));
+  if (!c) return pays;
+  const no = normNo(c.number);
+  if (pays.some((x) => x.contract)) return pays.filter((x) => !x.contract || normNo(x.contract) === no);
+  const own = ((r.mrd || {}).contracts || []).filter((x) => x.role === role && x.date).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  if (own.length < 2) return pays;
+  const mine = own.findIndex((x) => normNo(x.number) === no);
+  if (mine < 0) return pays;
+  const from = own[mine].date, to = own[mine + 1] ? own[mine + 1].date : '9999';
+  return pays.filter((x) => { const d = x.received || x.paid || ''; return !d || (d >= from && d < to); });
+}
+function mainContract(r) {
+  const pw = primaryWorks(r);
+  return pw && pw.contract ? { c: pw.contract, t0: pw.tender } : null;
 }
