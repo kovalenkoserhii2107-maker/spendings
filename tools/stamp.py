@@ -5,7 +5,7 @@ committed). The build id is the version plus a hash of the site's own code, so i
 changes only when the code changes: data-only runs every 6 hours keep the same
 build and do not make browsers offer an "update".
 
-    python3 tools/stamp.py           # stamps index.html, app.js, sw.js in place
+    python3 tools/stamp.py           # stamps index.html, src/core.js, sw.js in place
     python3 tools/stamp.py --print   # just shows the build id
 """
 import hashlib
@@ -14,10 +14,11 @@ import sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 # Everything the browser loads apart from data/.
-SOURCES = ["VERSION", "index.html", "style.css", "firebase-config.js", "i18n.js", "app.js", "cloud.js", "registry.js", "sw.js",
+SOURCES = ["VERSION", "index.html", "style.css", "firebase-config.js", "i18n.js", "cloud.js", "sw.js"] + sorted(
+    "src/" + f for f in os.listdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")) if f.endswith(".js")) + [
            "manifest.webmanifest", "icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png",
            "icons/apple-touch-icon.png"]
-STAMPED = ["index.html", "app.js", "sw.js"]
+STAMPED = ["index.html", "src/core.js", "sw.js"]
 
 
 def read(name, mode="r"):

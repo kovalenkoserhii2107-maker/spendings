@@ -83,7 +83,7 @@ firebase deploy --only firestore:rules
 - `sync/analysis.py` звіряє договори з актами й платежами і рахує сигнали
   (`data/org/<ЄДРПОУ>/analysis.json`, `data/signals.json`). Сигнали зберігаються
   як числа, текст формулює сайт мовою читача.
-- `index.html`, `app.js`, `style.css`, `i18n.js` — сам сайт; `cloud.js` — вхід,
+- `index.html`, `src/*.js` (по розділах: core, ui, dossier, search, settings, реєстр субпроєктів, main), `style.css`, `i18n.js` — сам сайт; `cloud.js` — вхід,
   Firestore і Google Диск; `sw.js` і `manifest.webmanifest` — встановлення й кеш.
 - `tools/icons.html` малює PNG-іконки з `icon.svg` (логотип UP&D).
 

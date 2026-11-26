@@ -6,21 +6,34 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://apis.google.com; connect-src 'self' https://api.spending.gov.ua https://*.googleapis.com https://www.gstatic.com https://spending-monitor-2122b.firebaseapp.com https://script.google.com https://script.googleusercontent.com; frame-src https://spending-monitor-2122b.firebaseapp.com https://accounts.google.com https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.googleusercontent.com; manifest-src 'self'; worker-src 'self'; base-uri 'self'; form-action 'none'">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#EEF2F7">
-<meta name="application-name" content="Монітор розрахунків">
+<meta name="application-name" content="Комплаєнс субпроєктів">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Монітор">
+<meta name="apple-mobile-web-app-title" content="Комплаєнс">
 <meta name="app-version" content="__VERSION__">
-<title>Монітор розрахунків</title>
+<title>Комплаєнс субпроєктів</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="style.css?v=__BUILD__">
 <script defer src="firebase-config.js?v=__BUILD__"></script>
 <script defer src="i18n.js?v=__BUILD__"></script>
-<script defer src="app.js?v=__BUILD__"></script>
-<script defer src="registry.js?v=__BUILD__"></script>
+<script defer src="src/core.js?v=__BUILD__"></script>
+<script defer src="src/ui.js?v=__BUILD__"></script>
+<script defer src="src/dossier.js?v=__BUILD__"></script>
+<script defer src="src/search.js?v=__BUILD__"></script>
+<script defer src="src/settings.js?v=__BUILD__"></script>
+<script defer src="src/sp-text.js?v=__BUILD__"></script>
+<script defer src="src/sp-data.js?v=__BUILD__"></script>
+<script defer src="src/risks.js?v=__BUILD__"></script>
+<script defer src="src/subprojects.js?v=__BUILD__"></script>
+<script defer src="src/excel.js?v=__BUILD__"></script>
+<script defer src="src/portfolio.js?v=__BUILD__"></script>
+<script defer src="src/mindev.js?v=__BUILD__"></script>
+<script defer src="src/signals.js?v=__BUILD__"></script>
+<script defer src="src/sp-tabs.js?v=__BUILD__"></script>
+<script defer src="src/main.js?v=__BUILD__"></script>
 </head>
 <body>
 <div id="app"><div class="boot">Завантаження… / Loading…</div></div>

@@ -117,7 +117,7 @@ jobs:
       - name: Зібрати сайт
         run: |
           rm -rf _site && mkdir _site
-          cp -R VERSION index.html style.css firebase-config.js i18n.js app.js cloud.js registry.js sw.js \
+          cp -R VERSION index.html style.css firebase-config.js i18n.js cloud.js sw.js src \
                 manifest.webmanifest icon.svg icons vendor data _site/
 
       # One artifact per attempt: a re-run must not find the failed attempt's one beside its own.

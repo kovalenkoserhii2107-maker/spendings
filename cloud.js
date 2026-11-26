@@ -1,6 +1,6 @@
 // Firebase side of the app: Google sign-in, the shared Firestore database and
 // uploads to the signed-in user's own Google Drive (drive.file scope: the app
-// sees only files it created). Loaded by app.js with a versioned URL.
+// sees only files it created). Loaded by src/main.js with a versioned URL.
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.14.1/';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
@@ -76,6 +76,15 @@ async function saveProfile(user, lang) {
   const data = { name: user.displayName || '', email: user.email || '', photo: user.photoURL || '', lang, lastLogin: fb.serverTimestamp() };
   if (!snap.exists()) data.createdAt = fb.serverTimestamp();
   await fb.setDoc(ref, data, { merge: true });
+}
+
+// The analyst's profile: whose sub-projects are "mine" (the team table's expert name).
+export async function myProfile() {
+  if (!current) return null;
+  try { const snap = await fb.getDoc(fb.doc(db, 'users', current.uid)); return snap.exists() ? snap.data() : null; } catch (e) { return null; }
+}
+export function saveExpert(name) {
+  return fb.setDoc(fb.doc(db, 'users', current.uid), { expert: name ? String(name).slice(0, 120) : fb.deleteField() }, { merge: true });
 }
 
 export function saveLang(lang) {
@@ -179,17 +188,30 @@ function schedulePublish() {
   clearTimeout(publishTimer);
   publishTimer = setTimeout(() => publish().catch(() => {}), 800);
 }
+// What the analyst's portfolio adds to each contract (sub-project code, programme, what the
+// procurement buys, the EIB's part paid by Mindev's register): the app sets the reader.
+let pubExtra = () => null;
+let lastPub = '';
+export function setPubExtra(fn) { pubExtra = fn || (() => null); }
+export function republish() { schedulePublish(); }
 async function publish() {
   if (!current || !mine.seen.orgs || !mine.seen.tracked) return;
   myHashValue = myHashValue || await hashOf(current.uid);
   const shares = [];
   for (const [cid, t] of mine.tracked) for (const w of t.sharedWith || []) if (w.uid) shares.push({ cid, to: await hashOf(w.uid) });
-  await fb.setDoc(fb.doc(db, 'pub', myHashValue), {
-    orgs: [...mine.orgs.values()].map((o) => ({ edrpou: o.edrpou, role: o.role || 'buyer' })),
-    tracked: [...mine.tracked.entries()].map(([cid, t]) => ({ cid, org: t.org, tid: t.tid || '', sp: t.sp || '', date: t.signed || '' })),
-    shares,
-    at: fb.serverTimestamp(),
+  const tracked = [...mine.tracked.entries()].map(([cid, t]) => {
+    let x = null;
+    try { x = pubExtra(cid, t); } catch (e) { x = null; }
+    const row = { cid, org: t.org, tid: t.tid || '', sp: t.sp || '', date: t.signed || '' };
+    if (x) for (const k of ['subp', 'prog', 'role', 'eib_paid']) if (x[k] != null && x[k] !== '') row[k] = x[k];
+    return row;
   });
+  const body = { orgs: [...mine.orgs.values()].map((o) => ({ edrpou: o.edrpou, role: o.role || 'buyer' })), tracked, shares };
+  // The same list again is not written: the registry changes often, the public copy seldom.
+  const sig = JSON.stringify(body);
+  if (sig === lastPub) return;
+  await fb.setDoc(fb.doc(db, 'pub', myHashValue), Object.assign(body, { at: fb.serverTimestamp() }));
+  lastPub = sig;
 }
 
 export function addOrg(code, name, role) {
@@ -304,6 +326,8 @@ function fingerprint(value) {
 // Firestore keeps no nested arrays; such values are stored as JSON text.
 function storable(v) {
   if (Array.isArray(v)) return v.map((x) => (Array.isArray(x) ? JSON.stringify(x) : storable(x)));
+  // Firestore's own values (deleteField, serverTimestamp, dates) go as they are.
+  if (v && typeof v === 'object' && Object.getPrototypeOf(v) !== Object.prototype) return v;
   if (v && typeof v === 'object') {
     const out = {};
     for (const [k, x] of Object.entries(v)) if (x !== undefined) out[k] = storable(x);
@@ -539,6 +563,32 @@ export async function importRegistry(rows, meta, onProgress) {
     by: current.uid, byName: current.displayName || current.email || '', at: fb.serverTimestamp(), failed: failed.slice(0, 50),
   }));
   return { failed };
+}
+
+// A field to remove in updateRegistry (a lowered 3 drops its sign-off and its fact).
+export const DEL = () => fb.deleteField();
+
+// The sub-project's journal: comments, visits, checks and tasks, one document each, so two
+// people writing at once never overwrite each other (registry/{code}/entries/{id}).
+export function watchEntries(code, cb) {
+  return fb.onSnapshot(fb.query(fb.collection(db, 'registry', regId(code), 'entries'), fb.orderBy('at', 'desc'), fb.limit(500)), (snap) => {
+    const out = [];
+    snap.forEach((d) => out.push(Object.assign({ id: d.id }, d.data(), { at: toDate(d.data().at), updatedAt: toDate(d.data().updatedAt) })));
+    cb(out);
+  }, () => cb(null));
+}
+export function addEntry(code, e) {
+  return fb.addDoc(fb.collection(db, 'registry', regId(code), 'entries'), Object.assign(storable(e), {
+    by: current.uid, byName: current.displayName || current.email || '', at: fb.serverTimestamp(),
+  }));
+}
+export function updateEntry(code, id, patch) {
+  return fb.updateDoc(fb.doc(db, 'registry', regId(code), 'entries', id), Object.assign(storable(patch), {
+    updatedBy: current.uid, updatedAt: fb.serverTimestamp(),
+  }));
+}
+export function deleteEntry(code, id) {
+  return fb.deleteDoc(fb.doc(db, 'registry', regId(code), 'entries', id));
 }
 
 // Our side of one sub-project: confirmed links, Prozorro data, risk hints, a note.

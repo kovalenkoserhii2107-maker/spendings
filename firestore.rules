@@ -33,6 +33,7 @@ rules_version = '2';
 //   registry/{code}             the team's compliance working table, one sub-project per
 //                               document, with the Prozorro links and notes the team adds;
 //                               read and written only by people in registryAccess
+//     /entries/{id}             the sub-project's journal: comments, visits, checks, tasks
 //   registryMeta/{id}           the last upload of the table
 //   watchlist/{edrpou}, tracked/{contractId}   before v0.10: closed; a legacy contract
 //                               is read once by whoever picked it, to move it over
@@ -75,7 +76,8 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if isSelf(uid);
       allow create, update: if isSelf(uid)
-        && request.resource.data.keys().hasOnly(['name', 'email', 'photo', 'lang', 'lastLogin', 'createdAt', 'driveScript']);
+        && request.resource.data.keys().hasOnly(['name', 'email', 'photo', 'lang', 'lastLogin', 'createdAt', 'driveScript', 'expert', 'sigSeen'])
+        && (!('expert' in request.resource.data) || str(request.resource.data.expert, 120));
       allow delete: if false;
 
       match /myorgs/{edrpou} {
@@ -216,9 +218,25 @@ service cloud.firestore {
       allow read: if isRegistry();
       allow create, update: if isRegistry() && code.matches('^[0-9A-Za-zА-Яа-яІіЇїЄє_.-]{2,60}$')
         && request.resource.data.keys().hasOnly(['code', 't', 'tenders', 'paid', 'paid_parts', 'paid_2026', 'link', 'pz', 'risk', 'note', 'scores', 'signoff', 'scoreNotes', 'work', 'mrd',
-                                                 'updatedBy', 'updatedByName', 'updatedAt'])
+                                                 'overrides', 'sigState', 'scoreLog', 'updatedBy', 'updatedByName', 'updatedAt'])
         && (!('note' in request.resource.data) || str(request.resource.data.note, 4000));
       allow delete: if false;
+
+      // The sub-project's journal: one document per comment, visit, check or task. Anyone on the
+      // team adds and edits (the edit is signed); only the author removes their own.
+      match /entries/{id} {
+        allow read: if isRegistry();
+        allow create: if isRegistry()
+          && request.resource.data.keys().hasOnly(['kind', 'text', 'target', 'due', 'done', 'doneAt', 'doneBy', 'who', 'day', 'by', 'byName', 'at'])
+          && request.resource.data.by == request.auth.uid && request.resource.data.at == request.time
+          && str(request.resource.data.kind, 40) && str(request.resource.data.text, 4000);
+        allow update: if isRegistry()
+          && request.resource.data.keys().hasOnly(['kind', 'text', 'target', 'due', 'done', 'doneAt', 'doneBy', 'who', 'day', 'by', 'byName', 'at', 'updatedBy', 'updatedAt'])
+          && request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at
+          && request.resource.data.updatedBy == request.auth.uid && request.resource.data.updatedAt == request.time
+          && str(request.resource.data.text, 4000);
+        allow delete: if isRegistry() && resource.data.by == request.auth.uid;
+      }
     }
     match /registryMeta/{id} {
       allow read: if isRegistry();
