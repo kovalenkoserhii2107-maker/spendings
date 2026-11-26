@@ -11,6 +11,8 @@ async function registryInit() {
   if (REG.access && typeof applyScope === 'function') applyScope();
   loadSubvention().then(() => { if (/^#\/(sp|portfolio|$)|^$/.test(location.hash)) softRender(); });
   // The registry also names the sub-projects of the tracked list: that page redraws too.
+  // The team's journal of every sub-project: tasks for the bell, visits for the portfolio, the export.
+  if (REG.access && cloud.watchAllEntries) cloud.watchAllEntries((by) => { if (by) { REG.entries = by; if (/^#\/(sp|portfolio|reminders|$)|^$/.test(location.hash)) softRender(); } });
   if (REG.access) cloud.watchRegistry((r) => { r.rows.forEach(applyOverrides); REG.rows = r.rows; REG.meta = r.meta; autoTrackSoon(); if (cloud.republish) cloud.republish(); if (/^#\/(sp|portfolio|signals|reminders|$)|^$/.test(location.hash)) softRender(); });
   softRender();
 }
@@ -307,6 +309,8 @@ async function refreshSp(r) {
   const patch = { pz, risk: riskHints(Object.assign({}, r, { pz })) };
   if (link) patch.link = link;
   await cloud.updateRegistry(r.code, patch);
+  // What changed since the last reading goes into the journal now, not only after the next sync.
+  if (typeof logPzChanges === 'function') logPzChanges(r, r.pz, pz).catch(() => {});
   return pz;
 }
 

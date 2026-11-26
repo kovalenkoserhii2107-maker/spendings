@@ -51,19 +51,25 @@ function tenderVerdict(r, x) {
   return { r, x, k, year: day.slice(0, 4), done, verdict, found, issued, opening };
 }
 // The first day of a weekly column of the table ("Week 47 (16.11-22.11)"), in the year the table was uploaded.
+// A week from the autumn in a table uploaded in January–March is last year's: "Week 47" of a file
+// read in February 2027 is November 2026, not a date still to come.
 function tableWeekDate(week, yr) {
-  yr = yr || String(((REG.meta || {}).at && REG.meta.at.toDate ? REG.meta.at.toDate().toISOString() : (REG.meta || {}).at) || today()).slice(0, 4);
+  const at = String(((REG.meta || {}).at && REG.meta.at.toDate ? REG.meta.at.toDate().toISOString() : (REG.meta || {}).at) || today());
+  yr = Number(yr || at.slice(0, 4));
   const m = /\((\d{2})\.(\d{2})/.exec(week || '');
-  return m ? `${yr}-${m[2]}-${m[1]}` : null;
+  const n = Number((/Week\s*(\d+)/i.exec(week || '') || [])[1]);
+  if (!m) return null;
+  if (n >= 40 && Number(at.slice(5, 7)) <= 3) yr -= 1;
+  return `${yr}-${m[2]}-${m[1]}`;
 }
 // The experts' activities: the app's journal and the table's weekly columns, the same entry once.
 function activities(r) {
   const out = [], seen = new Set();
-  for (const x of ((r.work || {}).log || [])) {
-    const kind = activityOf(x.kind);
-    if (!x.date) continue;
-    seen.add(weekOf(x.date).label + '|' + (x.who || '') + '|' + kind);
-    out.push({ date: x.date, kind, who: x.who || '', src: 'app' });
+  for (const x of entriesOf(r)) {
+    const kind = WORK_KINDS.includes(x.kind) ? x.kind : '';
+    if (!kind || !x.day) continue;
+    seen.add(weekOf(x.day).label + '|' + (x.who || '') + '|' + kind);
+    out.push({ date: x.day, kind, who: x.who || '', text: x.text || '', done: x.done !== false, src: 'app' });
   }
   const yr = String(((REG.meta || {}).at && REG.meta.at.toDate ? REG.meta.at.toDate().toISOString() : (REG.meta || {}).at) || today()).slice(0, 4);
   for (const x of ((r.t || {}).log || [])) {
@@ -80,7 +86,7 @@ function portfolioData() {
   const y = PF.year;
   const tenders = rows.flatMap((r) => (r.tenders || []).map((x) => tenderVerdict(r, x)));
   const acts = rows.flatMap((r) => activities(r).map((a) => Object.assign({ r }, a)));
-  const tasks = rows.flatMap((r) => ((r.work || {}).tasks || []).map((x) => Object.assign({ r }, x)));
+  const tasks = rows.flatMap((r) => entriesOf(r).filter((x) => x.kind === 'TASK').map((x) => Object.assign({ r, at: x.day }, x)));
   // 2.6: finished procedures of the year with a verdict.
   const fin = tenders.filter((v) => v.done && inYear(v.year, y) && v.k);
   const judged = fin.filter((v) => v.verdict !== 'na'), okN = judged.filter((v) => v.verdict === 'ok').length;

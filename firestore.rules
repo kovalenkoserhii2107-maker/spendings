@@ -227,16 +227,20 @@ service cloud.firestore {
       match /entries/{id} {
         allow read: if isRegistry();
         allow create: if isRegistry()
-          && request.resource.data.keys().hasOnly(['kind', 'text', 'target', 'due', 'done', 'doneAt', 'doneBy', 'who', 'day', 'by', 'byName', 'at'])
+          && request.resource.data.keys().hasOnly(['kind', 'text', 'target', 'due', 'done', 'doneAt', 'doneBy', 'who', 'day', 'legacy', 'by', 'byName', 'at'])
           && request.resource.data.by == request.auth.uid && request.resource.data.at == request.time
           && str(request.resource.data.kind, 40) && str(request.resource.data.text, 4000);
         allow update: if isRegistry()
-          && request.resource.data.keys().hasOnly(['kind', 'text', 'target', 'due', 'done', 'doneAt', 'doneBy', 'who', 'day', 'by', 'byName', 'at', 'updatedBy', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['kind', 'text', 'target', 'due', 'done', 'doneAt', 'doneBy', 'who', 'day', 'legacy', 'by', 'byName', 'at', 'updatedBy', 'updatedAt'])
           && request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at
           && request.resource.data.updatedBy == request.auth.uid && request.resource.data.updatedAt == request.time
           && str(request.resource.data.text, 4000);
         allow delete: if isRegistry() && resource.data.by == request.auth.uid;
       }
+    }
+    // The team's journal across all sub-projects at once (a collection-group read).
+    match /{path=**}/entries/{id} {
+      allow read: if isRegistry();
     }
     match /registryMeta/{id} {
       allow read: if isRegistry();

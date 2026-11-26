@@ -30,6 +30,7 @@ const SHELL = [
   'src/signals.js?v=' + BUILD,
   'src/sp-tabs.js?v=' + BUILD,
   'src/drawers.js?v=' + BUILD,
+  'src/timeline.js?v=' + BUILD,
   'src/main.js?v=' + BUILD,
   'manifest.webmanifest',
   'icon.svg',

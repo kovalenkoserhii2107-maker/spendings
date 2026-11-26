@@ -582,6 +582,29 @@ export function addEntry(code, e) {
     by: current.uid, byName: current.displayName || current.email || '', at: fb.serverTimestamp(),
   }));
 }
+// The whole team's journal at once (every sub-project's entries): for the bell, the portfolio and
+// the export. Map regId → [entries].
+export function watchAllEntries(cb) {
+  return fb.onSnapshot(fb.query(fb.collectionGroup(db, 'entries'), fb.limit(8000)), (snap) => {
+    const by = new Map();
+    snap.forEach((d) => {
+      const code = d.ref.parent.parent ? d.ref.parent.parent.id : '';
+      if (!by.has(code)) by.set(code, []);
+      by.get(code).push(Object.assign({ id: d.id }, d.data(), { at: toDate(d.data().at), updatedAt: toDate(d.data().updatedAt) }));
+    });
+    cb(by);
+  }, () => cb(null));
+}
+// An entry with an id of our own: moving the old journal over twice writes it once.
+export function setEntry(code, id, e) {
+  return fb.setDoc(fb.doc(db, 'registry', regId(code), 'entries', id), Object.assign(storable(e), {
+    by: current.uid, byName: current.displayName || current.email || '', at: fb.serverTimestamp(),
+  }));
+}
+// The changes this person has seen (signal ids), kept with their profile.
+export function saveSigSeen(ids) {
+  return fb.setDoc(fb.doc(db, 'users', current.uid), { sigSeen: ids.slice(-2000) }, { merge: true });
+}
 export function updateEntry(code, id, patch) {
   return fb.updateDoc(fb.doc(db, 'registry', regId(code), 'entries', id), Object.assign(storable(patch), {
     updatedBy: current.uid, updatedAt: fb.serverTimestamp(),

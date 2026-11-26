@@ -248,19 +248,22 @@ async function fillWorkbook(buf, mode, onStep) {
       setK('funding', FUNDING_WORD[ad.status]);
       setK('extra_need', Math.round(Math.max(0, ad.need - ad.left)));
     }
-    // The journal, into its week's EXPERT / Activity / ☑ — where that week is still empty.
-    const used = new Set();
-    for (const x of ((r.work || {}).log || []).slice().sort((a, b) => a.date.localeCompare(b.date))) {
+    // The journal, into its week's EXPERT / Activity / ☑ — where that week is still empty. Several
+    // activities of one week go in together ("VISIT; COST VERIFICATION"), each expert once.
+    const byWeek = new Map();
+    for (const x of activities(r).filter((a) => a.src === 'app').sort((a, b) => a.date.localeCompare(b.date))) {
       const w = weekOf(x.date).label;
+      if (!byWeek.has(w)) byWeek.set(w, { who: new Set(), kinds: new Set(), done: true });
+      const g = byWeek.get(w); g.who.add(initialsOf(x.who)); g.kinds.add(x.kind); g.done = g.done && x.done !== false;
+    }
+    for (const [w, g] of byWeek) {
       const c0 = weeks[w];
       if (c0 == null) { report.noWeek++; continue; }
-      if (used.has(w)) continue;
-      used.add(w);
       const cur = [row[c0], row[c0 + 1]];
       if (cur.some((v) => v != null && v !== '')) continue;
-      sp.set(ref(R, c0), initialsOf(x.who), 'blank');
-      if (activityOf(x.kind)) sp.set(ref(R, c0 + 1), activityOf(x.kind), 'blank');
-      if (x.done) sp.set(ref(R, c0 + 2), true, 'blank');
+      sp.set(ref(R, c0), [...g.who].filter(Boolean).join('; '), 'blank');
+      sp.set(ref(R, c0 + 1), [...g.kinds].join('; '), 'blank');
+      if (g.done) sp.set(ref(R, c0 + 2), true, 'blank');
       report.weeks++;
     }
   });

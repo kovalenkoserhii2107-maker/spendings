@@ -168,7 +168,7 @@ function spNews(rows) {
 }
 // The expert's side: the next task and the last visit.
 function spWork(r) {
-  const next = ((r.work || {}).tasks || []).filter((x) => !x.done).sort((a, b) => String(a.due || '9').localeCompare(String(b.due || '9')))[0] || null;
+  const next = openTasks(r).sort((a, b) => String(a.due || '9').localeCompare(String(b.due || '9')))[0] || null;
   const visits = activities(r).filter((a) => a.kind === 'VISIT' && a.date).map((a) => a.date).sort();
   return { next, lastVisit: visits[visits.length - 1] || null, visits: visits.length };
 }
@@ -222,11 +222,11 @@ function registryCard(code, tab, sub) {
   const head = spHeader(r, st);
   // One sub-project, its parts as tabs: where it stands, its procurements, its contracts, its money,
   // the expert's work. The address keeps the tab (#/sp/CODE/contracts).
-  const count = { procurement: spTids(r).length || (r.tenders || []).length, contracts: spContracts(r).length, work: ((r.work || {}).tasks || []).filter((x) => !x.done).length , docs: (REG.docN || {})[r.code] != null ? REG.docN[r.code] : ((state.trackedIndex || {}).items || []).filter((y) => spTids(r).includes(y.tid) && onTeamList(y.key)).reduce((n, y) => n + (y.docs || 0), 0)};
+  const count = { procurement: spTids(r).length || (r.tenders || []).length, contracts: spContracts(r).length, work: openTasks(r).length , docs: (REG.docN || {})[r.code] != null ? REG.docN[r.code] : ((state.trackedIndex || {}).items || []).filter((y) => spTids(r).includes(y.tid) && onTeamList(y.key)).reduce((n, y) => n + (y.docs || 0), 0)};
   const tabs = h('nav', { class: 'section-tabs pills sp-tabs', 'aria-label': rt('nav') }, SP_TABS.map((k) => h('a', { href: '#/sp/' + encodeURIComponent(r.code) + '/' + k, class: k === tab ? 'on' : '' },
     rt('tab_' + k), count[k] ? h('em', { class: 'count' }, count[k]) : null, k === 'overview' && news.signals.length ? h('em', { class: 'count red' }, news.signals.length) : null)));
   const body = {
-    overview: () => [h('div', { class: 'section' }, risksCard(r)), additionalBlock(r), reconcileCard(r), recentCard(r), stageCard(r, st), statusCard(r)],
+    overview: () => [h('div', { class: 'section' }, risksCard(r)), additionalBlock(r), reconcileCard(r), recentCard(r), stageCard(r, st)],
     procurement: () => (sub ? procDetail(r, sub) : procurementTab(r)),
     contracts: () => contractsTab(r),
     finance: () => financeTab(r),
@@ -750,7 +750,7 @@ function reconcileCard(r) {
       h('tbody', null, rows.map(([f, a, b, same, src]) => h('tr', { class: a != null && b != null && !same ? 'row-warn' : '' },
         td(rt('rcField'), null, h('b', null, f)), td(rt('rcTable'), null, a == null ? h('span', { class: 'faint' }, '—') : a),
         td(rt('rcLive'), null, b == null ? h('span', { class: 'faint' }, '—') : b), td(rt('rcSource'), { class: 'faint small' }, src)))))),
-    h('div', { class: 'row', style: 'margin-top:10px' }, h('a', { class: 'btn btn-sm', href: '#/sp/' + encodeURIComponent(r.code) + '/overview#status' }, icon('edit'), rt('rcUpdate'))));
+    h('div', { class: 'row', style: 'margin-top:10px' }, h('a', { class: 'btn btn-sm', href: '#/sp/' + encodeURIComponent(r.code) + '/work#status' }, icon('edit'), rt('rcUpdate'))));
 }
 // Block D: what changed in the sub-project in the last 30 days, newest first; the whole story in Signals.
 function recentCard(r) {
@@ -1265,8 +1265,8 @@ function dueTasks(within = 0) {
   if (!REG.access) return [];
   const me = myExpert(), until = addDays(today(), within), out = [];
   for (const r of REG.rows.values()) {
-    for (const x of ((r.work || {}).tasks || [])) {
-      if (!x.done && x.due && x.due <= until && (x.who ? x.who === me : isMine(r))) out.push(Object.assign({ code: r.code, name: (r.t || {}).name_uk || (r.t || {}).name_en || '' }, x));
+    for (const x of openTasks(r)) {
+      if (x.due && x.due <= until && (x.who ? x.who === me : isMine(r))) out.push(Object.assign({ code: r.code, name: (r.t || {}).name_uk || (r.t || {}).name_en || '' }, x));
     }
     // A guarantee ending within 30 days (or already ended and not closed) is a task of the sub-project's expert.
     if (spManager(r) && spManager(r) !== myManager()) continue;
