@@ -34,7 +34,7 @@ function registryPage() {
   const dataMenu = actionMenu(rt('dataMenu'), [
     [rt('upload'), () => file.click(), 'upload', rt('uploadHint')],
     rows.length ? [rt('mrdUpload'), () => mrdFile.click(), 'upload', rt('mrdUploadHint')] : null,
-    rows.length ? [rt('export'), () => exportDialog(), 'download', rt('exportHint')] : null,
+    rows.length ? [rt('export'), () => exportCentre(), 'download', rt('exportHint')] : null,
     [rt('addSp'), () => addSpDialog(null), 'plus', null],
     orphans.length ? [rt('orphansMenu', { n: orphans.length }), showOrphans, 'alert', rt('orphansMenuHint')] : null,
   ], 'db');
@@ -92,6 +92,7 @@ function registryPage() {
     fill(chipsBox, pills([['', rt('all'), pool.length], ['attention', rt('fAttention'), count('attention')], ['late', rt('fLate'), count('late')], ['signals', rt('fSignals'), count('signals')],
       ['high', rt('fHigh'), count('high')], ['nolink', rt('fNoLink'), count('nolink')], ['nocontract', rt('fNoContract'), count('nocontract')]]
       .filter((p) => p[0] === '' || p[2] || p[0] === REGF.which), REGF.which, (v) => { REGF.which = v; REGF.page = 0; draw(); }));
+    REG.shown = shown;  // "those the list shows" for the export centre
     pagedList(list, shown, REGF.page, { noSum: true }, (p) => { REGF.page = p; draw(); }, registryTable);
   };
   const set = (k) => (e) => { REGF[k] = e.target.value; REGF.page = 0; draw(); if (k === 'expert') drawRefresh(); };

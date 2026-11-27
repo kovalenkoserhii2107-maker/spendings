@@ -84,7 +84,14 @@ function portfolioData() {
   const all = [...REG.rows.values()];
   const rows = all.filter((r) => (!PF.expert || spManager(r) === PF.expert) && (!PF.programme || (r.t || {}).programme === PF.programme) && (!PF.batch || String((r.t || {}).batch) === PF.batch));
   const y = PF.year;
-  const tenders = rows.flatMap((r) => (r.tenders || []).map((x) => tenderVerdict(r, x)));
+  // The Tenders sheet's procedures and those linked in the app (with Prozorro's dates); the team's
+  // marks as the app keeps them.
+  const LETTER = { works: 'W', ts: 'TS', csc: 'IC', author: 'AN', design: 'D' };
+  const tenders = rows.flatMap((r) => procItems(r).map((it) => {
+    const marks = (((r.work || {}).marks || {})[it.tid]) || null;
+    const x = Object.assign({}, it.x || { kind: LETTER[it.role], pz: it.tid }, marks ? { mk_td: !!marks.td || (it.x || {}).mk_td === true, mk_assist: !!marks.assist || (it.x || {}).mk_assist === true, mk_monitor: !!marks.monitor || (it.x || {}).mk_monitor === true } : {});
+    return tenderVerdict(r, x);
+  }));
   const acts = rows.flatMap((r) => activities(r).map((a) => Object.assign({ r }, a)));
   const tasks = rows.flatMap((r) => entriesOf(r).filter((x) => x.kind === 'TASK').map((x) => Object.assign({ r, at: x.day }, x)));
   // 2.6: finished procedures of the year with a verdict.
@@ -138,7 +145,7 @@ function portfolioPage() {
   const set = (k) => (e) => { PF[k] = e.target.value; draw(); };
   draw();
   return [pageHead(rt('pfEyebrow'), titleGrad(rt('pfTitle1'), rt('pfTitle2')), rt('pfLead'),
-    h('div', { class: 'row' }, h('button', { class: 'btn btn-dark', onclick: () => exportPortfolio(portfolioData()) }, icon('download'), rt('pfExport')))),
+    h('div', { class: 'row' }, h('button', { class: 'btn btn-dark', onclick: () => exportCentre() }, icon('download'), rt('xcTitle')), h('button', { class: 'btn', onclick: () => exportPortfolio(portfolioData()) }, icon('download'), rt('pfExport')))),
   h('div', { class: 'table-card section' }, h('div', { class: 'table-tools' },
     pills(years.map((x) => [x, x]).concat([['all', rt('pfAll')]]), PF.year, (v) => { PF.year = v; draw(); }),
     select([['', rt('anyExpert')]].concat(experts.map((x) => [x, x])), PF.expert, set('expert'), rt('colExpert')),

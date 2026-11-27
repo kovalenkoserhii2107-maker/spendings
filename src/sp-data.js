@@ -213,30 +213,98 @@ function setStatus(text, bad) {
   const el = document.getElementById('reg-status');
   if (el) fill(el, text ? h('span', { class: bad ? 'bad' : '' }, text) : '');
 }
+// The fields of the table a change of which is worth showing before an upload.
+const DIFF_FIELDS = ['status', 'pct', 'upd', 'completion', 'contractor', 'contract_sum', 'contract_value', 'funding', 'subv_year', 'expert', 'comment', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8'];
+const diffVal = (v) => (v == null || v === '' ? '' : v instanceof Date ? v.toISOString().slice(0, 10) : typeof v === 'object' ? JSON.stringify(v) : String(v).trim());
+// What an upload of the table would change, before anything is written: one's own new sub-projects,
+// one's own that change (field by field; the app's ratings and edits stay as they are), the rest of
+// the mission in numbers.
+function importDiff(rows) {
+  const me = myManager(), seen = new Set();
+  const out = { mineNew: [], mineChanged: [], othersNew: 0, othersChanged: 0, same: 0, gone: [] };
+  for (const row of rows) {
+    const id = cloud && cloud.regId ? cloud.regId(row.code) : row.code;
+    seen.add(id);
+    const old = REG.rows.get(id) || [...REG.rows.values()].find((x) => x.code === row.code);
+    const expert = (row.t || {}).expert || '';
+    const mine = expert === me || (old && isMine(old));
+    if (!old) { if (mine) out.mineNew.push(row); else out.othersNew++; continue; }
+    const before = old.tTable || old.t || {}, after = row.t || {};
+    const changes = DIFF_FIELDS.filter((k) => diffVal(before[k]) !== diffVal(after[k])).map((k) => ({ k, from: before[k], to: after[k],
+      // A rating set in the app stands over the table's: the table's new value is shown, not taken.
+      kept: /^r\d$/.test(k) && (old.scores || {})[k] != null,
+      over: (old.overrides || {})[k] != null }));
+    const cleared = Object.keys(before).filter((k) => diffVal(before[k]) !== '' && diffVal(after[k]) === '' && !DIFF_FIELDS.includes(k)).length;
+    if (!changes.length && !cleared) { out.same++; continue; }
+    if (mine) out.mineChanged.push({ r: old, row, changes, cleared });
+    else out.othersChanged++;
+  }
+  out.gone = [...REG.rows.values()].filter((x) => !seen.has(cloud && cloud.regId ? cloud.regId(x.code) : x.code) && !(x.t || {}).manual).map((x) => x.code);
+  return out;
+}
 async function importFile(file) {
   if (REG.busy) return;
-  REG.busy = 'import';
+  let XLSX, buf, parsed;
   try {
     setStatus(rt('importing'));
-    const XLSX = await loadXlsx();
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
-    const { rows, tenders, orphans } = parseWorkbook(XLSX, wb);
-    // The file itself stays on this device: the export fills it in, cell by cell.
-    idbPut('template', { name: file.name, at: new Date().toISOString(), bytes: buf });
-    const res = await cloud.importRegistry(rows, { file: file.name.slice(0, 200), rows: rows.length, tenders, orphans }, (n, total) => setStatus(rt('saving', { n, total })));
-    const failed = (res && res.failed) || [];
-    const msg = rt('importDone', { n: rows.length - failed.length, t: tenders }) + (failed.length ? ' · ' + rt('importFailed', { list: failed.slice(0, 10).join(', ') }) : '');
-    setStatus(msg, failed.length > 0);
-    toast(msg, failed.length ? { bad: true, sticky: true } : { long: true });
+    XLSX = await loadXlsx();
+    buf = await file.arrayBuffer();
+    parsed = parseWorkbook(XLSX, XLSX.read(buf, { type: 'array', cellDates: true }));
   } catch (e) {
-    console.error('registry import', e);
-    const msg = (e && e.code === 'permission-denied') ? rt('denied') : (e && e.message) || String(e);
-    setStatus(msg, true);
-    toast(msg, { bad: true, sticky: true });
-  } finally {
-    REG.busy = null;
+    setStatus((e && e.message) || String(e), true);
+    toast((e && e.message) || String(e), { bad: true, sticky: true });
+    return;
   }
+  setStatus('');
+  const { rows, tenders, orphans } = parsed;
+  const d = importDiff(rows);
+  const fmtV = (k, v) => (v == null || v === '' ? '—' : k === 'pct' ? (pctOf(v) != null ? pctOf(v) + '%' : String(v)) : /sum|value|subv/.test(k) && toNum(v) != null ? money(toNum(v)) : v instanceof Date ? fdate(v.toISOString().slice(0, 10)) : /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? fdate(String(v).slice(0, 10)) : String(v).slice(0, 160));
+  const go = h('button', { class: 'btn btn-dark', onclick: async () => {
+    go.disabled = true;
+    closeSheet();
+    REG.busy = 'import';
+    try {
+      // The file itself stays on this device: the export fills it in, cell by cell.
+      idbPut('template', { name: file.name, at: new Date().toISOString(), bytes: buf });
+      const res = await cloud.importRegistry(rows, { file: file.name.slice(0, 200), rows: rows.length, tenders, orphans,
+        diff: { mineNew: d.mineNew.length, mineChanged: d.mineChanged.length, othersNew: d.othersNew, othersChanged: d.othersChanged, same: d.same } },
+      (n, total) => setStatus(rt('saving', { n, total })));
+      const failed = (res && res.failed) || [];
+      // What changed in one's own sub-projects goes into their journals and signals.
+      for (const x of d.mineChanged) {
+        const text = x.changes.filter((c) => !/^r\d$/.test(c.k)).slice(0, 6).map((c) => rt('dfLine', { f: (/^r\d$/.test(c.k) ? rt(c.k) : rt('df_' + c.k)), from: fmtV(c.k, c.from), to: fmtV(c.k, c.to) })).join('; ');
+        if (text) cloud.addEntry(x.r.code, { kind: 'CHANGE', text: rt('dfEntry', { text }).slice(0, 4000), target: 'sp', day: today(), who: rt('tlSystem'), done: true }).catch(() => {});
+      }
+      const msg = rt('importDone', { n: rows.length - failed.length, t: tenders }) + (failed.length ? ' · ' + rt('importFailed', { list: failed.slice(0, 10).join(', ') }) : '');
+      setStatus(msg, failed.length > 0);
+      toast(msg, failed.length ? { bad: true, sticky: true } : { long: true });
+      if (d.mineNew.length) setTimeout(() => autoTrack(true).catch(() => {}), 3000);
+    } catch (e) {
+      console.error('registry import', e);
+      const msg = (e && e.code === 'permission-denied') ? rt('denied') : (e && e.message) || String(e);
+      setStatus(msg, true);
+      toast(msg, { bad: true, sticky: true });
+    } finally {
+      REG.busy = null;
+    }
+  } }, icon('check'), rt('dfSave'));
+  sheet(h('h2', { class: 'card-title' }, rt('dfTitle', { file: file.name })),
+    h('p', { class: 'muted small' }, rt('dfLead')),
+    h('div', { class: 'proc-sums' },
+      h('div', { class: 'proc-sum ' + (d.mineNew.length ? 'run' : 'na') }, h('small', null, rt('dfMineNew')), h('b', null, String(d.mineNew.length))),
+      h('div', { class: 'proc-sum ' + (d.mineChanged.length ? 'warn' : 'na') }, h('small', null, rt('dfMineChanged')), h('b', null, String(d.mineChanged.length))),
+      h('div', { class: 'proc-sum na' }, h('small', null, rt('dfOthers')), h('b', null, rt('dfOthersV', { c: d.othersChanged, n: d.othersNew }))),
+      h('div', { class: 'proc-sum ok' }, h('small', null, rt('dfSame')), h('b', null, String(d.same)))),
+    d.mineNew.length ? h('div', { class: 'section' }, h('h3', { class: 'card-sub' }, rt('dfMineNewTitle', { n: d.mineNew.length })),
+      h('div', { class: 'chips' }, d.mineNew.map((x) => h('span', { class: 'tag ok' }, x.code)))) : null,
+    d.mineChanged.length ? h('div', { class: 'section' }, h('h3', { class: 'card-sub' }, rt('dfMineChangedTitle')),
+      d.mineChanged.map((x) => h('details', { class: 'howto small df-sp' }, h('summary', null, h('b', null, x.r.code), ' · ', rt('dfN', { n: x.changes.length + x.cleared })),
+        h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' }, h('tbody', null, x.changes.map((c) => h('tr', null, td('', null, (/^r\d$/.test(c.k) ? rt(c.k) : rt('df_' + c.k))), td('', { class: 'faint' }, fmtV(c.k, c.from)), td('', null, '→ ', h('b', null, fmtV(c.k, c.to))),
+          td('', { class: 'small faint' }, c.kept ? rt('dfKept') : c.over ? rt('dfOver') : '')))))),
+        x.cleared ? h('p', { class: 'faint' }, rt('dfCleared', { n: x.cleared })) : null))) : null,
+    d.gone.length ? h('p', { class: 'small warn-text section' }, rt('dfGone', { n: d.gone.length, list: d.gone.slice(0, 12).join(', ') })) : null,
+    h('p', { class: 'faint small section' }, rt('dfKeepsApp')),
+    h('div', { class: 'row', style: 'margin-top:12px' }, go, h('button', { class: 'btn', onclick: closeSheet }, rt('cancel'))));
 }
 
 // ---- Prozorro --------------------------------------------------------------------------------

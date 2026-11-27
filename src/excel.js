@@ -76,8 +76,12 @@ function sheetPatch(xml, sst) {
   };
   const same = (a, b) => (b && b.f ? String(a == null ? '' : a).trim() === String(b.v || '').trim() : b && b.day ? typeof a === 'number' && Math.abs(a - excelDay(b.day)) < 1 : typeof b === 'number' ? typeof a === 'number' && Math.abs(a - b) < 0.005
     : typeof b === 'boolean' ? a === b : String(a == null ? '' : a).trim() === String(b).trim());
+  const lastRow = () => Math.max(0, ...rowsAt.keys());
   return {
     stat,
+    lastRow,
+    // A new row after the last one: its cells take the styles of the nearest rows.
+    addRow(n) { if (!rowsAt.has(n)) rowsAt.set(n, null); return n; },
     set(ref, value, how) {
       if (value == null || value === '' || (typeof value === 'number' && !isFinite(value))) return;
       const row = +ref.match(/\d+/)[0];
@@ -86,11 +90,12 @@ function sheetPatch(xml, sst) {
       changes.get(row).set(ref, { value, how: how || 'blank' });
     },
     out() {
-      const parts = [];
+      const parts = [], appended = [];
       let at = 0;
       for (const row of [...changes.keys()].sort((a, b) => a - b)) {
-        const [a, b] = rowsAt.get(row);
-        let x = xml.slice(a, b);
+        const fresh = rowsAt.get(row) === null;
+        const [a, b] = fresh ? [0, 0] : rowsAt.get(row);
+        let x = fresh ? `<row r="${row}"></row>` : xml.slice(a, b);
         if (x.endsWith('/>')) x = x.slice(0, -2) + '></row>';
         for (const [ref, { value, how }] of changes.get(row)) {
           const cm = x.match(new RegExp(`<c r="${ref}"(\\s[^>]*?)?(?:/>|>([\\s\\S]*?)</c>)`));
@@ -113,11 +118,16 @@ function sheetPatch(xml, sst) {
           }
           stat.set++;
         }
+        if (fresh) { appended.push(x); stat.added = (stat.added || 0) + 1; continue; }
         parts.push(xml.slice(at, a), x);
         at = b;
       }
       parts.push(xml.slice(at));
-      return parts.join('');
+      let outXml = parts.join('');
+      // The sheet's stated range must take in rows written past it.
+      const top = Math.max(lastRow(), ...[...changes.keys()]);
+      outXml = outXml.replace(/<dimension ref="([A-Z]+)(\d+):([A-Z]+)(\d+)"\/>/, (m0, c1, r1, c2, r2) => `<dimension ref="${c1}${r1}:${c2}${Math.max(+r2, top)}"/>`);
+      return appended.length ? outXml.replace('</sheetData>', appended.join('') + '</sheetData>').replace(/<sheetData\/>/, '<sheetData>' + appended.join('') + '</sheetData>') : outXml;
     },
   };
 }
@@ -197,6 +207,7 @@ async function fillWorkbook(buf, mode, onStep) {
   const col = mapHeaders(labels, SP_COLS);
   const weeks = {};
   groups.forEach((g, i) => { if (/^Week \d+/.test(g) && /EXPERT/i.test(labels[i])) weeks[g] = i; });
+  const ca = labels.findIndex((l, i) => l === 'CA' && /NEXT ACTIVITY/.test(groups[i] || ''));
   const sp = sheetPatch(text(spPath), sst);
   const seen = new Set();
   sps.forEach((row, i) => {
@@ -248,6 +259,11 @@ async function fillWorkbook(buf, mode, onStep) {
       setK('funding', FUNDING_WORD[ad.status]);
       setK('extra_need', Math.round(Math.max(0, ad.need - ad.left)));
     }
+    // The columns the export did not write before: the contractor's code, the money, the dates, the
+    // subvention, the shares, and NEXT ACTIVITY from the nearest open task.
+    const v = spRowValues(r);
+    for (const k of ['contractor_id', 'contract_value', 'contract_sum', 'co_eib', 'co_local', 'contract_date', 'completion', 'subv_year', 'subv_paid', 'subv_paid_year', 'paid_pct', 'subv_util']) if (v[k] != null) setK(k, v[k]);
+    if (ca >= 0 && v.next_act) { sp.set(ref(R, ca), v.next_ca, how); sp.set(ref(R, ca + 1), v.next_act, how); if (v.next_date) sp.set(ref(R, ca + 2), v.next_date, how); }
     // The journal, into its week's EXPERT / Activity / ☑ — where that week is still empty. Several
     // activities of one week go in together ("VISIT; COST VERIFICATION"), each expert once.
     const byWeek = new Map();
@@ -268,6 +284,18 @@ async function fillWorkbook(buf, mode, onStep) {
     }
   });
   report.missing = [...REG.rows.keys()].filter((c) => !seen.has(c));
+  // Sub-projects added in the app by hand: new rows right after the last filled one, with the rating formula.
+  report.added = 0;
+  let spNext = base + sps.reduce((last, row, i) => (i > hi && row && codesOf(row[col.code]).length ? i : last), hi) + 1;
+  for (const code of report.missing) {
+    const r = REG.rows.get(code);
+    if (!r || !(r.t || {}).manual) continue;
+    const R = spNext++, v = spRowValues(r);
+    sp.addRow(R + 1);
+    for (const [key] of SP_COLS) if (col[key] != null && v[key] != null && key !== 'rating') sp.set(ref(R, col[key]), v[key], 'force');
+    if (col.rating != null) sp.set(ref(R, col.rating), { f: RATING_FORMULA(R + 1), v: v.rating != null ? String(v.rating) : '' }, 'force');
+    report.added++;
+  }
   put(spPath, sp.out());
   report.sheets.SPs = sp.stat;
 
@@ -280,6 +308,7 @@ async function fillWorkbook(buf, mode, onStep) {
     if (th >= 0) {
       const tcol = mapHeaders(tn[th].map((x) => String(x || '').replace(/\s+/g, ' ').trim()), TN_COLS);
       const tp = sheetPatch(text(tnPath), sst);
+      const onSheet = new Set();
       tn.forEach((row, i) => {
         if (i <= th || !row) return;
         const code = codesOf(row[tcol.sp])[0];
@@ -290,11 +319,16 @@ async function fillWorkbook(buf, mode, onStep) {
         const s = snaps[tid];
         const R = tbase + i;
         const setT = (key, v, h2) => { if (tcol[key] != null) tp.set(ref(R, tcol[key]), v, h2 || how); };
-        const mk = ((r.work || {}).marks || {})[tid] || {};
-        if (mk.td) setT('mk_td', true, 'force');
-        if (mk.assist) setT('mk_assist', true, 'force');
-        if (mk.monitor) setT('mk_monitor', true, 'force');
+        // The team's marks as the app keeps them: a mark taken off is written off too.
+        const marks = ((r.work || {}).marks || {});
+        if (marks[tid]) for (const k of ['td', 'assist', 'monitor']) setT('mk_' + k, !!marks[tid][k], 'force');
+        onSheet.add(tid);
         if (!t0 && !s) return;
+        const it = procItems(r).find((y) => y.tid === tid);
+        if (it) {
+          const v = tenderRowValues(r, Object.assign({}, it, { x: null }), s);
+          for (const k of ['est', 'co_eib', 'co_local', 'paid', 'paid_eib', 'paid_local', 'mods_link', 'duration']) if (v[k] != null) setT(k, v[k]);
+        }
         report.tenders++;
         const st = (s && s.tender) || {};
         const c = ((t0 && t0.contracts) || []).find((x) => x.status === 'active') || ((t0 && t0.contracts) || []).find((x) => x.status === 'terminated') || (s && s.contract) || null;
@@ -329,6 +363,23 @@ async function fillWorkbook(buf, mode, onStep) {
           if (nch != null) setT('mods', nch);
         }
       });
+      // Procurements linked in the app that the sheet has no row for: new rows at its end.
+      report.tnAdded = 0;
+      let tnNext = tbase + tn.reduce((last, row, i) => (i > th && row && String(row[tcol.sp] || '').trim() ? i : last), th) + 1;
+      for (const code of seen) {
+        const r = REG.rows.get(code);
+        if (!r) continue;
+        for (const it of procItems(r)) {
+          // Only what the team lists there (works, supervision, the engineer) and only with Prozorro's data in hand.
+          if (!it.tid || onSheet.has(it.tid) || it.x || !it.t0 || it.t0.error || !['works', 'ts', 'csc'].includes(it.role)) continue;
+          const R = tnNext++;
+          tp.addRow(R + 1);
+          const v = tenderRowValues(r, it, snaps[it.tid]);
+          for (const [key] of TN_COLS) if (tcol[key] != null && v[key] != null) tp.set(ref(R, tcol[key]), v[key], 'force');
+          onSheet.add(it.tid);
+          report.tnAdded++;
+        }
+      }
       put(tnPath, tp.out());
       report.sheets.Tenders = tp.stat;
     }
@@ -358,6 +409,7 @@ function exportDialog() {
       fill(status, h('div', { class: 'x-report' },
         h('b', null, rt('xDone', { n: (st.set || 0) + (tt.set || 0) })),
         h('div', null, rt('xRows', { sp: report.sps, tn: report.tenders, w: report.weeks })),
+        report.added || report.tnAdded ? h('div', null, rt('xAdded', { sp: report.added || 0, tn: report.tnAdded || 0 })) : null,
         h('div', { class: 'muted' }, rt('xKept', { kept: (st.kept || 0) + (tt.kept || 0), formula: (st.formula || 0) + (tt.formula || 0) })),
         report.missing.length ? h('div', { class: 'muted' }, rt('xMissing', { n: report.missing.length, list: report.missing.slice(0, 12).join(', ') })) : null,
         report.noWeek ? h('div', { class: 'muted' }, rt('xNoWeek', { n: report.noWeek })) : null));

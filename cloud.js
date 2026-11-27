@@ -539,6 +539,7 @@ export const regId = (code) => String(code).replace(/[^0-9A-Za-z_.-]+/g, '_').sl
 // Batches of 50; when one is refused, its rows go one by one so a single odd row does not
 // stop the rest. Returns the codes that could not be saved.
 const REG_BATCH = 50;
+const TABLE_FIELDS = ['code', 't', 'tenders', 'paid', 'paid_parts', 'paid_2026'];
 export async function importRegistry(rows, meta, onProgress) {
   let done = 0;
   const failed = [];
@@ -546,13 +547,15 @@ export async function importRegistry(rows, meta, onProgress) {
   for (let i = 0; i < rows.length; i += REG_BATCH) {
     const part = rows.slice(i, i + REG_BATCH);
     const batch = fb.writeBatch(db);
-    for (const r of part) batch.set(fb.doc(db, 'registry', regId(r.code)), docOf(r), { merge: true });
+    // mergeFields: the table's fields are replaced whole (a cell emptied in the file is emptied here),
+    // the app's own (links, ratings, edits, the register, the journal) are not touched.
+    for (const r of part) batch.set(fb.doc(db, 'registry', regId(r.code)), docOf(r), { mergeFields: TABLE_FIELDS });
     try {
       await batch.commit();
     } catch (e) {
       if (e && e.code !== 'permission-denied' && e.code !== 'invalid-argument') throw e;
       for (const r of part) {
-        try { await fb.setDoc(fb.doc(db, 'registry', regId(r.code)), docOf(r), { merge: true }); } catch (e2) { failed.push(r.code); }
+        try { await fb.setDoc(fb.doc(db, 'registry', regId(r.code)), docOf(r), { mergeFields: TABLE_FIELDS }); } catch (e2) { failed.push(r.code); }
       }
       if (failed.length === rows.length || (i === 0 && failed.length === part.length)) throw e;  // nothing goes through: no access
     }
