@@ -265,7 +265,7 @@ function trackedDossier(id) {
       try { s = await loadTracked(id); } catch (e) { /* not written yet */ }
     }
     if (!s) {
-      fill(box, h('div', { class: 'card pad' },
+      fill(box, backRow(backTo(pick && pick.tid)), h('div', { class: 'card pad' },
         h('h2', { class: 'card-title' }, pick ? (pick.number ? '№ ' + pick.number : t('pz.draftContract')) : t('tr.unknown')),
         pick ? h('p', { class: 'muted' }, join([pick.buyer, pick.supplier], ' → ')) : null,
         sharedPick ? h('p', { class: 'small' }, t('tr.sharedBy', { who: sharedPick.fromName || '—' })) : null,
@@ -330,10 +330,10 @@ function trackedDossier(id) {
       h('div', { class: 'org-head' },
         h('div', null,
           (() => { const sp = typeof spOfTid === 'function' ? spOfTid(s.tid) : null;
-            return h('nav', { class: 'crumbs', 'aria-label': t('nav.tracked') },
+            return backRow(backTo(s.tid), h('nav', { class: 'crumbs', 'aria-label': t('nav.tracked') },
               sp ? [h('a', { href: '#/' }, t('nav.sps')), h('span', { 'aria-hidden': 'true' }, '/'), h('a', { href: '#/sp/' + encodeURIComponent(sp.code) + '/contracts' }, sp.code)]
                 : h('a', { href: '#/' }, t('nav.sps')),
-              h('span', { 'aria-hidden': 'true' }, '/'), h('span', null, t('dos.crumb'))); })(),
+              h('span', { 'aria-hidden': 'true' }, '/'), h('span', null, t('dos.crumb')))); })(),
           h('h1', { class: 'org-title' }, t('dos.heading', { n: c.number || '—', date: fdate(c.signed) })),
           h('div', { class: 'chips' },
             h('span', { class: 'pz-st ' + (c.status === 'active' ? 'ok' : 'run') }, label('pzc.', c.status)),
@@ -779,7 +779,7 @@ function tenderDossier(id, s, pick) {
   return [
     h('div', { class: 'org-head' },
       h('div', null,
-        h('div', { class: 'eyebrow' }, h('a', { href: backTo(s.tid), style: 'text-decoration:none' }, '← ' + t('nav.sps'))),
+        backRow(backTo(s.tid)),
         h('h1', { class: 'org-title' }, t('tr.tenderHeading', { tid: s.tid })),
         h('div', { class: 'chips' }, pzStatus(t0.status), t0.method ? h('span', { class: 'tag' }, label('pzt.', t0.method)) : null,
           s.eib ? h('span', { class: 'tag eib' }, t('eib.kind.' + s.eib)) : null, riskChip(s)),

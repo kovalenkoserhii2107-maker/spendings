@@ -35,6 +35,7 @@ function render() {
   // Old addresses lead to their place in the workplace: never to a screen that is gone.
   const to = legacyRoute(route, parts);
   if (to != null && to !== location.hash) { location.replace(to || '#/'); return; }
+  navNote(location.hash);
   let page, key = route;
   const team = typeof hasRegistry === 'function' && hasRegistry();
   if (route === 'settings') page = settingsPage();

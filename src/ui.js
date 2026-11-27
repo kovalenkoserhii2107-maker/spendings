@@ -32,6 +32,48 @@ function accountButton() {
 const navItems = () => (typeof hasRegistry === 'function' && hasRegistry()
   ? [['#/', 'home', 'building', 'nav.sps'], ['#/signals', 'signals', 'pulse', 'nav.signals'], ['#/portfolio', 'portfolio', 'chart', 'nav.portfolio'], ['#/search', 'search', 'search', 'nav.search']]
   : [['#/', 'home', 'building', 'nav.sps']]);
+// ---- back ----------------------------------------------------------------------------------------
+//
+// Where one came from: the screens visited since the last section of the menu, one entry per level
+// (a sub-project's tabs are one level, its procurement another, a contract another). "Back" leads to
+// the level before; opened straight from a link, to the screen above it.
+const NAV = [];
+const TOP_LEVELS = ['', 'signals', 'portfolio', 'search', 'reminders', 'settings'];
+const navClean = (hash) => (hash || '#/').split('#').slice(0, 2).join('#') || '#/';
+function navLevel(hash) {
+  const p = navClean(hash).replace(/^#\/?/, '').split('/');
+  if (p[0] === 'sp' && p[1]) return p[2] === 'procurement' && p[3] ? 'sp/' + p[1] + '/procurement/' + p[3] : 'sp/' + p[1];
+  if (p[0] === 'tracked' && p[1]) return 'tracked/' + p[1];
+  return p[0] || '';
+}
+function navNote(hash) {
+  const lv = navLevel(hash), at = navClean(hash);
+  if (TOP_LEVELS.includes(lv)) { NAV.length = 0; NAV.push({ lv, at }); return; }
+  const i = NAV.findIndex((x) => x.lv === lv);
+  if (i >= 0) { NAV.length = i + 1; NAV[i].at = at; } else NAV.push({ lv, at });
+}
+// What a screen is called on the button: the menu's own names, the sub-project's code and tab.
+function navLabel(hash) {
+  const p = navClean(hash).replace(/^#\/?/, '').split('/').map((x) => decodeURIComponent(x));
+  if (p[0] === 'sp' && p[1]) {
+    if (p[2] === 'procurement' && p[3]) return p[1] + ' · ' + (typeof rt === 'function' ? rt('tab_procurement') : '');
+    return p[2] && p[2] !== 'overview' && typeof rt === 'function' ? p[1] + ' · ' + rt('tab_' + p[2]) : p[1];
+  }
+  if (p[0] === 'tracked') return t('dos.crumb');
+  const top = { '': 'nav.sps', signals: 'nav.signals', portfolio: 'nav.portfolio', search: 'nav.search', reminders: 'ntf.remind', settings: 'nav.settings' }[p[0]];
+  return t(top || 'nav.sps');
+}
+// The button itself, at the top of every screen below a section of the menu; `up` is the screen
+// above this one, for when nothing was visited before it.
+function backButton(up) {
+  const prev = NAV.length > 1 && NAV[NAV.length - 1].lv === navLevel(location.hash) ? NAV[NAV.length - 2].at : navClean(up || '#/');
+  return h('a', { class: 'btn back-btn', href: prev, title: t('ui.backTo', { to: navLabel(prev) }) },
+    icon('back'), h('span', null, t('ui.back')), h('span', { class: 'back-to' }, navLabel(prev)));
+}
+
+// The row at the top of a screen below the menu: the button, then where one is (the crumbs).
+const backRow = (up, crumbs) => h('div', { class: 'back-row' }, backButton(up), crumbs || null);
+
 function shell(route, page) {
   const last = state.index.runs && state.index.runs[0];
   const failed = last && last.orgs_failed;
@@ -197,22 +239,44 @@ const sevTag = (sev) => h('span', { class: 'sev ' + sev }, t('sev.' + sev));
 
 // ---- sheets ---------------------------------------------------------------------------------
 
+// A sheet opened from inside another one (a contractor from a risk, a payment from a contract) keeps
+// the one it came from: "Back" brings that back as it was, the cross closes them all.
+const SHEETS = [];
 function closeSheet() {
+  SHEETS.length = 0;
   document.querySelectorAll('.scrim, .sheet').forEach((n) => n.remove());
   document.removeEventListener('keydown', escClose);
 }
+function sheetBack() {
+  const prev = SHEETS.pop();
+  if (!prev) { closeSheet(); return; }
+  document.querySelectorAll('.sheet').forEach((n) => n.remove());
+  document.body.append(prev.el);
+  prev.el.scrollTop = prev.y;
+  prev.el.focus();
+}
 function escClose(e) {
-  if (e.key === 'Escape') closeSheet();
+  if (e.key !== 'Escape' || document.querySelector('details.menu[open]')) return;
+  if (SHEETS.length) sheetBack(); else closeSheet();
 }
 function sheet(...content) {
-  closeSheet();
-  const body = h('aside', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', tabindex: -1 },
-    h('button', { class: 'btn btn-icon close', onclick: closeSheet, 'aria-label': t('ui.close') }, icon('x')), content);
-  document.body.append(h('div', { class: 'scrim', onclick: closeSheet }), body);
+  const open = document.querySelector('.sheet');
+  if (open) {
+    SHEETS.push({ el: open, y: open.scrollTop });
+    open.remove();
+  } else closeSheet();
+  const back = SHEETS.length ? h('button', { class: 'btn back-btn sheet-back', type: 'button', onclick: sheetBack, title: t('ui.back') },
+    icon('back'), h('span', null, t('ui.back')), h('span', { class: 'back-to' }, sheetTitle(SHEETS[SHEETS.length - 1].el))) : null;
+  const body = h('aside', { class: 'sheet' + (back ? ' has-back' : ''), role: 'dialog', 'aria-modal': 'true', tabindex: -1 },
+    h('button', { class: 'btn btn-icon close', onclick: closeSheet, 'aria-label': t('ui.close') }, icon('x')), back, content);
+  if (!document.querySelector('.scrim')) document.body.append(h('div', { class: 'scrim', onclick: closeSheet }));
+  document.body.append(body);
+  document.removeEventListener('keydown', escClose);
   document.addEventListener('keydown', escClose);
   body.focus();
   return body;
 }
+const sheetTitle = (el) => { const x = el && el.querySelector('h2'); return x ? x.textContent.trim().slice(0, 60) : ''; };
 
 function detailBody(kind, d) {
   const out = [];

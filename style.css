@@ -296,8 +296,6 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 700; }
 .chk > div { min-width: 0; }
 /* The sub-projects table: fixed shares, nothing past the frame. */
 .reg-table { table-layout: fixed; }
-.reg-table col.rc-c { width: 112px; } .reg-table col.rc-s { width: 25%; } .reg-table col.rc-st { width: 150px; }
-.reg-table col.rc-k { width: 17%; } .reg-table col.rc-g { width: 100px; } .reg-table col.rc-r { width: 15%; } .reg-table col.rc-w { width: 17%; }
 .reg-table td { overflow-wrap: anywhere; vertical-align: top; overflow: hidden; }
 .reg-table th { white-space: normal; line-height: 1.25; vertical-align: bottom; }
 .reg-table td .cell-main.num { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -990,8 +988,9 @@ select.select:focus { background-color: #fff; }
 .reg-table th, .reg-table td { vertical-align: top; }
 .reg-table th { font-size: 11.5px; letter-spacing: .04em; white-space: nowrap; }
 .reg-table td { padding-top: 14px; padding-bottom: 14px; }
-.reg-table col.rc-c { width: 128px; } .reg-table col.rc-s { width: 27%; } .reg-table col.rc-st { width: 160px; }
-.reg-table col.rc-k { width: 18%; } .reg-table col.rc-g { width: 92px; } .reg-table col.rc-r { width: 150px; } .reg-table col.rc-w { width: 15%; }
+/* The name gets the room: a sub-project's name reads whole, in a few lines. */
+.reg-table col.rc-c { width: 120px; } .reg-table col.rc-s { width: 38%; } .reg-table col.rc-st { width: 140px; }
+.reg-table col.rc-k { width: 15%; } .reg-table col.rc-g { width: 86px; } .reg-table col.rc-r { width: 130px; } .reg-table col.rc-w { width: 13%; }
 .reg-table td .row { align-items: flex-start; }
 .reg-table .stage { margin-bottom: 4px; }
 .reg-table .alert-lines { display: flex; flex-direction: column; gap: 2px; width: 100%; font-size: 12px; font-weight: 600; color: var(--muted); }
@@ -1174,3 +1173,25 @@ tr.faint-row td { color: var(--muted); }
 .sg-st { font: inherit; font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; background: #fff; align-self: center; }
 .sg-st.st-progress { background: #EAF2FF; color: #2F6FDB; } .sg-st.st-resolved { background: var(--green-bg, #E7F5EC); color: var(--green); }
 .sg-row.done { opacity: .6; }
+
+/* ---------- назад ---------- */
+/* Над кожним екраном нижче меню (субпроєкт, закупівля, договір) і в кожному вікні, відкритому з
+   іншого: чорна «пігулка» зі стрілкою, поруч — куди вона веде. */
+.back-row { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-bottom: 12px; }
+.back-row .crumbs { margin-bottom: 0; }
+.back-btn { gap: 6px; min-height: 38px; padding: 0 16px 0 12px; background: #000; color: #fff; box-shadow: 0 10px 24px -14px rgba(0, 0, 0, .55); max-width: 100%; }
+.back-btn:hover { background: #262626; box-shadow: 0 14px 30px -14px rgba(0, 0, 0, .55); }
+.back-btn .ico { width: 18px; height: 18px; flex: none; }
+.back-btn .back-to { overflow: hidden; text-overflow: ellipsis; padding-left: 8px; border-left: 1px solid rgba(255, 255, 255, .28); color: rgba(255, 255, 255, .72); font-weight: 600; }
+.back-btn .back-to:empty { display: none; }
+.sheet .sheet-back { margin: -4px 56px 6px 0; max-width: calc(100% - 56px); }
+/* Назва субпроєкту в списку: уся, без обрізання. */
+.reg-table .sp-name { font-size: 14px; font-weight: 600; line-height: 1.4; overflow-wrap: break-word; }
+@media (max-width: 760px) {
+  .back-row { margin-bottom: 10px; }
+  .back-btn { min-height: 40px; }
+  .back-btn .back-to { max-width: 52vw; }
+  table.stack-mobile.reg-table td.w-text { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  table.stack-mobile.reg-table td.w-text > * { grid-column: 1; }
+  table.stack-mobile.reg-table .sp-name { font-size: 15px; }
+}

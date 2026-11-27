@@ -1,7 +1,9 @@
 // The list of sub-projects and the sub-project card: contracts, procurement, procedure, documents, work.
 // ---- list ------------------------------------------------------------------------------------
 
-const REGF = { expert: null, programme: '', stage: '', which: '', sort: 'code', q: '', page: 0 };
+const REGF = { expert: null, programme: '', region: '', stage: '', which: '', sort: 'code', q: '', page: 0 };
+// The oblast of a sub-project: the first two letters of its code (KV — Київська).
+const spRegion = (r) => REGION_OF[String(r.code || '').slice(0, 2)] || '';
 
 function registryPage() {
   if (REG.access === undefined) return [h('div', { class: 'card empty section' }, t('ui.loading'))];
@@ -45,6 +47,9 @@ function registryPage() {
   if (!rows.length) return [head];
   const experts = [...new Set(rows.map(spManager).concat([myManager()]).filter(Boolean))].sort();
   const progs = [...new Set(rows.map((r) => (r.t || {}).programme).filter(Boolean))].sort();
+  const regionN = rows.reduce((m, r) => { const g = spRegion(r); if (g) m[g] = (m[g] || 0) + 1; return m; }, {});
+  const regions = Object.keys(regionN).sort((a, b) => a.localeCompare(b, 'uk'));
+  if (REGF.region && !regionN[REGF.region]) REGF.region = '';
   // What each row is, worked out once per drawing: stage, news, risk, the expert's work.
   const facts = new Map(rows.map((r) => {
     const st = spStage(r), news = spNews(spTracked(r)), wk = spWork(r), f = mrdFacts(r);
@@ -74,6 +79,7 @@ function registryPage() {
       const tt = r.t || {};
       if (REGF.expert && spManager(r) !== REGF.expert) return false;
       if (REGF.programme && tt.programme !== REGF.programme) return false;
+      if (REGF.region && spRegion(r) !== REGF.region) return false;
       if (REGF.stage && F(r).st.stage !== REGF.stage) return false;
       if (words.length) {
         const m = mainContract(r);
@@ -108,7 +114,8 @@ function registryPage() {
       select([['', rt('anyStage')]].concat(STAGES.map((x) => [x, rt('stage_' + x)])), REGF.stage, set('stage'), rt('colStage')),
       select([['', rt('anyExpert')]].concat(experts.map((x) => [x, x])), REGF.expert, set('expert'), rt('colExpert')),
       select([['', rt('anyProgramme')]].concat(progs.map((x) => [x, x])), REGF.programme, set('programme'), 'Programme'),
-      select(Object.keys(SORTS).map((k) => [k, rt('sort_' + k)]), REGF.sort, set('sort'), rt('sortBy'))], [REGF.stage, REGF.expert, REGF.programme].filter(Boolean).length),
+      select([['', rt('anyRegion')]].concat(regions.map((x) => [x, x + ' (' + regionN[x] + ')'])), REGF.region, set('region'), rt('colRegion')),
+      select(Object.keys(SORTS).map((k) => [k, rt('sort_' + k)]), REGF.sort, set('sort'), rt('sortBy'))], [REGF.stage, REGF.expert, REGF.programme, REGF.region].filter(Boolean).length),
     chipsBox,
     list)];
 }
@@ -190,7 +197,7 @@ function registryTable(rows) {
       const open = () => { location.hash = '#/sp/' + encodeURIComponent(r.code); };
       return h('tr', { class: 'click', tabindex: 0, onclick: open, onkeydown: (e) => { if (e.key === 'Enter') open(); } },
         td(L.c, { class: 'num' }, h('b', null, r.code), h('div', { class: 'cell-sub' }, join([tt.programme, tt.batch && 'B' + tt.batch])), !oneManager && spManager(r) ? h('div', { class: 'cell-sub clamp1' + (isMine(r) ? ' mine' : '') }, spManager(r)) : null, tt.manual ? h('div', { class: 'cell-sub' }, rt('manualTag')) : null),
-        td(L.s, { class: 'w-text' }, h('div', { class: 'clamp' }, tt.name_uk || tt.name_en || '—'), h('div', { class: 'cell-sub clamp1' }, tt.beneficiary || '')),
+        td(L.s, { class: 'w-text' }, h('div', { class: 'sp-name' }, tt.name_uk || tt.name_en || '—'), h('div', { class: 'cell-sub clamp1' }, join([spRegion(r) && spRegion(r) + ' ' + rt('oblShort'), tt.beneficiary]))),
         td(L.st, null, stageChip(st), st.late ? h('div', { class: 'cell-sub bad' }, rt('lateBy', { n: st.late })) : null,
           !tids.length ? h('div', { class: 'cell-sub' }, ((r.pz || {}).cand || []).length ? h('span', { class: 'warn-text' }, rt('candidates', { n: r.pz.cand.length })) : rt('notLinked'))
             : st.signed && ['contract', 'works'].includes(st.stage) ? h('div', { class: 'cell-sub' }, rt('signedOn', { date: fdate(st.signed) })) : null),
@@ -215,7 +222,7 @@ const SP_TABS = ['overview', 'procurement', 'contracts', 'finance', 'work', 'doc
 function registryCard(code, tab, sub) {
   const r = REG.rows.get(code) || [...REG.rows.values()].find((x) => x.code === code);
   if (!REG.access) return registryPage();
-  if (!r) return [h('div', { class: 'card empty section' }, REG.rows.size ? t('pz.notFound') : t('ui.loading'))];
+  if (!r) return [backRow('#/'), h('div', { class: 'card empty section' }, REG.rows.size ? t('pz.notFound') : t('ui.loading'))];
   const tt = r.t || {};
   tab = String(tab || '').split('#')[0];
   tab = SP_TABS.includes(tab) ? tab : 'overview';
@@ -260,7 +267,7 @@ function spHeader(r, st) {
   return h('div', { class: 'sp-head section' },
     h('div', { class: 'org-head' },
       h('div', null,
-        h('nav', { class: 'crumbs', 'aria-label': rt('nav') }, h('a', { href: '#/' }, rt('nav')), h('span', { 'aria-hidden': 'true' }, '/'), h('span', null, r.code)),
+        backRow('#/', h('nav', { class: 'crumbs', 'aria-label': rt('nav') }, h('a', { href: '#/' }, rt('nav')), h('span', { 'aria-hidden': 'true' }, '/'), h('span', null, r.code))),
         h('h1', { class: 'org-title' + (String(tt.name_uk || tt.name_en || '').length > 90 ? ' long' : '') }, tt.name_uk || tt.name_en || r.code),
         tt.name_uk && tt.name_en ? h('p', { class: 'muted' }, tt.name_en) : null,
         h('div', { class: 'chips' }, stageChip(st),
@@ -1013,8 +1020,7 @@ function procDetail(r, key) {
   const head = h('div', { class: 'card pad section' },
     h('div', { class: 'card-head' },
       h('div', null,
-        h('a', { class: 'small', href: back }, '← ' + rt('pdBack')),
-        h('h2', { class: 'card-title', style: 'margin-top:6px' }, T.title || X.name || '—'),
+        h('h2', { class: 'card-title' }, T.title || X.name || '—'),
         h('div', { class: 'chips' }, h('span', { class: 'tag' }, rt('role_' + it.role)), it.of > 1 ? h('span', { class: 'tag' }, rt('pAttempt', { n: it.attempt, of: it.of })) : null,
           t0 ? pzStatus(t0.status) : X.status ? h('span', { class: 'pz-st run' }, X.status) : null,
           ((r.link || {}).auto || []).includes(tid) ? h('span', { class: 'tag' }, rt('autoLinked')) : null)),

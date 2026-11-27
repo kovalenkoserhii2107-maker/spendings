@@ -891,7 +891,7 @@ window.I18N = {
     'foot.data': 'Дані: spending.gov.ua (Є-Data), оновлення кожні 6 годин',
 
     'ui.loading': 'Завантаження…',
-    'ui.close': 'Закрити',
+    'ui.close': 'Закрити', 'ui.back': 'Назад', 'ui.backTo': 'Назад: {to}',
     'ui.all': 'Усі',
     'ui.allOrgs': 'Усі організації',
     'ui.anyRole': 'Будь-яка роль',
@@ -2256,7 +2256,7 @@ window.I18N = {
     'foot.data': 'Data: spending.gov.ua (E-Data), refreshed every 6 hours',
 
     'ui.loading': 'Loading…',
-    'ui.close': 'Close',
+    'ui.close': 'Close', 'ui.back': 'Back', 'ui.backTo': 'Back: {to}',
     'ui.all': 'All',
     'ui.allOrgs': 'All organisations',
     'ui.anyRole': 'Any role',
