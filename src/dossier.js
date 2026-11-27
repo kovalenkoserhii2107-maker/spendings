@@ -162,10 +162,12 @@ function eventPills(events, value, onpick) {
 const eventSub = (e) => (e.type === 'payment' && e.purpose ? h('div', { class: 'cell-sub clamp1' }, e.purpose) : null);
 
 function trackedBar(tt, acts) {
-  const base = Math.max(tt.value || 0, tt.paid || 0, acts || 0) || 1;
-  return h('div', { class: 'bar' + (tt.value && tt.paid > tt.value + 1 ? ' over' : '') },
+  // Paid in all: the loan's part (Mindev, or read from the VAT) with the buyer's, where it is known.
+  const paid = tt.paid_total != null ? tt.paid_total : tt.paid || 0;
+  const base = Math.max(tt.value || 0, paid, acts || 0) || 1;
+  return h('div', { class: 'bar' + (tt.value && paid > tt.value + 1 ? ' over' : '') },
     acts ? h('i', { class: 'acts', style: `width:${Math.min(100, (acts / base) * 100)}%` }) : null,
-    h('i', { style: `width:${Math.min(100, ((tt.paid || 0) / base) * 100)}%` }));
+    h('i', { style: `width:${Math.min(100, (paid / base) * 100)}%` }));
 }
 
 // ---- an .xlsx of our own, styled -----------------------------------------------------------------
@@ -716,7 +718,8 @@ function partyLinks(code, role) {
   return h('div', { class: 'ext-links' },
     a(`https://prozorro.gov.ua/search/tender?${role === 'supplier' ? 'supplier' : 'buyer'}=${code}`, 'Prozorro'),
     a(`https://dozorro.org/search?edrpou=${code}`, 'Dozorro'),
-    h('a', { class: 'chip-link', href: '#/search', onclick: () => { state.search = Object.assign(state.search || {}, { edrpou: code, kind: 'contract', role: 'both', res: null, page: 0, from: state.search ? state.search.from : addDays(today(), -365), to: today() }); } }, 'spending.gov.ua'),
+    // The app's own search over the Treasury for this code (spending.gov.ua's data).
+    h('a', { class: 'chip-link', href: '#/search', onclick: (e) => { Object.assign(qs2, { q: code, eib: false, treasury: true, type: 'all' }); if (location.hash === '#/search') { e.preventDefault(); render(); } } }, 'spending.gov.ua'),
     a(`https://youcontrol.com.ua/catalog/company_details/${code}/`, 'YouControl'),
     a(`https://opendatabot.ua/c/${code}`, 'Opendatabot'),
     a(`https://www.opensanctions.org/search/?q=${code}`, 'OpenSanctions'));

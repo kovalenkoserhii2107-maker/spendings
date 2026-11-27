@@ -193,6 +193,9 @@ function daysBetween(a, b) {
   return Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000);
 }
 const today = () => new Date().toISOString().slice(0, 10);
+// An ЄДРПОУ / РНОКПП as text: a spreadsheet keeps it as a number and drops the leading zero
+// (04056919 → 4056919); put back to 8 digits. Anything else stays as it is.
+const edrCode = (x) => { if (x == null || x === '') return x; const v = String(typeof x === 'number' ? Math.round(x) : x).trim(); return /^\d{5,7}$/.test(v) ? v.padStart(8, '0') : v; };
 const join = (parts, sep = ' · ') => parts.filter((p) => p != null && String(p).trim() !== '').map((p) => String(p).trim()).join(sep);
 // Ukrainian plural form: 1 / 2-4 / 5+.
 const plural = (n, one, few, many) => {
@@ -224,7 +227,7 @@ function qs(params) {
 // ---- state and site data ----------------------------------------------------------------------------
 
 const state = {
-  index: null, feed: null, signals: null, search: null, user: undefined, reviews: new Map(), trackedIndex: { items: [] }, cloudError: null, dataError: null,
+  index: null, feed: null, signals: null, search: null, user: undefined, trackedIndex: { items: [] }, cloudError: null, dataError: null,
   // The signed-in user's own lists (Firestore, private) and everything the site has synced.
   mine: { orgs: new Map(), tracked: new Map(), shared: new Map(), ready: false },
   all: { orgs: [], feed: [], signals: [] },
@@ -306,8 +309,6 @@ function setSeen(value) {
 }
 const isNew = (item) => item.is_event && item.first_seen_at > getSeen();
 const unreadCount = () => (state.feed ? state.feed.items.filter(isNew).length : 0);
-const isOpenSignal = (s) => !['resolved', 'false_positive'].includes(reviewOf(s).status);
-const riskCount = () => (state.signals ? state.signals.items.filter((s) => s.severity !== 'low' && isOpenSignal(s)).length : 0);
 
 // ---- dictionaries -----------------------------------------------------------------
 
@@ -460,17 +461,6 @@ function docRefs(text, type) {
   return [...new Set(out)].join('; ');
 }
 
-// ---- reviews (shared analyst state in Firestore) -------------------------------------------
-
-const slug = (s) => String(s || 'all').replace(/[^0-9A-Za-zА-Яа-яІіЇїЄєҐґ]+/g, '_').slice(0, 80);
-function reviewKey(s) {
-  if (s.tracked) return `${s.org_edrpou}_t_${s.tracked}_${s.type}`;
-  if (s.tid && !s.contract) return `${s.org_edrpou}_p_${slug(s.tid)}_${s.type}`;
-  return s.contract ? `${s.org_edrpou}_c_${s.contract}` : `${s.org_edrpou}_${s.type}_${slug(s.party)}`;
-}
-function reviewOf(s) {
-  return state.reviews.get(reviewKey(s)) || { status: 'new' };
-}
 
 // ---- signals text ---------------------------------------------------------------------------
 

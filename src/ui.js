@@ -8,7 +8,6 @@
 // bell for its changes). Settings sit behind the avatar.
 
 function badgeFor(key) {
-  if (key === 'tracked') { const n = riskCount(); return n ? h('em', { class: 'count red' }, n) : null; }
   if (key === 'signals' && typeof spSignalCount === 'function') { const n = spSignalCount(); return n ? h('em', { class: 'count', title: t('nav.sigUnseen') }, n) : null; }
   return null;
 }
@@ -244,8 +243,10 @@ const sevTag = (sev) => h('span', { class: 'sev ' + sev }, t('sev.' + sev));
 const SHEETS = [];
 function closeSheet() {
   SHEETS.length = 0;
+  const had = document.querySelector('.sheet');
   document.querySelectorAll('.scrim, .sheet').forEach((n) => n.remove());
   document.removeEventListener('keydown', escClose);
+  if (had && typeof softAfter === 'function') softAfter();
 }
 function sheetBack() {
   const prev = SHEETS.pop();

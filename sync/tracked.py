@@ -89,17 +89,18 @@ def read_pub():
                     e["viewers"].add(h)
                     # What the analyst's portfolio knows of it: the UNDP sub-project, its EIB programme,
                     # what the procurement buys, and the loan's part paid by Mindev's register.
-                    if re.match(r"^[A-Z]{2}\d{1,2}[A-Z]?_\d{2}$", str(t.get("subp") or "")):
+                    if re.match(r"^[A-Z]{2}\d{1,2}[A-Z]?_\d{2}(?:-[A-Z0-9]{1,3})?$", str(t.get("subp") or "")):
                         e["subp"] = t["subp"]
                     if str(t.get("prog") or "") in ("urp", "urp3", "uerp"):
                         e["prog"] = t["prog"]
                     if str(t.get("role") or "") in ("works", "ts", "csc", "author", "design", "other"):
                         e["role"] = t["role"]
-                    try:
-                        if t.get("eib_paid") is not None and 0 <= float(t["eib_paid"]) < 1e11:
-                            e["eib_paid"] = round(float(t["eib_paid"]), 2)
-                    except (TypeError, ValueError):
-                        pass
+                    for k in ("eib_paid", "eib_year"):  # the loan's part: in all, and in this year
+                        try:
+                            if t.get(k) is not None and 0 <= float(t[k]) < 1e11:
+                                e[k] = round(float(t[k]), 2)
+                        except (TypeError, ValueError):
+                            pass
             for sh in f.get("shares") or []:
                 if KEY_RE.match(str((sh or {}).get("cid") or "")) and HASH_RE.match(str(sh.get("to") or "")):
                     shares.append((h, sh["cid"], sh["to"]))
@@ -140,6 +141,9 @@ def _names_contract(tx, number, signed):
     return False
 
 
+SECURITY_BACK = re.compile(r"поверн\w*\.?\s*(?:гарант\w*\.?\s*)?(?:забезп|гарант\w*\s+внес)", re.I)
+
+
 def _classify(details, contract_number, day, tid, number, signed, late_limit, single):
     """Whose payment this is: "sure" (ours), "maybe" (between the same parties during the
     contract, naming no other one) or None (not ours).
@@ -147,6 +151,9 @@ def _classify(details, contract_number, day, tid, number, signed, late_limit, si
     The Treasury's contractNumber is often the Prozorro procedure id: another procedure's id
     rules the payment out, ours makes it ours when the procedure has one contract with this
     supplier (or the purpose names this contract's number)."""
+    # A security returned (of a bid, of the contract's performance) is not a payment for the work.
+    if SECURITY_BACK.search(details or ""):
+        return None
     cn = analysis.norm_tid(contract_number)
     named = _names_contract({"payment_details": details}, number, signed)
     if cn and tid:
@@ -227,8 +234,19 @@ def schedule(value, signed, milestones, acts, today, lot=None):
 
 # ---- one contract --------------------------------------------------------------------------
 
-def _event(kind, **params):
-    return dict(params, type=kind, at=spending.today().isoformat())
+def _undp_facts(tender, req):
+    """What the team's register says of the procurement, where Prozorro's texts are silent: the
+    sub-project code and the EIB programme (the rules' edition and the cards follow them)."""
+    if not tender.get("subproject") and req.get("subp"):
+        code = req["subp"]
+        tender["subproject"] = {"code": code, "object": code.split("_")[0], "from": "register"}
+    if req.get("prog") in ("urp", "urp3", "uerp"):
+        tender["programme_undp"] = req["prog"]
+
+
+def _event(ev_type, **params):
+    # The event's own fields may include a "kind" (of a legal flag, of collusion): the type is apart.
+    return dict(params, type=ev_type, at=spending.today().isoformat())
 
 
 def _diff(old, new):
@@ -484,11 +502,18 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     partial = bool(eib_kind)
     # The loan's part, read back from the VAT the buyer paid on it (acts less the buyer's payments).
     eib_paid = compliance.eib_from_vat(pays, acts)
-    # Mindev's register says what the loan paid: it wins over the estimate from the VAT.
-    if req.get("eib_paid") is not None:
+    # Mindev's register says what the loan paid: it wins over the estimate from the VAT. A zero
+    # there says only that no tranche of this contract is in the register yet: then the estimate
+    # stays, and so does "payments by other routes are not seen" (no false debt).
+    # More than the contract's price is not this contract's money (an older app sent the sub-project's sum).
+    if value and (req.get("eib_paid") or 0) > value * 1.05:
+        log("  ! Мінрозвитку: %.2f більше ціни договору %.2f — не враховано" % (req["eib_paid"], value))
+        req = dict(req, eib_paid=None, eib_year=None)
+    if (req.get("eib_paid") or 0) > 0:
         local = round(sum(p["amount"] for p in pays if p.get("sure")), 2)
-        eib_paid = {"local": local, "eib": req["eib_paid"], "total": round(local + req["eib_paid"], 2), "acts": [],
-                    "estimated": 0.0, "source": "mindev"}
+        # By acts it is not known which tranche paid what: this year's part comes from the register.
+        eib_paid = {"local": local, "eib": req["eib_paid"], "total": round(local + req["eib_paid"], 2), "acts": None,
+                    "year": req.get("eib_year"), "estimated": 0.0, "source": "mindev"}
     if eib_paid:
         overdue = round(max(0.0, due_now - eib_paid["total"]), 2)
     # Payments against the portal's acts and addendums; the advance and its closing by acts.
@@ -499,6 +524,7 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
     # (design, technical and author's supervision, expert review).
     works = (tender.get("cpv") or "").startswith("45") or tender.get("category") == "works"
     tender["subproject"] = prozorro.subproject(tender, [contract])
+    _undp_facts(tender, req)
     # The procurement plan: year, amount, funding sources (local, state, loan...), КЕКВ.
     plans = []
     for pid in (tender.get("plans") or [])[:3]:
@@ -529,7 +555,7 @@ def sync_one(req, old, tenders_by_org, treasury_by_org, log=print):
             if item["key"] in ("competition", "documents", "oversight"):
                 item.update(status="na", notes=[["no_prozorro", {}]])
     signals += review["signals"]
-    flags += [x["type"] for x in review["signals"] if x["type"] not in flags]
+    flags = list(dict.fromkeys(flags + [x["type"] for x in review["signals"]]))  # each kind once
     signals.sort(key=lambda x: (analysis.SEVERITY_ORDER[x["severity"]], -(x.get("amount") or 0)))
 
     snap = {
@@ -585,6 +611,7 @@ def sync_tender(req, old, log=print, tender=None):
     # As for a contract: the sub-project code, the procurement plan, the buyer's other procurements
     # for the same object (supervision, design) — known before any contract is signed.
     tender["subproject"] = prozorro.subproject(tender)
+    _undp_facts(tender, req)
     plans = []
     for pid in (tender.get("plans") or [])[:3]:
         try:
@@ -603,6 +630,8 @@ def sync_tender(req, old, log=print, tender=None):
         except prozorro.ProzorroError as e:
             log("  ! пов'язані закупівлі: %s" % e)
     eib_kind = eib.classify(tender)
+    if not eib_kind and (req.get("prog") or req.get("subp")):  # a UNDP sub-project's procurement: EIB
+        eib_kind = "program"
     signals, checklist = [], []
     for c in tender.get("contracts") or [{}]:
         review = compliance.evaluate(tender, c, eib=bool(eib_kind), sasu=audit)
@@ -715,7 +744,7 @@ def _list_fields(s):
         "price": {k: (u.get("price") or {}).get(k) for k in ("first", "now", "change_pct") if (u.get("price") or {}).get(k) is not None} or None,
         # The ratings with their reasons: hints to the sub-project's own matrix.
         "matrix": {"scores": {k: v for k, v in (mx.get("scores") or {}).items() if v is not None}, "why": mx.get("why") or {}} if mx else None,
-        "programme": sv.get("programme"), "region": t.get("region"),
+        "programme": sv.get("programme") or {"urp3": "URP III", "urp": "URP", "uerp": "UERP"}.get(t.get("programme_undp")), "region": t.get("region"),
         "acts_pct": pg.get("acts_pct"), "paid_pct": pg.get("paid_pct"), "late_days": pg.get("overdue_days"),
         "opening": tl.get("opening") if s.get("kind") == "tender" else None, "auction": tl.get("auction") if s.get("kind") == "tender" else None,
         "alerts": alerts,

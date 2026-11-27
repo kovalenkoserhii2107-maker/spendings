@@ -119,6 +119,21 @@ def discover(known, log=print):
     return out
 
 
+# The oblast by the first two digits of a budget's code (the State Treasury's codes of budgets):
+# surer than the headings of the annex, whose layout differs from one resolution to another.
+REGION_BY_CODE = {"02": "Вінницька область", "03": "Волинська область", "04": "Дніпропетровська область", "05": "Донецька область",
+                  "06": "Житомирська область", "07": "Закарпатська область", "08": "Запорізька область", "09": "Івано-Франківська область",
+                  "10": "Київська область", "11": "Кіровоградська область", "12": "Луганська область", "13": "Львівська область",
+                  "14": "Миколаївська область", "15": "Одеська область", "16": "Полтавська область", "17": "Рівненська область",
+                  "18": "Сумська область", "19": "Тернопільська область", "20": "Харківська область", "21": "Херсонська область",
+                  "22": "Хмельницька область", "23": "Черкаська область", "24": "Чернівецька область", "25": "Чернігівська область",
+                  "26": "м. Київ"}
+
+
+def region_of(p):
+    return REGION_BY_CODE.get(str(p.get("budget_code") or "")[:2]) or p.get("region") or ""
+
+
 def _parse_lines(lines):
     out, region, code, budget = [], "", "", ""
     i = 0
@@ -200,7 +215,7 @@ def decree(d, year, log=print):
     for ed in eds:
         for p in editions[ed]:
             key = (p["budget_code"], re.sub(r"[^0-9а-яіїєґa-z]+", "", p["name"].lower())[:80])  # a "(коригування)" added later keeps the project
-            m = merged.setdefault(key, {k: p[k] for k in ("region", "budget_code", "budget", "name")})
+            m = merged.setdefault(key, dict({k: p[k] for k in ("budget_code", "budget", "name")}, region=region_of(p)))
             m["name"] = p["name"]  # the latest wording
             m.setdefault("amounts", {})[ed] = round(m.get("amounts", {}).get(ed, 0) + p["amount"], 3)
     return {"nreg": d["nreg"], "programme": d["programme"], "kind": d["kind"], "year": year, "title": card.get("nazva") or "",
@@ -235,7 +250,7 @@ def sync(path, log=print):
         if not items:
             continue
         decrees.append(info)
-        projects += [dict(p, nreg=d["nreg"], programme=d["programme"]) for p in items]
+        projects += [dict(p, nreg=d["nreg"], programme=d["programme"], region=region_of(p)) for p in items]
     # Nothing read anew (the site did not answer): the file stays as the last good run left it, so
     # a run that cannot reach the site never overwrites one that could (the daily run on the Mac).
     if not fresh and old:

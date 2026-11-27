@@ -64,7 +64,7 @@ def _compact(m, tid):
         # The buyer has until this day to remove the violations or appeal the conclusion.
         "elimination_due": prozorro._day(period.get("endDate")),
         "elimination": (report.get("description") or "")[:TEXT],
-        "elimination_date": prozorro._day(report.get("datePublished")),
+        "elimination_date": prozorro._day(report.get("datePublished") or report.get("dateCreated")),
         # The service's verdict on the buyer's report: removed completely, partly or not at all.
         "resolution": {k: v for k, v in {
             "result": res.get("result"), "date": prozorro._day(res.get("dateCreated") or res.get("datePublished")),

@@ -137,8 +137,13 @@ function workTab(r) {
   const tt = r.t || {};
   const box = h('div');
   const draw = () => {
-    const all = entriesOf(r).concat((tt.log || []).map((x) => ({ id: 'tbl_' + x.week + x.who, kind: WORK_KINDS.find((k) => String(x.what || '').toUpperCase().startsWith(k)) || 'COMMENT',
-      text: x.what, day: tableWeekDate(x.week), who: x.who, done: x.done, legacy: true, table: true })));
+    // The table's weekly marks, less those the journal already has (the export wrote them there:
+    // the same expert, kind and week come back on the next import), the newest first.
+    const own = entriesOf(r), seen = new Set(own.filter((x) => x.day).map((x) => logKey(x.day, x.who, x.kind)));
+    const fromTable = (tt.log || []).map((x) => ({ id: 'tbl_' + x.week + x.who, kind: WORK_KINDS.find((k) => String(x.what || '').toUpperCase().startsWith(k)) || 'COMMENT',
+      text: x.what, day: tableWeekDate(x.week), who: x.who, done: x.done, legacy: true, table: true }))
+      .filter((x) => { const k = logKey(x.day, x.who, x.kind); if (seen.has(k)) return false; seen.add(k); return true; });
+    const all = own.concat(fromTable).sort((a, b) => String(b.day || '').localeCompare(String(a.day || '')));
     const tasks = all.filter((x) => x.kind === 'TASK');
     const open = tasks.filter((x) => !x.done).sort((a, b) => String(a.due || '9').localeCompare(String(b.due || '9')));
     const overdue = open.filter((x) => x.due && x.due < today());

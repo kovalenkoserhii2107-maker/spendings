@@ -145,6 +145,7 @@ function parseWorkbook(XLSX, wb) {
     if (!codes.length) continue;
     const tt = { codes, _row: ri + 1 };
     for (const [key] of SP_COLS) if (col[key] != null && key !== 'code') { const v = cellValue(r[col[key]]); if (v != null && v !== '') tt[key] = v; }
+    for (const k of ['beneficiary_id', 'contractor_id']) if (tt[k] != null) tt[k] = edrCode(tt[k]);
     const pzLink = [tt.pz_link || '', linkAt('SPs', ri, col.pz_link)].join(' ');
     const ids = [...new Set(pzLink.match(PZ_ID) || [])];
     if (ids.length) tt.pz_ids = ids;
@@ -175,6 +176,7 @@ function parseWorkbook(XLSX, wb) {
         if (!sp) continue;
         const row = {};
         for (const [key] of TN_COLS) if (tcol[key] != null && key !== 'sp') { const v = cellValue(r[tcol[key]]); if (v != null && v !== '' && v !== false) row[key] = v; }
+        if (row.contractor_id != null) row.contractor_id = edrCode(row.contractor_id);
         const ids = [String(row.pz || ''), linkAt('Tenders', ri, tcol.pz), linkAt('Tenders', ri, tcol.contract_link), linkAt('Tenders', ri, tcol.contract_no)].join(' ').match(PZ_ID);
         if (ids) row.pz = ids[0];
         sp.tenders.push(row);
@@ -529,10 +531,19 @@ function pubExtraFor(cid, t) {
   const t0 = ((r.pz || {}).tenders || []).find((x) => x.tid === t.tid);
   const role = t0 ? procRole(r, t0) : null;
   const prog = PROG_KEY[String((r.t || {}).programme || '').trim().toUpperCase()] || null;
-  let eib = null;
-  const kinds = MRD_KINDS[role];
-  if (r.mrd && kinds) eib = Math.round((r.mrd.payments || []).filter((x) => x.paid && kinds.includes(x.kind)).reduce((a, x) => a + (x.eib || 0), 0) * 100) / 100;
-  return { subp: /^[A-Z]{2}\d{1,2}[A-Z]?_\d{2}$/.test(r.code) ? r.code : null, prog, role, eib_paid: eib };
+  // The loan's part paid on this very contract (not the sub-project's), in all and this year. A
+  // figure above the contract's price means the register's lines were not told apart: none is sent.
+  let eib = null, eibYear = null;
+  if (r.mrd && MRD_KINDS[role]) {
+    const c = (t0 && (t0.contracts || []).find((x) => x.id === cid)) || { number: t.number };
+    const pays = mrdPaysOf(r, role, c).filter((x) => x.paid);
+    const sum = (xs) => Math.round(xs.reduce((a, x) => a + (x.eib || 0), 0) * 100) / 100;
+    eib = sum(pays);
+    eibYear = sum(pays.filter((x) => String(x.paid).startsWith(today().slice(0, 4))));
+    const price = (c.value || {}).amount;
+    if (price && eib > price * 1.05) eib = eibYear = null;
+  }
+  return { subp: /^[A-Z]{2}\d{1,2}[A-Z]?_\d{2}(-[A-Z0-9]{1,3})?$/.test(r.code) ? r.code : null, prog, role, eib_paid: eib, eib_year: eib == null ? null : eibYear };
 }
 // Settings: whose sub-projects are mine (the team table's expert names).
 function expertCard() {
@@ -677,12 +688,17 @@ function additionalProcurements(r) {
 }
 // Mindev's payments of one contract: its own (the register keeps the contract above them), or, for
 // a register read before that was kept, those of its kind made while it was the sub-project's.
+// The Mindev payments of one contract: by the contract the register names; else by the time between
+// this contract and the next one of the same role in the register. A contract the register does not
+// list, while it lists another of the role, gets none: those tranches paid the other one.
 function mrdPaysOf(r, role, c) {
   const pays = mrdPayments(r.mrd).filter((x) => (MRD_KINDS[role] || []).includes(x.kind));
   if (!c) return pays;
   const no = normNo(c.number);
   if (pays.some((x) => x.contract)) return pays.filter((x) => !x.contract || normNo(x.contract) === no);
-  const own = ((r.mrd || {}).contracts || []).filter((x) => x.role === role && x.date).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const listed = ((r.mrd || {}).contracts || []).filter((x) => x.role === role);
+  if (listed.length && no && !listed.some((x) => normNo(x.number) === no)) return [];
+  const own = listed.filter((x) => x.date).sort((a, b) => String(a.date).localeCompare(String(b.date)));
   if (own.length < 2) return pays;
   const mine = own.findIndex((x) => normNo(x.number) === no);
   if (mine < 0) return pays;

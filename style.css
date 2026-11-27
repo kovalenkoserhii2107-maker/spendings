@@ -1006,10 +1006,12 @@ select.select:focus { background-color: #fff; }
 .sg-tile.hot b { color: var(--red); }
 .sg-tile.on { outline: 2px solid var(--ink); }
 .sg-list { display: flex; flex-direction: column; }
-.sg-row { display: grid; grid-template-columns: 12px minmax(160px, 24%) 1fr 18px; gap: 12px; align-items: start; padding: 12px 6px; border-top: 1px solid var(--line); color: inherit; text-decoration: none; }
+.sg-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 6px; border-top: 1px solid var(--line); }
+.sg-link { display: grid; grid-template-columns: 12px minmax(160px, 28%) 1fr 18px; gap: 12px; align-items: start; min-width: 0; color: inherit; text-decoration: none; }
+.sg-row .sg-st { align-self: start; }
 .sg-row:first-child { border-top: 0; }
 .sg-row:hover { background: var(--soft); }
-.sg-row > .ico { width: 16px; height: 16px; opacity: .45; margin-top: 2px; }
+.sg-link > .ico { width: 16px; height: 16px; opacity: .45; margin-top: 2px; }
 .sg-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; background: var(--faint); }
 .sev-high .sg-dot { background: var(--red); } .sev-medium .sg-dot { background: #E5A000; } .sev-news .sg-dot { background: #2F6FDB; }
 .sg-sp { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
@@ -1027,9 +1029,11 @@ select.select:focus { background-color: #fff; }
 .rm-group.bad h3 { color: var(--red); }
 @media (max-width: 640px) {
   .sg-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .sg-row { grid-template-columns: 10px 1fr 16px; }
-  .sg-row .sg-sp { grid-column: 2; } .sg-row .sg-what { grid-column: 2; } .sg-row .sg-at { grid-column: 2; text-align: left; }
-  .sg-row > .ico { grid-row: 1; grid-column: 3; }
+  .sg-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .sg-row .sg-st { justify-self: start; margin-left: 22px; }
+  .sg-link { grid-template-columns: 10px 1fr 16px; }
+  .sg-link .sg-sp { grid-column: 2; } .sg-link .sg-what { grid-column: 2; } .sg-link .sg-at { grid-column: 2; text-align: left; }
+  .sg-link > .ico { grid-row: 1; grid-column: 3; }
 }
 .sg-row.same { border-top: 1px dashed var(--line); }
 .sg-at small { font-size: 12px; color: var(--faint); white-space: nowrap; }

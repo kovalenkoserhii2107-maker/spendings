@@ -219,7 +219,11 @@ def parse_amcu(data, codes):
         cells = {}
         for col, attrs, v in re.findall(r'<c r="([A-Z]+)\d+"([^>]*)>(?:<f>.*?</f>)?<v>(.*?)</v>', row, re.S):
             cells[col] = ss[int(v)] if 't="s"' in attrs else v
-        code = re.sub(r"\D", "", cells.get("G") or "")
+        g = (cells.get("G") or "").strip()
+        # A code kept as a number loses its leading zeros (04704537 → 4704537, or 4704537.0).
+        code = str(int(float(g))) if re.fullmatch(r"\d+(\.0+)?", g) else re.sub(r"\D", "", g)
+        if 5 <= len(code) < 8:
+            code = code.zfill(8)
         if code not in codes:
             continue
         d = cells.get("D") or ""
@@ -227,6 +231,9 @@ def parse_amcu(data, codes):
         hits.setdefault(code, []).append({k: v for k, v in {"decision": cells.get("C"), "date": day, "body": (cells.get("E") or "")[:120],
                                                             "court": None if (cells.get("K") or "NA") == "NA" else cells.get("K")[:200]}.items() if v})
     return hits
+
+
+COURT_UNDONE = re.compile(r"скасова|недійсн|задоволено\s+позов", re.I)
 
 
 def flags(rec, today, signed=None):
@@ -242,7 +249,9 @@ def flags(rec, today, signed=None):
         elif "припинення" in st or e.get("terminating"):
             out.append(("terminating", "high"))
         # Bodies of state power and local self-government have no beneficial owner by law.
-        public = re.search(r"орган\w*\s+(?:державн|місцев)|самоврядуван|відповідно\s+до\s+закону|державн\w+\s+(?:установ|організац)",
+        # So have state and communal enterprises and institutions: their owner is the state or a community.
+        public = re.search(r"орган\w*\s+(?:державн|місцев)|самоврядуван|відповідно\s+до\s+закону|державн\w+\s+(?:установ|організац|підприємств)"
+                           r"|комунальн\w+\s+(?:підприємств|установ|заклад|некомерційн|організац)|казенн\w+\s+підприємств",
                            " ".join([e.get("ubo_absent") or "", e.get("opf") or ""]), re.I)
         if e.get("ubo_absent") and not public:
             out.append(("no_ubo", "medium"))
@@ -254,6 +263,8 @@ def flags(rec, today, signed=None):
     if rec.get("sanctions"):
         out.append(("sanctions", "high"))
     for a in rec.get("amcu") or []:
+        if COURT_UNDONE.search(a.get("court") or ""):  # the decision undone by a court: no flag
+            continue
         recent = a.get("date") and a["date"] >= (date.fromisoformat(today) - timedelta(days=3 * 365)).isoformat()
         out.append(("amcu_rigging", "high" if recent else "medium"))
         break

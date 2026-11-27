@@ -71,7 +71,10 @@ function sheetPatch(xml, sst) {
     if (typeof value === 'boolean') return `<c r="${ref}"${keep} t="b"><v>${value ? 1 : 0}</v></c>`;
     if (typeof value === 'number') return `<c r="${ref}"${keep}><v>${value}</v></c>`;
     if (value && value.day) return `<c r="${ref}"${keep}><v>${excelDay(value.day)}</v></c>`;
-    if (value && value.f) return `<c r="${ref}"${keep} t="str"><f>${xmlEsc(value.f)}</f><v>${xmlEsc(value.v || '')}</v></c>`;
+    // A formula's cached result: a number as a number (no t="str", which would make Excel see text).
+    if (value && value.f) return typeof value.v === 'number' && isFinite(value.v) ? `<c r="${ref}"${keep}><f>${xmlEsc(value.f)}</f><v>${value.v}</v></c>`
+      : value.v == null || value.v === '' ? `<c r="${ref}"${keep}><f>${xmlEsc(value.f)}</f></c>`
+      : `<c r="${ref}"${keep} t="str"><f>${xmlEsc(value.f)}</f><v>${xmlEsc(value.v)}</v></c>`;
     return `<c r="${ref}"${keep} t="inlineStr"><is><t xml:space="preserve">${xmlEsc(value)}</t></is></c>`;
   };
   const same = (a, b) => (b && b.f ? String(a == null ? '' : a).trim() === String(b.v || '').trim() : b && b.day ? typeof a === 'number' && Math.abs(a - excelDay(b.day)) < 1 : typeof b === 'number' ? typeof a === 'number' && Math.abs(a - b) < 0.005
@@ -118,7 +121,18 @@ function sheetPatch(xml, sst) {
           }
           stat.set++;
         }
-        if (fresh) { appended.push(x); stat.added = (stat.added || 0) + 1; continue; }
+        if (fresh) {
+          stat.added = (stat.added || 0) + 1;
+          // In its place among the sheet's rows (Excel refuses rows out of order): before the first
+          // existing row below it, else at the end.
+          let next = null;
+          for (const [n, span] of rowsAt) if (span && n > row && (next == null || n < next)) next = n;
+          if (next == null) { appended.push(x); continue; }
+          const a0 = rowsAt.get(next)[0];
+          parts.push(xml.slice(at, a0), x);
+          at = a0;
+          continue;
+        }
         parts.push(xml.slice(at, a), x);
         at = b;
       }
@@ -293,7 +307,7 @@ async function fillWorkbook(buf, mode, onStep) {
     const R = spNext++, v = spRowValues(r);
     sp.addRow(R + 1);
     for (const [key] of SP_COLS) if (col[key] != null && v[key] != null && key !== 'rating') sp.set(ref(R, col[key]), v[key], 'force');
-    if (col.rating != null) sp.set(ref(R, col.rating), { f: RATING_FORMULA(R + 1), v: v.rating != null ? String(v.rating) : '' }, 'force');
+    if (col.rating != null) sp.set(ref(R, col.rating), { f: RATING_FORMULA(R + 1), v: v.rating != null ? +v.rating : '' }, 'force');
     report.added++;
   }
   put(spPath, sp.out());
@@ -354,7 +368,7 @@ async function fillWorkbook(buf, mode, onStep) {
           const sup = (c.suppliers || [])[0] || {};
           setT('contract_link', 'https://prozorro.gov.ua/tender/' + tid);
           setT('contractor', sup.name);
-          setT('contractor_id', sup.code && /^\d+$/.test(sup.code) ? +sup.code : sup.code);
+          setT('contractor_id', edrCode(sup.code));
           setT('contract_no', c.number);
           if (c.signed) setT('contract_date', { day: c.signed });
           if (c.end) setT('contract_end', { day: c.end });

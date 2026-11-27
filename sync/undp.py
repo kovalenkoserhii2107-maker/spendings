@@ -199,8 +199,12 @@ def _words(s):
 _CPV = re.compile(r"^\s*(?:ДК\s*021\s*[:\-]?\s*2015\s*[:\-]?\s*(?:\(?CPV\)?)?\s*[:\-]?\s*)?\d{8}-\d\s*[-–—:]?\s*", re.I)
 
 
+# The CPV in brackets anywhere in the title: "… (ДК 021:2015: 45330000-9 Водопровідні … роботи)".
+_CPV_TAIL = re.compile(r"\(\s*(?:ДК\s*021\s*[:\-]?\s*2015\s*[:\-]?\s*)?(?:\(?CPV\)?\s*[:\-]?\s*)?\d{8}-\d[^()]*\)", re.I)
+
+
 def _object(title):
-    text = str(title or "")
+    text = _CPV_TAIL.sub(" ", str(title or "")).strip()
     rest = _CPV.sub("", text)
     if rest != text and "(" in rest and len(rest.split("(", 1)[0].split()) <= 8:
         rest = rest.split("(", 1)[1]
@@ -293,7 +297,12 @@ def funding(subv, value, paid_total, acts, eib_paid, start, today):
     remaining = round(max(0.0, value - (paid_total or 0)), 2)
     known = bool(eib_paid and eib_paid.get("total") and eib_paid.get("eib"))
     # The loan's part paid this year is known only when the Treasury shows the tranches.
-    eib_year = round(sum(a["eib"] for a in eib_paid.get("acts") or [] if str(a.get("date") or "").startswith(year)), 2) if known else None
+    if not known:
+        eib_year = None
+    elif eib_paid.get("acts") is None:  # Mindev's register: its own figure for the year, if it gave one
+        eib_year = eib_paid.get("year")
+    else:
+        eib_year = round(sum(a["eib"] for a in eib_paid["acts"] if str(a.get("date") or "").startswith(year)), 2)
     # Unless the payments show it, the loan is taken to pay the price without VAT (5/6).
     share = (eib_paid["eib"] / eib_paid["total"]) if known else 5 / 6
     left = round(year_subv - (eib_year or 0), 2)
@@ -307,7 +316,8 @@ def funding(subv, value, paid_total, acts, eib_paid, start, today):
         status = "suspended"
     elif need is not None and need > left + 1:
         status = "insufficient"
-    elif share is not None and left > remaining * share + 1:
+    # "More than needed" only when this year's payments are known (or there are none to know).
+    elif share is not None and (eib_year is not None or not known) and left > remaining * share + 1:
         status = "excess"
     else:
         status = "adequate"
@@ -466,8 +476,12 @@ def sasu_severe(m, today, contract_status=None):
         return "sasu_terminate"
     if OVERPAID.search(text) and res != "completely":
         return "sasu_overpaid"
+    # A deadline passed with no report counts only when there was something to remove: an
+    # obligation written in the conclusion ("-" is none), and the monitoring not closed since.
+    obliged = re.sub(r"[\s\-–—.]+", "", m.get("obligations") or "") != ""
+    closed = m.get("status") in ("completed", "closed", "stopped", "cancelled", "declined")
     due = m.get("elimination_due")
-    if due and due < (today or "") and not m.get("elimination_date") and not res:
+    if obliged and not closed and due and due < (today or "") and not m.get("elimination_date") and not res:
         return "sasu_not_removed"
     return None
 

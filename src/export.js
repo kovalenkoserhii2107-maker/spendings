@@ -32,7 +32,9 @@ const SP_LAYOUT = [
 ];
 const SP_GROUPS = { C: 'SUB-PROJECT', M: 'RISK MATRIX', V: 'FINANCE', AG: 'PROCUREMENT', AM: 'CONTRACT', AU: 'PROJECT PROGRESS' };
 const SP_WEIGHTS = { N: 1, O: 1.5, P: 1.5, Q: 1.5, R: 1, S: 1, T: 1.5, U: 1 };
-const WEEK_FROM = 21, WEEK_TO = 53;  // the weekly columns from BF on, as the team's sheet has them
+// The weekly columns from BF on, as the team's sheet has them: from ISO week 21 of 2026 (its Monday),
+// week after week to the last week of the year (52 or 53), the next year's weeks after them.
+const WEEKS_FROM = '2026-05-18';
 // The Tenders sheet: column, field, heading (row 5); the stages above (row 4).
 const TN_LAYOUT = [
   ['A', 'sp', 'SP ID'], ['B', 'programme', 'Programme'], ['C', 'region', 'Region'], ['D', 'analyst', 'Analyst'], ['E', 'name', 'Name of the tender'], ['F', 'kind', 'W/TS/IC'],
@@ -56,13 +58,18 @@ const KIND_LETTER = { works: 'W', ts: 'TS', csc: 'IC', author: 'AN', design: 'D'
 const RATING_FORMULA = (n) => `IF(COUNTBLANK(N${n}:U${n})=8,"",IF(OR(COUNTIF(O${n}:Q${n},3)+COUNTIF(T${n},3)>=1,COUNTIF(O${n}:Q${n},2)+COUNTIF(T${n},2)>=3),3,`
   + `IF(SUMPRODUCT(N${n}:U${n},N$14:U$14)/SUM(N$14:U$14)>=1.8,3,IF(OR(COUNTIF(O${n}:Q${n},2)+COUNTIF(T${n},2)>=1,COUNTIF(N${n}:U${n},3)>=1,SUMPRODUCT(N${n}:U${n},N$14:U$14)/SUM(N$14:U$14)>=1.4),2,1))))`;
 
-// The Monday of ISO week n of a year, as the sheet heads its weekly columns ("Week 47 (16.11-22.11)").
-function isoMonday(year, n) {
-  const jan4 = new Date(Date.UTC(year, 0, 4));
-  const mon = new Date(jan4); mon.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7) + (n - 1) * 7);
-  return mon.toISOString().slice(0, 10);
+// The weekly columns as the sheet heads them ("Week 47 (16.11-22.11)"), each with its Monday.
+function weekList(year) {
+  const last = Math.max(year || 0, +today().slice(0, 4)), out = [];
+  for (const d = new Date(WEEKS_FROM + 'T12:00:00Z'); ; d.setUTCDate(d.getUTCDate() + 7)) {
+    const thu = new Date(d); thu.setUTCDate(d.getUTCDate() + 3);
+    if (thu.getUTCFullYear() > last) break;
+    const mon = d.toISOString().slice(0, 10);
+    out.push({ mon, label: weekOf(mon).label });
+  }
+  return out;
 }
-const weekLabels = (year) => { const out = []; for (let n = WEEK_FROM; n <= WEEK_TO; n++) out.push(weekOf(isoMonday(year, n)).label); return out; };
+const weekLabels = (year) => weekList(year).map((x) => x.label);
 const expertInitials = (name) => String(name || '').split(/\s+/).filter(Boolean).map((w) => w[0].toUpperCase()).join('').slice(0, 3);
 const numOrNull = (x) => { const n = toNum(x); return n == null ? null : n; };
 const day = (d) => (d ? { day: String(d instanceof Date ? d.toISOString() : d).slice(0, 10) } : null);
@@ -73,7 +80,7 @@ function spRowValues(r) {
   const tt = r.t || {}, v = {};
   const sc = scoresOf(r);
   Object.assign(v, { code: r.code, status: tt.status, programme: tt.programme, office: tt.office, name_en: tt.name_en, name_uk: tt.name_uk, batch: tt.batch != null ? numOrNull(tt.batch) ?? tt.batch : null,
-    expert: spManager(r), beneficiary: tt.beneficiary, beneficiary_id: numOrNull(tt.beneficiary_id) ?? tt.beneficiary_id, size: tt.size });
+    expert: spManager(r), beneficiary: tt.beneficiary, beneficiary_id: edrCode(tt.beneficiary_id), size: tt.size });
   // The ratings set in the app or kept in the table; a hint not accepted stays out of the team's table.
   for (const k of SCORE_KEYS) if (sc.scores[k] != null && sc.from[k] !== 'hint') v[k] = Number(sc.scores[k]);
   v.rating = overallRating(Object.fromEntries(SCORE_KEYS.map((k) => [k, v[k] != null ? v[k] : null])));
@@ -107,7 +114,7 @@ function spRowValues(r) {
   v.sasu = tableSasu(pzW.map((x) => x.sasu)) || tt.sasu;
   const sup = c ? (c.suppliers || [])[0] || {} : {};
   v.contractor = sup.name || tt.contractor;
-  v.contractor_id = sup.code ? (/^\d+$/.test(sup.code) ? +sup.code : sup.code) : numOrNull(tt.contractor_id) ?? tt.contractor_id;
+  v.contractor_id = edrCode(sup.code || tt.contractor_id);
   v.contract_sum = (c && c.value && c.value.amount) || numOrNull(tt.contract_sum);
   v.co_eib = numOrNull(tt.co_eib); v.co_local = numOrNull(tt.co_local);
   v.contract_date = day((c && c.signed) || tt.contract_date);
@@ -155,7 +162,7 @@ function tenderRowValues(r, it, snap) {
     if (t0.sasu) v.sasu = tableSasu([t0.sasu]) || v.sasu;
     if (c) {
       const sup = (c.suppliers || [])[0] || {};
-      Object.assign(v, { contract_link: 'https://prozorro.gov.ua/tender/' + tid, contractor: sup.name || v.contractor, contractor_id: sup.code ? (/^\d+$/.test(sup.code) ? +sup.code : sup.code) : v.contractor_id,
+      Object.assign(v, { contract_link: 'https://prozorro.gov.ua/tender/' + tid, contractor: sup.name || v.contractor, contractor_id: edrCode(sup.code || v.contractor_id),
         contract_no: c.number || v.contract_no, contract_date: day(c.signed) || v.contract_date, contract_end: day(c.end) || v.contract_end,
         contract_total: (c.value && c.value.amount) || v.contract_total, mods: c.changes != null ? c.changes : v.mods });
       if (c.signed && c.end) v.duration = Math.round(dayDiff(c.signed, c.end) / 30.44 * 10) / 10;
@@ -243,7 +250,7 @@ function copyMenuFor(r) {
 // ---- a new workbook ---------------------------------------------------------------------------------
 async function buildWorkbook(rows, onStep) {
   const year = +today().slice(0, 4);
-  const weeks = weekLabels(year);
+  const wl = weekList(year), weeks = wl.map((x) => x.label);
   const head = { bold: true, fill: 'DDEBF7', border: true, wrap: true, valign: 'center' };
   const grp = { bold: true, fill: 'BDD7EE', border: true };
   // SPs: rows 1–13 empty as in the team's sheet, 14 groups and weights, 15 Ukrainian, 16 English, data from 17.
@@ -251,7 +258,7 @@ async function buildWorkbook(rows, onStep) {
   const r14 = SP_LAYOUT.map(([c]) => (SP_WEIGHTS[c] != null ? { v: SP_WEIGHTS[c], s: grp } : SP_GROUPS[c] ? { v: SP_GROUPS[c], s: grp } : { v: null }));
   const r15 = SP_LAYOUT.map(([, , uk]) => ({ v: uk || null, s: head }));
   const r16 = SP_LAYOUT.map(([, , , en]) => ({ v: (en || '').replace('{y}', year) || null, s: head }));
-  for (const w of weeks) { r14.push({ v: monthName(isoMonday(year, +w.match(/\d+/)[0]).slice(0, 7)).split(' ')[0].toUpperCase(), s: grp }, { v: null }, { v: null }); r15.push({ v: w, s: head }, { v: null, s: head }, { v: null, s: head }); r16.push({ v: 'EXPERT', s: head }, { v: 'Activity', s: head }, { v: '☑', s: head }); }
+  for (const { mon, label: w } of wl) { r14.push({ v: monthName(mon.slice(0, 7)).split(' ')[0].toUpperCase(), s: grp }, { v: null }, { v: null }); r15.push({ v: w, s: head }, { v: null, s: head }, { v: null, s: head }); r16.push({ v: 'EXPERT', s: head }, { v: 'Activity', s: head }, { v: '☑', s: head }); }
   s1.push(r14, r15, r16);
   rows.forEach((r, i) => {
     const n = 17 + i, v = spRowValues(r);
@@ -290,11 +297,11 @@ async function buildWorkbook(rows, onStep) {
     }
   }
   // Portfolio KPIs of the EIB–UNDP agreement (Output 2) for these sub-projects.
+  const keep = new Set(rows.map((r) => r.code));
   const was = Object.assign({}, PF);
   Object.assign(PF, { expert: '', programme: '', batch: '' });
-  const d = portfolioData();
+  const d = portfolioData(keep);
   Object.assign(PF, was);
-  const keep = new Set(rows.map((r) => r.code));
   const k = d.kpi;
   const ratio = (a, b) => (b ? a / b : null);
   const s4 = [[{ v: rt('xKpiTitle', { n: keep.size, date: fdate(today()) }), s: { bold: true, size: 14 } }], [],

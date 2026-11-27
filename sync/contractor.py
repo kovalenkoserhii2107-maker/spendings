@@ -67,7 +67,10 @@ def build(code, eib_rows, tracked_rows, today, log=print):
         if r.get("status") == "active" and y and y >= year - 1:
             active_n += 1
             active_v += v
-        name = name or _name(((r.get("suppliers") or [{}])[0]))
+        # The name of the supplier with this code (a joint bid lists several).
+        if not name:
+            sup = next((x for x in r.get("suppliers") or [] if str((x.get("identifier") or {}).get("id") or "") == code), None)
+            name = _name(sup or ((r.get("suppliers") or [{}])[0]))
     # The yearly volume of the last three full years, to weigh what is on its hands now.
     past = [by_year[y][1] for y in (year - 1, year - 2, year - 3) if y in by_year]
     avg = sum(past) / len(past) if past else 0

@@ -355,6 +355,12 @@ def _reference_codes(olds):
     return {c for c in codes if c}
 
 
+def _supplier_codes(olds):
+    """Those who sell (contractors, bidders, supervisors): the ones a contractor's profile is for."""
+    buyers = {snap.get("org") for snap in olds.values() if snap}
+    return {c for c in _reference_codes(olds) if c not in buyers}
+
+
 def _reset_caches():
     """The modules keep what they read from data/ for the run: read it again after a refresh."""
     undp._PEERS[0] = undp._SUBV[0] = undp._OTHERS[0] = undp._LEGAL[0] = None
@@ -383,7 +389,7 @@ def sync_tracked(mode="full"):
         # Profiles and legal status of the companies already known, before the snapshots use them.
         known = _reference_codes(olds)
         try:
-            contractor.sync([c for c in known if len(c) in (8, 10)], DATA, spending.today().isoformat(),
+            contractor.sync([c for c in _supplier_codes(olds) if len(c) in (8, 10)], DATA, spending.today().isoformat(),
                             budget_s=180, log=lambda m: print(m, flush=True))
         except Exception:  # noqa: BLE001
             traceback.print_exc()
@@ -434,19 +440,21 @@ def sync_tracked(mode="full"):
                         budget_s=240 if mode == "full" else 90, log=lambda m: print(m, flush=True))
     except Exception:  # noqa: BLE001 - profiles are extra, the snapshots stand
         traceback.print_exc()
-    # Legal standing of the contractors, the other bidders and the buyers.
-    if mode == "full":
-        try:
-            codes = set()
-            for r in rows:
-                codes |= {r.get("supplier"), r.get("org")}
-                snap = read_json(os.path.join(TRACKED_DIR, r["key"] + ".json"), None) or {}
-                codes |= set((snap.get("tender") or {}).get("bidder_codes") or [])
-                # the technical supervision and the consulting engineer: are they independent of the contractor
-                codes |= {(x.get("supplier") or {}).get("code") for x in snap.get("related") or [] if x.get("supplier")}
+    # Legal standing of the contractors, the other bidders and the buyers: on the full run, and on a
+    # quick one too when a company is new (its ЄДР record may already be in the Mac's copy).
+    try:
+        codes = set()
+        for r in rows:
+            codes |= {r.get("supplier"), r.get("org")}
+            snap = read_json(os.path.join(TRACKED_DIR, r["key"] + ".json"), None) or {}
+            codes |= set((snap.get("tender") or {}).get("bidder_codes") or [])
+            # the technical supervision and the consulting engineer: are they independent of the contractor
+            codes |= {(x.get("supplier") or {}).get("code") for x in snap.get("related") or [] if x.get("supplier")}
+        known_legal = (legal.load(DATA).get("items") or {})
+        if mode == "full" or any(c and c not in known_legal for c in codes):
             legal.sync(codes, DATA, log=lambda m: print(m, flush=True))
-        except Exception:  # noqa: BLE001
-            traceback.print_exc()
+    except Exception:  # noqa: BLE001
+        traceback.print_exc()
     rows.sort(key=lambda r: (r.get("changed_at") or "", r["key"]), reverse=True)
     write_json(os.path.join(TRACKED_DIR, "index.json"), {"generated_at": now_iso(), "items": rows})
     wanted_keys = {r["key"] for r in wanted}

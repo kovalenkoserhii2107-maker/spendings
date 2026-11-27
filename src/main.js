@@ -24,6 +24,7 @@ function noAccessPage() {
 }
 
 function render() {
+  softPending = false;
   closeSheet();
   document.documentElement.lang = LANG;
   document.title = t('app.name');
@@ -57,11 +58,17 @@ function render() {
 }
 
 window.addEventListener('hashchange', render);
+// A sheet closed, a field left: the update that waited is drawn now.
+function softAfter() { if (softPending) setTimeout(softRender, 250); }
+document.addEventListener('focusout', softAfter);
 
 // Re-render only when nothing is being edited or read in a sheet.
+// What came while a sheet was open or a field was being typed in is drawn once that ends.
+let softPending = false;
 function softRender() {
   const busy = document.querySelector('.sheet') || (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName));
-  if (busy) return;
+  if (busy) { softPending = true; return; }
+  softPending = false;
   // New data on the same page: it stays where the reader is.
   const y = window.scrollY;
   render();
@@ -91,7 +98,6 @@ async function boot() {
         const was = state.user;
         state.user = user || null;
         if (user) {
-          cloud.watchReviews((map) => { state.reviews = map; softRender(); });
           cloud.watchMine((m) => {
             state.mine = m;
             applyScope();
@@ -103,7 +109,6 @@ async function boot() {
           if (typeof registryInit === 'function') registryInit();
           if (!was) setTimeout(showInstallBanner, 1200);
         } else {
-          state.reviews = new Map();
           if (typeof REG !== 'undefined') Object.assign(REG, { access: null, rows: new Map(), meta: null });
           state.mine = { orgs: new Map(), tracked: new Map(), shared: new Map(), ready: false };
           applyScope();

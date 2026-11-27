@@ -8,6 +8,11 @@ function paidShare(r) {
   // The current works contract's own payments (EIB and local) where the monitor follows it.
   const pw = primaryWorks(r), row = pw && pw.trackedRow;
   if (row && row.paid_pct != null) return Math.round(row.paid_pct);
+  // A new tender running for the works: nothing paid on a contract yet (the old one's share is not this).
+  if (pw && ['tender', 'retender'].includes(pw.mode)) return null;
+  // The table's figures are of the contract it names: not of a new one of another price.
+  const cv = pw && pw.contract && (pw.contract.value || {}).amount, tv = toNum(tt.contract_value || tt.contract_sum);
+  if (cv && tv && Math.abs(cv - tv) > cv * 0.05) return null;
   if (pctOf(tt.paid_pct) != null) return pctOf(tt.paid_pct);
   const m = mainContract(r);
   const value = toNum((m && m.c.value && m.c.value.amount) || tt.contract_value || tt.contract_sum);
@@ -34,7 +39,11 @@ function riskHints(r) {
   }
   // State Audit and AMCU: a procedure that gave no contract counts 12 months and at most 2.
   // The current works procurement only (primaryWorks); the others, earlier works ones too, are in infoHints.
-  const works = primaryTids(r);
+  // Before a new contract is signed, the works procedures that failed in the last 12 months count too.
+  const pwk = primaryWorks(r);
+  const works = new Set(primaryTids(r));
+  const preContract = !pwk || ['tender', 'retender'].includes(pwk.mode);
+  if (preContract) for (const t0 of pzT) if (worksTids(r).has(t0.tid) && ['unsuccessful', 'cancelled'].includes(t0.status) && t0.date >= addDays(today(), -365)) works.add(t0.tid);
   let upheld = 0;
   for (const t0 of pzT.filter((x) => works.has(x.tid))) {
     const noContract = ['unsuccessful', 'cancelled'].includes(t0.status) && !(t0.contracts || []).some((c) => c.status !== 'cancelled');
@@ -50,13 +59,18 @@ function riskHints(r) {
     if (t0.disqualified) add('rx', 'low', t0.tid + ': ' + rt('h_disq', { n: t0.disqualified }));
   }
   if (upheld >= 2) add('r8', 'high', rt('h_amcuMany', { n: upheld }));
-  const failed = (r.tenders || []).filter((x) => x.pz && works.has(x.pz) && /No Bids|All Rejected|Cancel/i.test(x.status || '')).length
-    + pzT.filter((x) => works.has(x.tid) && x.status === 'unsuccessful' && !(r.tenders || []).some((y) => y.pz === x.tid)).length;
+  // Failed works procedures since the last works contract was signed (all of them when none was).
+  const since = (pwk && pwk.contract && pwk.contract.signed) || (pwk && pwk.prev && pwk.prev.c && pwk.prev.c.signed) || '';
+  const after = (d) => !since || String(d || '9999') > since;
+  const failed = (r.tenders || []).filter((x) => x.pz && worksTids(r).has(x.pz) && /No Bids|All Rejected|Cancel/i.test(x.status || '') && after(x.issued || (pzT.find((t0) => t0.tid === x.pz) || {}).date)).length
+    + pzT.filter((x) => worksTids(r).has(x.tid) && x.status === 'unsuccessful' && after(x.date) && !(r.tenders || []).some((y) => y.pz === x.tid)).length;
   if (failed >= 2) add('rx', 'medium', rt('h_failed', { n: failed }));
   if (/Suspended/i.test(tt.funding || '')) add('r3', 'high', rt('h_funding', { s: tt.funding }));
   else if (/Insufficient/i.test(tt.funding || '')) add('r3', 'medium', rt('h_funding', { s: tt.funding }));
   const pct = pctOf(tt.pct);
-  if (tt.completion && tt.completion < today() && pct != null && pct < 100) add('rx', 'high', rt('h_overdue', { date: fdate(tt.completion), pct }));
+  // Late against the current works contract's own end; the table's date only where there is no such contract.
+  const endDay = pwk && pwk.mode === 'contract' ? (pwk.contract.end || tt.completion) : pwk && ['tender', 'retender'].includes(pwk.mode) ? null : tt.completion;
+  if (endDay && endDay < today() && pct != null && pct < 100) add('rx', 'high', rt('h_overdue', { date: fdate(endDay), pct }));
   const paidPct = paidShare(r);
   if (paidPct != null && pct != null && paidPct > pct + 15) add('r4', 'medium', rt('h_paidGap', { paid: paidPct, pct }));
   const stale = daysSince(tt.upd);
@@ -67,7 +81,8 @@ function riskHints(r) {
     const others = [...REG.rows.values()].filter((x) => x.code !== r.code && (((mainContract(x) || {}).c || {}).suppliers || []).some((s) => s.code === sup));
     if (others.length) {
       add('r5', 'low', rt('h_contractorElse', { list: others.map((x) => x.code).join(', ') }));
-      const bad = others.filter((x) => TROUBLE.test((x.t || {}).comment || '') || ((mainContract(x) || {}).c || {}).status === 'terminated');
+      // Ended early (Prozorro's "terminated" is also a contract simply finished: isEarlyEnd tells them apart).
+      const bad = others.filter((x) => TROUBLE.test((x.t || {}).comment || '') || isEarlyEnd((mainContract(x) || {}).c));
       if (bad.length) add('r5', bad.length >= 2 ? 'high' : 'medium', rt('h_contractorTrouble', { list: bad.map((x) => x.code).join(', ') }));
     }
   }
@@ -367,8 +382,10 @@ function subventionCard(r) {
 // will still need from the loan by 31 December, beside what the table says.
 const ADEQ_RX = { adequate: /^adequ/i, insufficient: /^insuff/i, suspended: /^susp/i, excess: /^excess/i };
 function adequacyData(r, last) {
-  const tids = new Set(spTids(r));
-  const rows = (state.trackedIndex.items || []).filter((x) => tids.has(x.tid) && x.funding);
+  // The contracts the subvention still has to pay: those in force (an ended one needs nothing more),
+  // and the current works contract whatever its state.
+  const tids = new Set(spTids(r)), pw = primaryWorks(r), cur = pw && pw.trackedRow;
+  const rows = (state.trackedIndex.items || []).filter((x) => tids.has(x.tid) && x.funding && (x === cur || x.status === 'active'));
   if (!rows.length || last == null) return null;
   const year = last * 1000;
   const need = rows.reduce((x, f) => x + (f.funding.need || 0), 0);

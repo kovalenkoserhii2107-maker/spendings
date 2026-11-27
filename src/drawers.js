@@ -165,7 +165,10 @@ function openMoneyDrawer(r, cid) {
     const { s } = await withSnap({ cid });
     const pw = primaryWorks(r) || {};
     const c = (s && s.contract) || (pw.contract && pw.contract.id === cid ? pw.contract : null);
-    const mrd = mrdPaysOf(r, 'works', c).slice().sort((a, b) => String(b.received || b.paid || '').localeCompare(String(a.received || a.paid || '')));
+    // The contract's own role (works, technical supervision, the consulting engineer).
+    const it = spContracts(r).find((x) => x.c.id === cid);
+    const role = (it && it.role) || 'works';
+    const mrd = (MRD_KINDS[role] ? mrdPaysOf(r, role, c) : []).slice().sort((a, b) => String(b.received || b.paid || '').localeCompare(String(a.received || a.paid || '')));
     const mrdBox = r.mrd ? h('div', { class: 'card pad section' }, h('h3', { class: 'card-sub' }, rt('drMrd', { n: mrd.length })),
       mrd.length ? h('div', { class: 'scroll' }, h('table', { class: 'stack-mobile' }, h('thead', null, h('tr', null, [rt('mrdReceived'), rt('mrdPaidOn'), rt('mrdWhat'), rt('mrdEibCol'), rt('mrdLocalCol')].map((x) => h('th', null, x)))),
         h('tbody', null, mrd.map((x) => h('tr', { class: x.paid ? '' : 'row-warn' }, td(rt('mrdReceived'), { class: 'num' }, fdate(x.received)), td(rt('mrdPaidOn'), { class: 'num' }, x.paid ? fdate(x.paid) : rt('mrdWait', { n: x.received ? dayDiff(x.received, today()) : '?' })),

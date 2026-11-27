@@ -63,26 +63,33 @@ function tableWeekDate(week, yr) {
   return `${yr}-${m[2]}-${m[1]}`;
 }
 // The experts' activities: the app's journal and the table's weekly columns, the same entry once.
+// One activity of one expert in one week, as the app's journal and the table's weekly columns both
+// say it: the table keeps the expert's initials and the week's heading, the journal the name and the day.
+const whoKey = (w) => { const v = String(w || '').trim(); return /\s/.test(v) ? expertInitials(v) : v.toUpperCase().slice(0, 3); };
+const logKey = (day, who, kind) => (day ? weekOf(day).n + '/' + String(day).slice(0, 4) : '?') + '|' + whoKey(who) + '|' + kind;
 function activities(r) {
   const out = [], seen = new Set();
   for (const x of entriesOf(r)) {
     const kind = WORK_KINDS.includes(x.kind) ? x.kind : '';
     if (!kind || !x.day) continue;
-    seen.add(weekOf(x.day).label + '|' + (x.who || '') + '|' + kind);
+    seen.add(logKey(x.day, x.who, kind));
     out.push({ date: x.day, kind, who: x.who || '', text: x.text || '', done: x.done !== false, src: 'app' });
   }
   const yr = String(((REG.meta || {}).at && REG.meta.at.toDate ? REG.meta.at.toDate().toISOString() : (REG.meta || {}).at) || today()).slice(0, 4);
   for (const x of ((r.t || {}).log || [])) {
     const kind = WORK_KINDS.find((k) => String(x.what || '').toUpperCase().startsWith(k)) || '';
-    if (!kind || seen.has(x.week + '|' + (x.who || '') + '|' + kind)) continue;
-    out.push({ date: tableWeekDate(x.week, yr), kind, who: x.who || '', src: 'table' });
+    const d = tableWeekDate(x.week, yr);
+    if (!kind || seen.has(logKey(d, x.who, kind))) continue;
+    seen.add(logKey(d, x.who, kind));
+    out.push({ date: d, kind, who: x.who || '', src: 'table' });
   }
   return out;
 }
 const inYear = (d, y) => y === 'all' || String(d || '').startsWith(y);
-function portfolioData() {
+// `only`: the codes to count (the export's chosen sub-projects); else the page's filters.
+function portfolioData(only) {
   const all = [...REG.rows.values()];
-  const rows = all.filter((r) => (!PF.expert || spManager(r) === PF.expert) && (!PF.programme || (r.t || {}).programme === PF.programme) && (!PF.batch || String((r.t || {}).batch) === PF.batch));
+  const rows = all.filter((r) => (!only || only.has(r.code)) && (!PF.expert || spManager(r) === PF.expert) && (!PF.programme || (r.t || {}).programme === PF.programme) && (!PF.batch || String((r.t || {}).batch) === PF.batch));
   const y = PF.year;
   // The Tenders sheet's procedures and those linked in the app (with Prozorro's dates); the team's
   // marks as the app keeps them.

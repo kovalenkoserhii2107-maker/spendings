@@ -369,8 +369,7 @@ function contractFacts(r, it) {
   const mrd = r.mrd || {};
   const mc = (mrd.contracts || []).find((x) => x.number && c.number && normNo(x.number) === normNo(c.number))
     || (mrd.contracts || []).filter((x) => x.role === role).length === 1 && (mrd.contracts || []).find((x) => x.role === role) || null;
-  const kinds = { works: ['works', 'advance', 'advance_close'], ts: ['ts'], csc: ['csc'] }[role] || [];
-  const eibPays = (mrd.payments || []).filter((x) => x.paid && kinds.includes(x.kind));
+  const eibPays = MRD_KINDS[role] ? mrdPaysOf(r, role, c).filter((x) => x.paid) : [];
   const value = (c.value || {}).amount || (row && row.totals && row.totals.value) || 0;
   const tt = (row && row.totals) || {};
   const paid = tt.paid_total || tt.paid || 0;
@@ -1240,7 +1239,8 @@ const WORK_KINDS = ['VISIT', 'PROCUREMENT ANALYSE', 'COST VERIFICATION', 'CONSUL
 const OLD_KIND = { td: 'PROCUREMENT ANALYSE', assist: 'CONSULTING', monitor: 'RISK MANAGEMENT', visit: 'VISIT', request: 'CONSULTING', meeting: 'CONSULTING', report: 'EX-POST REVIEW', other: '' };
 const activityOf = (k) => (WORK_KINDS.includes(k) ? k : OLD_KIND[k] || '');
 const kindLabel = (k) => { const a = activityOf(k); return a ? rt('kind_' + a.replace(/\W+/g, '_')) : rt('kind_other'); };
-const myExpert = () => (REG.access && REG.access.expert) || (state.user && (state.user.displayName || state.user.email)) || '';
+// The expert one works as: the one chosen in Settings first (as myManager), then the access list, then the account.
+const myExpert = () => (REG.profile && REG.profile.expert) || (REG.access && REG.access.expert) || (state.user && (state.user.displayName || state.user.email)) || '';
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 function saveWork(r, change) {
   const w = JSON.parse(JSON.stringify(r.work || {}));
@@ -1255,7 +1255,7 @@ function weekOf(day) {
   const mon = new Date(d); mon.setUTCDate(d.getUTCDate() - dow);
   const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
   const thu = new Date(mon); thu.setUTCDate(mon.getUTCDate() + 3);
-  const jan1 = new Date(Date.UTC(thu.getUTCFullYear(), 0, 1));
+  const jan1 = new Date(Date.UTC(thu.getUTCFullYear(), 0, 1, 12));  // noon, as `thu`: whole days between them
   const n = Math.ceil(((thu - jan1) / 864e5 + 1) / 7);
   const f = (x) => String(x.getUTCDate()).padStart(2, '0') + '.' + String(x.getUTCMonth() + 1).padStart(2, '0');
   return { n, label: `Week ${n} (${f(mon)}-${f(sun)})` };

@@ -31,6 +31,7 @@ export async function init({ onUser, lang }) {
     if (unwatch && !user) { unwatch(); unwatch = null; }
     if (!user) { unwatchMine.forEach((u) => u()); unwatchMine = []; myHashValue = null; Object.assign(mine, { orgs: new Map(), tracked: new Map(), shared: new Map(), seen: { orgs: false, tracked: false, shared: false } }); }
     if (!user && unwatchRegistry) unwatchRegistry();
+    if (!user && unwatchEntries) { unwatchEntries(); unwatchEntries = null; }
     if (user) { saveProfile(user, lang()).catch(() => {}); registerEmail(user).catch(() => {}); }
     else sessionStorage.removeItem('driveToken');
     onUser(user);
@@ -92,45 +93,7 @@ export function saveLang(lang) {
   return fb.setDoc(fb.doc(db, 'users', current.uid), { lang }, { merge: true });
 }
 
-// ---- reviews ----------------------------------------------------------------------
-
 const toDate = (v) => (v && typeof v.toDate === 'function' ? v.toDate() : v || null);
-
-export function watchReviews(cb) {
-  if (unwatch) unwatch();
-  unwatch = fb.onSnapshot(fb.collection(db, 'reviews'), (snap) => {
-    const map = new Map();
-    snap.forEach((d) => {
-      const r = d.data();
-      map.set(d.id, Object.assign({}, r, { updatedAt: toDate(r.updatedAt) }));
-    });
-    cb(map);
-  }, () => {});
-}
-
-export async function saveReview(key, data) {
-  const name = current.displayName || current.email || '';
-  const doc = {
-    org: data.org || '', contract: data.contract || null, signalType: data.signalType || '', title: (data.title || '').slice(0, 300),
-    status: data.status, comment: (data.comment || '').slice(0, 4000),
-    updatedBy: current.uid, updatedByName: name, updatedAt: fb.serverTimestamp(),
-  };
-  const ref = fb.doc(db, 'reviews', key);
-  // Whoever opened a review keeps it; others (unless analysts) cannot overwrite it.
-  let prev = null;
-  try { const snap = await fb.getDoc(ref); prev = snap.exists() ? snap.data() : null; } catch (e) { /* treat as new */ }
-  doc.createdBy = prev ? (prev.createdBy || prev.updatedBy) : current.uid;
-  const batch = fb.writeBatch(db);
-  batch.set(ref, doc);
-  batch.set(fb.doc(fb.collection(ref, 'history')), { status: doc.status, comment: doc.comment, by: current.uid, byName: name, at: fb.serverTimestamp() });
-  await batch.commit();
-}
-
-export async function reviewHistory(key) {
-  const q = fb.query(fb.collection(db, 'reviews', key, 'history'), fb.orderBy('at', 'desc'), fb.limit(20));
-  const snap = await fb.getDocs(q);
-  return snap.docs.map((d) => Object.assign({}, d.data(), { at: toDate(d.data().at) }));
-}
 
 // ---- export log -------------------------------------------------------------------
 
@@ -203,7 +166,7 @@ async function publish() {
     let x = null;
     try { x = pubExtra(cid, t); } catch (e) { x = null; }
     const row = { cid, org: t.org, tid: t.tid || '', sp: t.sp || '', date: t.signed || '' };
-    if (x) for (const k of ['subp', 'prog', 'role', 'eib_paid']) if (x[k] != null && x[k] !== '') row[k] = x[k];
+    if (x) for (const k of ['subp', 'prog', 'role', 'eib_paid', 'eib_year']) if (x[k] != null && x[k] !== '') row[k] = x[k];
     return row;
   });
   const body = { orgs: [...mine.orgs.values()].map((o) => ({ edrpou: o.edrpou, role: o.role || 'buyer' })), tracked, shares };
@@ -587,8 +550,10 @@ export function addEntry(code, e) {
 }
 // The whole team's journal at once (every sub-project's entries): for the bell, the portfolio and
 // the export. Map regId → [entries].
+let unwatchEntries = null;
 export function watchAllEntries(cb) {
-  return fb.onSnapshot(fb.query(fb.collectionGroup(db, 'entries'), fb.limit(8000)), (snap) => {
+  if (unwatchEntries) unwatchEntries();
+  unwatchEntries = fb.onSnapshot(fb.query(fb.collectionGroup(db, 'entries'), fb.limit(8000)), (snap) => {
     const by = new Map();
     snap.forEach((d) => {
       const code = d.ref.parent.parent ? d.ref.parent.parent.id : '';
@@ -597,10 +562,15 @@ export function watchAllEntries(cb) {
     });
     cb(by);
   }, () => cb(null));
+  return unwatchEntries;
 }
 // An entry with an id of our own: moving the old journal over twice writes it once.
-export function setEntry(code, id, e) {
-  return fb.setDoc(fb.doc(db, 'registry', regId(code), 'entries', id), Object.assign(storable(e), {
+// One already there (moved by another tab, or before) stays as it is: writing it again would be an
+// update, which the rules allow only with its author's fields.
+export async function setEntry(code, id, e) {
+  const ref = fb.doc(db, 'registry', regId(code), 'entries', id);
+  try { if ((await fb.getDoc(ref)).exists()) return; } catch (err) { /* unknown: try to write */ }
+  return fb.setDoc(ref, Object.assign(storable(e), {
     by: current.uid, byName: current.displayName || current.email || '', at: fb.serverTimestamp(),
   }));
 }

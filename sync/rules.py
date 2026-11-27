@@ -102,6 +102,9 @@ def programme(t, subv=None):
         return "uerp", None
     if URP_TEXT.search(text):
         return "urp", None
+    # The team's register knows the sub-project's programme.
+    if t.get("programme_undp") in ("urp3", "urp", "uerp"):
+        return t["programme_undp"], tranche if t["programme_undp"] == "urp3" else None
     # The CMU distribution names the programme: the project's own line, or its community's budget line.
     if subv and subv.get("level") in ("project", "budget"):
         return {"URP III": "urp3", "URP": "urp", "UERP": "uerp"}.get(subv.get("programme")), None
