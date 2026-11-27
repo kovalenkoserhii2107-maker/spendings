@@ -179,10 +179,15 @@ function nudgeSync() {
   if (/PROXY_URL/.test(PZ_PROXY)) return;
   fetch(PZ_PROXY + '?action=nudge', { mode: 'no-cors' }).catch(() => {});
 }
-async function pzProxy(params) {
+async function pzProxy(params, tries = 4) {
   if (/PROXY_URL/.test(PZ_PROXY)) throw new Error(t('qs.noProxy'));
   const res = await fetch(PZ_PROXY + '?' + new URLSearchParams(params));
   const d = await res.json();
+  // Prozorro allows about 60 requests a minute: over it ("429"), wait and ask again.
+  if (d.error && /429/.test(String(d.error)) && tries > 1) {
+    await new Promise((ok) => setTimeout(ok, (5 - tries) * 4000 + 3000));
+    return pzProxy(params, tries - 1);
+  }
   if (d.error) throw new Error('Prozorro: ' + d.error);
   return d;
 }

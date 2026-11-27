@@ -13,6 +13,7 @@ function registryPage() {
   const status = h('span', { class: 'muted small', id: 'reg-status' }, REG.status ? h('span', { class: REG.status.bad ? 'bad' : '' }, REG.status.text) : null);
   const file = h('input', { type: 'file', accept: '.xlsx', hidden: true, onchange: () => file.files[0] && importFile(file.files[0]) });
   const mrdFile = h('input', { type: 'file', accept: '.xlsx', hidden: true, onchange: () => mrdFile.files[0] && importMrd(mrdFile.files[0]) });
+  const namesFile = h('input', { type: 'file', accept: '.json,application/json', hidden: true, onchange: () => namesFile.files[0] && importNames(namesFile.files[0]) });
   const meta = REG.meta;
   // Prozorro is read only for the chosen expert's sub-projects: all 400+ would take half an hour.
   const ofExpert = () => (REGF.expert ? rows.filter((r) => spManager(r) === REGF.expert) : []);
@@ -38,12 +39,13 @@ function registryPage() {
     rows.length ? [rt('mrdUpload'), () => mrdFile.click(), 'upload', rt('mrdUploadHint')] : null,
     rows.length ? [rt('export'), () => exportCentre(), 'download', rt('exportHint')] : null,
     [rt('addSp'), () => addSpDialog(null), 'plus', null],
+    rows.length ? [rt('namesMenu'), () => namesFile.click(), 'upload', rt('namesHint')] : null,
     orphans.length ? [rt('orphansMenu', { n: orphans.length }), showOrphans, 'alert', rt('orphansMenuHint')] : null,
   ], 'db');
   const lead = h('span', null, meta ? rt('imported', { at: ftime(meta.at && meta.at.toDate ? meta.at.toDate().toISOString() : meta.at), by: meta.byName || '—', n: meta.rows }) : rt('noTable'),
     h('span', { class: 'lead-sub' }, rt('updNote', { at: (() => { const d = rows.map((r) => (r.pz || {}).at).filter(Boolean).sort().pop(); return d ? ftime(d) : '—'; })() })));
   const head = pageHead(rt('eyebrow'), titleGrad(rt('title1'), rt('title2')), lead,
-    h('div', { class: 'head-actions' }, rows.length ? refreshBtn : null, dataMenu, file, mrdFile, status));
+    h('div', { class: 'head-actions' }, rows.length ? refreshBtn : null, dataMenu, file, mrdFile, namesFile, status));
   if (!rows.length) return [head];
   const experts = [...new Set(rows.map(spManager).concat([myManager()]).filter(Boolean))].sort();
   const progs = [...new Set(rows.map((r) => (r.t || {}).programme).filter(Boolean))].sort();
@@ -83,7 +85,7 @@ function registryPage() {
       if (REGF.stage && F(r).st.stage !== REGF.stage) return false;
       if (words.length) {
         const m = mainContract(r);
-        const text = [r.code, tt.name_uk, tt.name_en, tt.beneficiary, tt.contractor, m && (m.c.suppliers || []).map((s) => s.name + ' ' + s.code).join(' ')].join(' ').toLowerCase();
+        const text = [r.code, tt.name_uk, tt.name_uk_mt, tt.name_en, tt.beneficiary, tt.contractor, m && (m.c.suppliers || []).map((s) => s.name + ' ' + s.code).join(' ')].join(' ').toLowerCase();
         if (!words.every((w) => text.includes(w))) return false;
       }
       return true;
@@ -197,7 +199,7 @@ function registryTable(rows) {
       const open = () => { location.hash = '#/sp/' + encodeURIComponent(r.code); };
       return h('tr', { class: 'click', tabindex: 0, onclick: open, onkeydown: (e) => { if (e.key === 'Enter') open(); } },
         td(L.c, { class: 'num' }, h('b', null, r.code), h('div', { class: 'cell-sub' }, join([tt.programme, tt.batch && 'B' + tt.batch])), !oneManager && spManager(r) ? h('div', { class: 'cell-sub clamp1' + (isMine(r) ? ' mine' : '') }, spManager(r)) : null, tt.manual ? h('div', { class: 'cell-sub' }, rt('manualTag')) : null),
-        td(L.s, { class: 'w-text' }, h('div', { class: 'sp-name' }, tt.name_uk || tt.name_en || '—'), h('div', { class: 'cell-sub clamp1' }, join([spRegion(r) && spRegion(r) + ' ' + rt('oblShort'), tt.beneficiary]))),
+        td(L.s, { class: 'w-text' }, h('div', { class: 'sp-name' }, tt.name_uk || tt.name_uk_mt || tt.name_en || '—', !tt.name_uk && tt.name_uk_mt ? h('span', { class: 'mt-tag', title: rt('mtHint') }, rt('mtTag')) : null), h('div', { class: 'cell-sub clamp1' }, join([spRegion(r) && spRegion(r) + ' ' + rt('oblShort'), tt.beneficiary]))),
         td(L.st, null, stageChip(st), st.late ? h('div', { class: 'cell-sub bad' }, rt('lateBy', { n: st.late })) : null,
           !tids.length ? h('div', { class: 'cell-sub' }, ((r.pz || {}).cand || []).length ? h('span', { class: 'warn-text' }, rt('candidates', { n: r.pz.cand.length })) : rt('notLinked'))
             : st.signed && ['contract', 'works'].includes(st.stage) ? h('div', { class: 'cell-sub' }, rt('signedOn', { date: fdate(st.signed) })) : null),
@@ -268,14 +270,14 @@ function spHeader(r, st) {
     h('div', { class: 'org-head' },
       h('div', null,
         backRow('#/', h('nav', { class: 'crumbs', 'aria-label': rt('nav') }, h('a', { href: '#/' }, rt('nav')), h('span', { 'aria-hidden': 'true' }, '/'), h('span', null, r.code))),
-        h('h1', { class: 'org-title' + (String(tt.name_uk || tt.name_en || '').length > 90 ? ' long' : '') }, tt.name_uk || tt.name_en || r.code),
-        tt.name_uk && tt.name_en ? h('p', { class: 'muted' }, tt.name_en) : null,
+        h('h1', { class: 'org-title' + (String(tt.name_uk || tt.name_uk_mt || tt.name_en || '').length > 90 ? ' long' : '') }, tt.name_uk || tt.name_uk_mt || tt.name_en || r.code),
+        (tt.name_uk || tt.name_uk_mt) && tt.name_en ? h('p', { class: 'muted' }, !tt.name_uk ? h('span', { class: 'mt-tag', title: rt('mtHint') }, rt('mtTag')) : null, tt.name_en) : null,
         h('div', { class: 'chips' }, stageChip(st),
           tt.programme || tt.batch ? h('span', { class: 'tag' }, join([tt.programme, tt.batch && 'Batch ' + tt.batch, tt.office])) : null,
           h('span', { class: 'tag' + (isMine(r) ? ' ok' : '') }, rt('managerTag', { who: spManager(r) || '—' })),
           !isMine(r) ? h('button', { class: 'btn btn-sm', onclick: () => takeOver(r), title: rt('takeOverHint') }, rt('takeOver')) : null,
           tt.manual ? h('span', { class: 'tag warn' }, rt('manualTag')) : null,
-          r.overrides && Object.keys(r.overrides).length ? h('span', { class: 'tag', title: rt('overriddenHint') }, rt('overridden')) : null),
+          r.overrides && Object.keys(r.overrides).some((k) => k !== 'name_uk_mt') ? h('span', { class: 'tag', title: rt('overriddenHint') }, rt('overridden')) : null),
         h('p', { class: 'small sp-buyer' }, join([tt.beneficiary || (t0 && t0.buyer_name), buyerCode ? 'ЄДРПОУ ' + buyerCode : null]), ' ', regs)),
       h('div', { class: 'org-actions' }, h('div', { class: 'row' }, refresh, copyMenu,
         h('button', { class: 'btn', onclick: () => addSpDialog(r) }, icon('edit'), rt('editPassport'))), busy)),

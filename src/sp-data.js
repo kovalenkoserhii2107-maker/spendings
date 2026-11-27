@@ -584,6 +584,41 @@ function regNoTrack(cid, tid) {
   saveWork(r, (w) => { w.noTrack = [...new Set((w.noTrack || []).concat([cid]))].slice(-200); }).catch(() => {});
 }
 
+// Ukrainian names for the sub-projects the table names in English only, from a file {code: name}
+// (a translation made outside the app). Kept as overrides.name_uk_mt: the table's own Ukrainian name
+// wins whenever it is there, and the export does not write the translation into the table. Then the
+// sub-projects are looked up in Prozorro by it.
+async function importNames(file) {
+  let map = null;
+  try { map = JSON.parse(await file.text()); } catch (e) { toast(rt('namesBad'), { bad: true }); return; }
+  if (!map || typeof map !== 'object' || Array.isArray(map)) { toast(rt('namesBad'), { bad: true }); return; }
+  const todo = [];
+  for (const [code, name] of Object.entries(map)) {
+    const r = REG.rows.get(code);
+    const v = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 600);
+    if (!r || !v || !/[а-яіїєґ]/i.test(v) || ((r.tTable || r.t || {}).name_uk)) continue;
+    if (((r.overrides || {}).name_uk_mt) === v) continue;
+    todo.push([r, v]);
+  }
+  if (!todo.length) { toast(rt('namesNone')); return; }
+  setStatus(rt('namesSaving', { n: todo.length }));
+  let saved = 0;
+  for (const [r, v] of todo) {
+    try {
+      await cloud.updateRegistry(r.code, { overrides: { name_uk_mt: v } });
+      // At once here too, not only when the registry comes back from the cloud.
+      r.overrides = Object.assign({}, r.overrides, { name_uk_mt: v });
+      r.t = Object.assign({}, r.t, { name_uk_mt: v });
+      saved++;
+    } catch (e) { console.error('names', r.code, e); }
+  }
+  setStatus(rt('namesSaved', { n: saved }));
+  toast(rt('namesSaved', { n: saved }), { long: true });
+  // Looked up in Prozorro at once: those with nothing linked yet.
+  const list = todo.map(([r]) => REG.rows.get(r.code) || r).filter((r) => !spTids(r).length);
+  if (list.length && confirm(rt('namesRefresh', { n: list.length }))) await refreshMany(list);
+}
+
 async function refreshMany(rows) {
   if (REG.busy) return;
   REG.busy = 'refresh';

@@ -273,7 +273,9 @@ function budgetMatch(r, lines, region) {
   }
   return null;
 }
-const spNameUk = (r) => (r.t || {}).name_uk || ((subvMatch(r) || {}).name || '');
+// The Ukrainian name to look for in Prozorro: the table's, else a translation of the English one
+// (overrides.name_uk_mt, loaded from a file), else the CMU order's line for the project.
+const spNameUk = (r) => (r.t || {}).name_uk || (r.t || {}).name_uk_mt || ((subvMatch(r) || {}).name || '');
 const fmtK = (x) => ni.format(x) + ' ' + rt('thousand');
 const edDate = (d) => fdate(d.slice(0, 4) + '-' + d.slice(4, 6) + '-' + d.slice(6, 8));
 
